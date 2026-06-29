@@ -1,0 +1,17 @@
+Vision: A live performance engine that combines instrument audio, performer motion, and programmable visuals into immersive stage art which can be displayed in a number of ways.
+
+V1 Goals
+* Guitar Input
+* Full Screen
+* Lava Shader
+* Scene Switching
+
+V2 Goals
+* Camera Tracking
+* Silhouettes
+*Motion Effects
+
+V4: 
+* Lighting
+* Midi
+* DMX
