@@ -37,5 +37,3 @@ Note: shader files are loaded from disk at runtime via relative paths (e.g. `Wor
 **Live control panel** (`ControlServer.cs`): a plain `HttpListener` on `http://localhost:8080` (no framework) serving a single self-contained HTML page with sliders bound to `Tuning.*` fields via `POST /set` and `GET /values`. This is meant to be tweaked live during a performance/soundcheck, separate from a rebuild — if you add a new tunable, add it to `Tuning.cs`, the `switch` in `ControlServer.Handle`, the `/values` serializer, and the HTML slider markup.
 
 **Camera** (`Engine/Camera.cs`): a slow, layered sine/cosine drift + zoom (three superimposed frequencies each axis) applied independently of audio, giving worlds a continuous ambient motion; worlds read `Camera.Zoom`/`Camera.Offset` and pass them into shaders as uniforms rather than transforming geometry directly (there is no geometry — everything is fullscreen-quad fragment shader work).
-
-**Loose files under `Shaders/`** (top-level, not `Worlds/.../Shaders/`) are not referenced from any `.cs` file currently — treat them as inactive/leftover rather than part of the active render path unless you wire them up.
