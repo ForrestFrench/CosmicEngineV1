@@ -20,6 +20,9 @@ namespace CosmicEngine.App.Audio
         private static Thread? _thread;
         private static volatile bool _running;
 
+        /// <summary>True once the capture device is open and the capture thread is running.</summary>
+        public static bool IsCapturing => _running;
+
         // Left channel (physical Input 1) and right channel (physical Input 2).
         public static readonly GuitarChannel Guitar1 = new GuitarChannel();
         public static readonly GuitarChannel Guitar2 = new GuitarChannel();

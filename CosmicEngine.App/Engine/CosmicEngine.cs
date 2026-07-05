@@ -5,6 +5,7 @@ using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using System;
+using System.IO;
 
 namespace CosmicEngine.App.Engine
 {
@@ -32,6 +33,23 @@ namespace CosmicEngine.App.Engine
 
         private float _debugTimer;
 
+        // Runtime diagnostics (Runtime Diagnostics Phase 1) - lightweight, no profile system.
+        private const float SmokeTestDurationSeconds = 8f;
+        private bool   _smokeTestMode;
+        private bool   _diagnosticMode;
+        private bool   _exitRequested;
+
+        private float _perfTimer;
+        private int   _perfFrameCount;
+
+        private float _runElapsed;
+        private int   _runFrameCount;
+
+        private string _glRenderer = "";
+        private string _glVendor   = "";
+        private string _glVersion  = "";
+        private string _glslVersion = "";
+
         public CosmicEngineApp()
         {
             var nativeSettings = new NativeWindowSettings()
@@ -45,8 +63,10 @@ namespace CosmicEngine.App.Engine
             _camera        = new Camera();
         }
 
-        public void Run()
+        public void Run(string[] args)
         {
+            ParseArgs(args);
+
             AudioEngine.Start();
             ControlServer.Start();
 
@@ -59,12 +79,39 @@ namespace CosmicEngine.App.Engine
             _window.Run();
         }
 
+        private void ParseArgs(string[] args)
+        {
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--smoke-test")
+                {
+                    _smokeTestMode = true;
+                }
+                else if (args[i] == "--diagnostic" && i + 1 < args.Length && args[i + 1] == "baseline")
+                {
+                    _diagnosticMode = true;
+                    _smokeTestMode  = true; // diagnostic mode needs a bounded sample window too
+                    i++;
+                }
+            }
+
+            if (_smokeTestMode)
+                Console.WriteLine($"[Smoke Test] Enabled — will run for {SmokeTestDurationSeconds:F0}s then exit.");
+            if (_diagnosticMode)
+                Console.WriteLine("[Diagnostic] Baseline report will be written on exit.");
+        }
+
         private void OnLoad()
         {
-            Console.WriteLine("[OpenGL] Renderer: " + GL.GetString(StringName.Renderer));
-            Console.WriteLine("[OpenGL] Vendor:   " + GL.GetString(StringName.Vendor));
-            Console.WriteLine("[OpenGL] Version:  " + GL.GetString(StringName.Version));
-            Console.WriteLine("[OpenGL] GLSL:     " + GL.GetString(StringName.ShadingLanguageVersion));
+            _glRenderer  = GL.GetString(StringName.Renderer) ?? "unknown";
+            _glVendor    = GL.GetString(StringName.Vendor) ?? "unknown";
+            _glVersion   = GL.GetString(StringName.Version) ?? "unknown";
+            _glslVersion = GL.GetString(StringName.ShadingLanguageVersion) ?? "unknown";
+
+            Console.WriteLine("[OpenGL] Renderer: " + _glRenderer);
+            Console.WriteLine("[OpenGL] Vendor:   " + _glVendor);
+            Console.WriteLine("[OpenGL] Version:  " + _glVersion);
+            Console.WriteLine("[OpenGL] GLSL:     " + _glslVersion);
 
             _renderTarget = new RenderTarget(RenderWidth, RenderHeight);
             _activeWorld?.Load();
@@ -77,6 +124,8 @@ namespace CosmicEngine.App.Engine
 
         private void OnRenderFrame(FrameEventArgs args)
         {
+            if (_exitRequested) return;
+
             float dt = (float)args.Time;
 
             var signal = BuildAudioSignal();
@@ -102,6 +151,89 @@ namespace CosmicEngine.App.Engine
             _renderTarget.BlitToScreen(fb.X, fb.Y);
 
             _window.SwapBuffers();
+
+            RunDiagnostics(dt);
+        }
+
+        /// <summary>Logs [Perf] once/sec and, in smoke-test/diagnostic mode, ends the run after a fixed window.</summary>
+        private void RunDiagnostics(float dt)
+        {
+            _perfTimer      += dt;
+            _perfFrameCount += 1;
+            _runElapsed     += dt;
+            _runFrameCount  += 1;
+
+            if (_perfTimer >= 1.0f)
+            {
+                float fps     = _perfFrameCount / _perfTimer;
+                float frameMs = (_perfTimer / _perfFrameCount) * 1000f;
+                var   client  = _window.ClientSize;
+                string world  = _activeWorld?.GetType().Name ?? "none";
+                string audio  = AudioEngine.IsCapturing ? "capturing" : "stopped";
+
+                Console.WriteLine(
+                    $"[Perf] fps: {fps:F1} | frame: {frameMs:F1}ms | world: {world} | " +
+                    $"window: {client.X}x{client.Y} | target: {RenderWidth}x{RenderHeight} | audio: {audio}");
+
+                _perfTimer      = 0f;
+                _perfFrameCount = 0;
+            }
+
+            if (_smokeTestMode && !_exitRequested && _runElapsed >= SmokeTestDurationSeconds)
+            {
+                _exitRequested = true;
+
+                float avgFps     = _runFrameCount / _runElapsed;
+                float avgFrameMs = (_runElapsed / _runFrameCount) * 1000f;
+
+                Console.WriteLine(
+                    $"[Smoke Test] Complete. avg fps: {avgFps:F1} | avg frame: {avgFrameMs:F1}ms | " +
+                    $"duration: {_runElapsed:F1}s | frames: {_runFrameCount}");
+
+                if (_diagnosticMode)
+                    WriteDiagnosticReport(avgFps, avgFrameMs);
+
+                _window.Close();
+            }
+        }
+
+        private void WriteDiagnosticReport(float avgFps, float avgFrameMs)
+        {
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string dir       = Path.Combine("DiagnosticReports", $"Baseline_{timestamp}");
+            Directory.CreateDirectory(dir);
+            string reportPath = Path.Combine(dir, "REPORT.md");
+
+            string world = _activeWorld?.GetType().Name ?? "none";
+
+            string report = $"""
+                # Baseline Diagnostic Report
+
+                **Generated:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}
+
+                ## OpenGL
+                - Renderer: {_glRenderer}
+                - Vendor: {_glVendor}
+                - Version: {_glVersion}
+                - GLSL: {_glslVersion}
+
+                ## Run
+                - World loaded: {world}
+                - Build status: succeeded (assumed — this report only runs from a built executable)
+                - Run status: completed cleanly via --diagnostic baseline smoke run
+                - Sample window: {_runElapsed:F1}s ({_runFrameCount} frames)
+                - Average FPS: {avgFps:F1}
+                - Average frame time: {avgFrameMs:F1}ms
+
+                ## Known limitations
+                - No RenderScale / performance-profile system exists yet — this is a fixed-resolution, fixed-shader-cost measurement.
+                - Sample window is short (~{SmokeTestDurationSeconds:F0}s); not a sustained-load or thermal-throttling test.
+                - Not yet run against target/OptiPlex deployment hardware.
+                - Audio input reflects whatever capture device was available at run time, not necessarily a live guitar signal.
+                """;
+
+            File.WriteAllText(reportPath, report);
+            Console.WriteLine($"[Diagnostic] Report written to {reportPath}");
         }
 
         private void OnUnload()

@@ -106,3 +106,65 @@ Acceptance decision: **ACCEPTED.**
 This sign-off does not validate FPS performance, Live/Safe profile behavior, RenderScale behavior, diagnostic suite behavior, OptiPlex hardware performance, or real guitar/audio-interface behavior — those systems either do not exist yet in this committed codebase or remain untested.
 
 Next required phase: **Runtime Diagnostics.**
+
+---
+
+## Entry 3 — Runtime Diagnostics Phase 1
+
+**Date:** 2026-07-05
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — ACCEPTED (2026-07-05)
+
+### Files changed
+- `CosmicEngine.App/Engine/CosmicEngine.cs` — added `ParseArgs` (`--smoke-test`, `--diagnostic baseline`), a per-second `RunDiagnostics`/`[Perf]` logger, a bounded-run exit path via `GameWindow.Close()`, and `WriteDiagnosticReport` for the baseline report file. GL info strings are now cached in fields (still logged at `OnLoad` as before) so the report can reuse them.
+- `CosmicEngine.App/Audio/AudioEngine.cs` — added `public static bool IsCapturing => _running;` (read-only accessor, no behavior change).
+- `CosmicEngine.App/Program.cs` — now passes `args` through: `new CosmicEngineApp().Run(args);`.
+- `.gitignore` — added `DiagnosticReports/` (generated output, same treatment as `bin/`/`obj/`).
+- `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md` — updated to reflect this pass.
+
+### What diagnostics were added
+- **`[Perf]` log, once/second:** fps, frame time (ms), active world name (via `GetType().Name`), window client size, render-target size, and audio capture status (`AudioEngine.IsCapturing`).
+- **`--smoke-test` CLI flag:** runs for a fixed 8s window, prints an average fps/frame-time summary, then calls `_window.Close()` for a clean exit (verified exit code 0).
+- **`--diagnostic baseline` CLI flag:** same bounded run, plus writes `DiagnosticReports/Baseline_<timestamp>/REPORT.md` containing date/time, OpenGL renderer/vendor/version/GLSL, world loaded, sample window size, average fps, average frame time, and known limitations.
+- No RenderScale, no performance-profile system, no shader/visual/audio/control changes.
+
+### Build result
+`dotnet build` — succeeded, 0 warnings, 0 errors.
+
+### Run result
+Verified all three modes on the current dev machine:
+- Normal `dotnet run` — starts, renders continuously, `[Perf]` logs once/second, no early exit, no regression versus Baseline Recovery Pass 1 behavior.
+- `dotnet run -- --smoke-test` — ran 8.0s (388 frames), printed a summary line, exited cleanly (exit code 0).
+- `dotnet run -- --diagnostic baseline` — ran 8.0s (382 frames), printed a summary line, wrote `DiagnosticReports/Baseline_20260705_115857/REPORT.md`, exited cleanly (exit code 0).
+
+### Sample `[Perf]` output
+```text
+[Perf] fps: 49.7 | frame: 20.1ms | world: StellarNursery | window: 1280x720 | target: 1280x720 | audio: capturing
+```
+
+### Known limitations
+- No RenderScale/performance-profile system yet — out of scope for this pass.
+- Diagnostic tooling is minimal: one report, one ~8s sample window, no screenshots, no multi-run comparison, no sustained-load/thermal test.
+- FPS numbers observed so far (~48-50 fps on Intel Iris Graphics 6100) are not yet validated against any accepted target threshold.
+- No physical OptiPlex validation performed.
+- Real guitar/audio-interface hardware validation still pending — `audio: capturing` only confirms the capture device opened, not that a live guitar signal is present; interface identity itself needs confirming (`Tuning.cs` references a Focusrite Clarett).
+- Tuning/calibration duplication between `Tuning.cs` and `StellarNursery.cs` remains unresolved (pre-existing, unchanged by this pass).
+
+### Reviewer notes (ChatGPT, 2026-07-05)
+Review scope: the added once-per-second `[Perf]` logger, `--smoke-test` mode, `--diagnostic baseline` mode, generated baseline report behavior, build/run results, updated project docs, and stated limitations.
+
+Accepted findings:
+1. `dotnet build` succeeds with 0 warnings and 0 errors.
+2. Normal `dotnet run` starts and renders continuously without regression.
+3. `dotnet run -- --smoke-test` runs for the bounded sample window and exits cleanly.
+4. `dotnet run -- --diagnostic baseline` writes a baseline report under `DiagnosticReports/Baseline_<timestamp>/REPORT.md`.
+5. Runtime diagnostics now log FPS, frame time, active world, window size, render-target size, and audio capture status once per second.
+6. `DiagnosticReports/` was correctly added to `.gitignore` as generated output.
+7. Documentation was updated honestly and does not claim the existence of RenderScale, performance profiles, screenshot capture, or sustained-load diagnostics.
+8. No visual, shader, audio, or control behavior was intentionally changed.
+
+Acceptance decision: **ACCEPTED.**
+
+This sign-off does not validate Live/Safe profile behavior, RenderScale behavior, OptiPlex hardware performance, real guitar signal input, sustained-load thermal behavior, screenshot capture, or multi-profile diagnostic sweeps — those remain future phases.
+
+Next required phase: **Live/Safe Profile System Phase 1.**
