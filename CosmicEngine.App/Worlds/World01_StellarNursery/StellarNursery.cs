@@ -54,6 +54,7 @@ namespace CosmicEngine.App.Worlds.World01
             _seed   = (float)(_rng.NextDouble() * 1000.0);
 
             Console.WriteLine($"[StellarNursery] Loaded. Seed: {_seed:F2}");
+            Console.WriteLine("[Startup] StellarNursery loaded successfully");
         }
 
         public void Update(float deltaTime, AudioSignal audio)

@@ -1,6 +1,7 @@
 using CosmicEngine.App.Audio;
 using CosmicEngine.App.Rendering;
 using CosmicEngine.App.Worlds.World01;
+using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using System;
@@ -60,6 +61,11 @@ namespace CosmicEngine.App.Engine
 
         private void OnLoad()
         {
+            Console.WriteLine("[OpenGL] Renderer: " + GL.GetString(StringName.Renderer));
+            Console.WriteLine("[OpenGL] Vendor:   " + GL.GetString(StringName.Vendor));
+            Console.WriteLine("[OpenGL] Version:  " + GL.GetString(StringName.Version));
+            Console.WriteLine("[OpenGL] GLSL:     " + GL.GetString(StringName.ShadingLanguageVersion));
+
             _renderTarget = new RenderTarget(RenderWidth, RenderHeight);
             _activeWorld?.Load();
 

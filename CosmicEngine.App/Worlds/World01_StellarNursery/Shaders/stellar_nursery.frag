@@ -62,7 +62,7 @@ float hash3(vec3 p) {
 
 // 3D value noise: trilinear interpolation over 8 lattice corners.
 // This is the fundamental primitive everything builds on.
-float noise3(vec3 p) {
+float noise3D(vec3 p) {
     vec3 i = floor(p);
     vec3 f = fract(p);
     // Smooth cubic interpolation (removes grid artifacts)
@@ -96,7 +96,7 @@ float fbm3D(vec3 p, float t) {
     for (int i = 0; i < 3; i++) {
         // Slow time evolution per octave (higher octaves evolve faster)
         float tScale = float(i + 1) * 0.0004;
-        v += amp * noise3(p * freq + vec3(t * tScale, float(i) * 7.3, 0.0));
+        v += amp * noise3D(p * freq + vec3(t * tScale, float(i) * 7.3, 0.0));
         freq *= 3.0; // 0.001 -> 0.003 -> 0.009
         amp  *= 0.5; // 1.0   -> 0.5   -> 0.25
     }
