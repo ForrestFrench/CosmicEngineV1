@@ -185,6 +185,41 @@ float henyeyGreenstein(float cosTheta, float g) {
 }
 
 // -------------------------------------------------------
+// POINT STARS
+//
+// A star is a small bounded radial dot in ray-direction space, not a
+// filled hash cell: contribution falls to zero (smoothstep) outside
+// `radius`, so at most a small circle near the cell center is ever lit,
+// never the whole cell.
+// -------------------------------------------------------
+
+float pointStarLayer(vec3 rayDir, float cellFreq, float density, float radius, vec3 offset) {
+    vec3 p     = rayDir * cellFreq + offset;
+    vec3 cell  = floor(p);
+    vec3 local = fract(p);
+
+    float h = hash3(cell);
+    if (h < 1.0 - density) {
+        return 0.0;
+    }
+
+    // Keep the star center away from cell edges so it isn't clipped.
+    vec3 jitter = vec3(
+        hash3(cell + vec3(11.1, 23.7, 5.3)),
+        hash3(cell + vec3(4.9, 31.2, 17.8)),
+        hash3(cell + vec3(19.4, 8.2, 41.6))
+    );
+    vec3 center = mix(vec3(0.35), vec3(0.65), jitter);
+
+    float d = length(local - center);
+
+    float core = smoothstep(radius, 0.0, d);
+    core *= core;
+
+    return core * (0.5 + 0.5 * h);
+}
+
+// -------------------------------------------------------
 // MAIN - VOLUMETRIC RAYMARCHER
 //
 // For each pixel:
@@ -279,15 +314,16 @@ void main() {
     // Stars: rare points from a 3D hash
     vec3 bgColor = vec3(0.012, 0.005, 0.025);
 
-    // Rare embedded stars visible through gaps
+    // Rare embedded stars visible through gaps: bounded point stars, not
+    // filled hash cells (see pointStarLayer above - this replaces the old
+    // whole-cell block that caused square/rectangular/triangular artifacts).
     {
-        vec3  sg  = floor(rayDir * 18.0 + uCamPos * 0.003);
-        float sh  = hash3(sg);
-        if (sh > 0.94) {
-            float sT  = mix(3000.0, 28000.0, hash3(sg + vec3(0.5)));
-            float stw = 0.5 + 0.5 * sin(uTime * (0.5 + sh * 1.4) + sh * 50.0);
-            bgColor  += blackbodyColor(sT) * (sh - 0.94) * 20.0 * stw;
-        }
+        float s1 = pointStarLayer(rayDir, 45.0, 0.025, 0.06,  uCamPos * 0.001);
+        float s2 = pointStarLayer(rayDir, 90.0, 0.012, 0.045, uCamPos * 0.002);
+        float star = s1 + s2;
+
+        vec3 starColor = mix(vec3(0.65, 0.75, 1.0), vec3(1.0, 0.82, 0.58), hash3(rayDir * 13.7));
+        bgColor += starColor * star * 0.35;
     }
 
     // Final composite

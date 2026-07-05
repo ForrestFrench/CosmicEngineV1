@@ -87,10 +87,19 @@ namespace CosmicEngine.App.Worlds.World01
             _shader.SetFloat("uTime", _time);
             _shader.SetFloat("uSeed", _seed);
 
-            // Camera
+            // Camera (legacy 2D drift/zoom - unused by this shader, see uCam* below)
             _shader.SetFloat("uZoom",   _camera.Zoom);
             _shader.SetFloat("uDriftX", _camera.Offset.X);
             _shader.SetFloat("uDriftY", _camera.Offset.Y);
+
+            // 3D camera basis the raymarcher actually uses. Fixed placement ~200 ly
+            // out looking back toward the origin, per the shader's documented setup.
+            // (Baseline Recovery Pass 2: these were never set, so they defaulted to
+            // vec3(0), making rayDir a 0/0 NaN and the whole scene render black.)
+            _shader.SetVector3("uCamPos",     0f, 0f, -200f);
+            _shader.SetVector3("uCamForward", 0f, 0f, 1f);
+            _shader.SetVector3("uCamRight",   1f, 0f, 0f);
+            _shader.SetVector3("uCamUp",      0f, 1f, 0f);
 
             // World memory - normalised so 1.0 represents ~1 hour of performance
             _shader.SetFloat("uPerfTime",   _perfTime);
@@ -98,17 +107,22 @@ namespace CosmicEngine.App.Worlds.World01
             _shader.SetFloat("uCumEnergy2", MathF.Min(_cumEnergy2 / 180f, 1f));
 
             // Guitar 1 - Creator
-            _shader.SetFloat("uBass1",   Calibrate(_sBass1,   BassFloor,   BassMax));
+            float bass1 = Calibrate(_sBass1, BassFloor, BassMax);
+            _shader.SetFloat("uBass1",   bass1);
             _shader.SetFloat("uMid1",    Calibrate(_sMid1,    MidFloor,    MidMax));
             _shader.SetFloat("uTreble1", Calibrate(_sTreble1, TrebleFloor, TrebleMax));
             _shader.SetFloat("uLevel1",  MathF.Min(_sLevel1 * 5f, 1f));
 
             // Guitar 2 - Sculptor
-            _shader.SetFloat("uBass2",   Calibrate(_sBass2,   BassFloor,   BassMax));
+            float bass2 = Calibrate(_sBass2, BassFloor, BassMax);
+            _shader.SetFloat("uBass2",   bass2);
             _shader.SetFloat("uMid2",    Calibrate(_sMid2,    MidFloor,    MidMax));
             _shader.SetFloat("uTreble2", Calibrate(_sTreble2, TrebleFloor, TrebleMax));
             _shader.SetFloat("uLevel2",  MathF.Min(_sLevel2 * 5f, 1f));
 
+            // uBassCombined was also never set (defaulted to 0) - drives the shader's
+            // final brightness envelope alongside uDimLevel.
+            _shader.SetFloat("uBassCombined",   MathF.Max(bass1, bass2));
             _shader.SetFloat("uDimLevel",       Tuning.DimLevel);
             _shader.SetFloat("uBassBrightness", Tuning.BassBrightness);
 

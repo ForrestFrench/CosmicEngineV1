@@ -168,3 +168,217 @@ Acceptance decision: **ACCEPTED.**
 This sign-off does not validate Live/Safe profile behavior, RenderScale behavior, OptiPlex hardware performance, real guitar signal input, sustained-load thermal behavior, screenshot capture, or multi-profile diagnostic sweeps — those remain future phases.
 
 Next required phase: **Live/Safe Profile System Phase 1.**
+
+---
+
+## Entry 4 — Baseline Recovery Pass 2 — Visible Frame and Process Cleanup
+
+**Date:** 2026-07-05
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _(blank — pending review)_
+
+### User-reported issues
+1. Cosmic Engine is sometimes left running after diagnostics or test runs, slowing down the user's computer until manually closed.
+2. When Cosmic Engine runs, the user sees a black screen.
+
+### Investigation steps
+- Reviewed `OnUnload()`: confirmed `AudioEngine.Stop()` and `ControlServer.Stop()` were already both called, and both `AudioCaptureThread` and the `ControlServer` thread are `IsBackground = true` (daemon) threads — neither should keep the process alive on its own.
+- Re-ran `--smoke-test` and `--diagnostic baseline` and checked `ps aux` immediately after each: exit code 0, no `CosmicEngine.App.dll` process remained in either case, before any code changes were made for this pass.
+- For the black screen, isolated the render path per the required investigation list by building a new `--diagnostic visual` mode with three bounded phases, each capturing a screenshot + luminance reading:
+  1. **Solid color** (no shader, direct `GL.Clear` on the render target) — isolates the window/render-target/blit path.
+  2. **Debug gradient shader** (`Diagnostics/Shaders/debug_gradient.{vert,frag}`, no uniforms, no dependency on world state) — isolates the shader-compile/quad/uniform pipeline.
+  3. **Normal StellarNursery** — the actual scene, rendered as-is.
+- Grepped `stellar_nursery.frag` for every uniform it declares against every `_shader.SetFloat`/`SetVector3` call in `StellarNursery.cs`.
+
+### Root cause
+`stellar_nursery.frag` declares `uniform vec3 uCamPos, uCamForward, uCamRight, uCamUp;` — a 3D camera basis the raymarcher's `rayDir` calculation depends on — plus `uniform float uBassCombined;`. **None of these five uniforms were ever set anywhere in `StellarNursery.cs`.** OpenGL defaults unset uniforms to zero, so `uCamForward`/`uCamRight`/`uCamUp` were all `vec3(0,0,0)`. The shader computes:
+```glsl
+vec3 rayDir = normalize(uCamForward + ndc.x*aspect*tanHalfFov*uCamRight + ndc.y*tanHalfFov*uCamUp);
+```
+With all three inputs zero, this is `normalize(vec3(0))` — a `0/0` NaN — which propagates through the entire raymarch loop and renders black. `uBassCombined` being unset (defaulting to 0) additionally pinned the final brightness envelope (`color *= uDimLevel + uBassCombined * uBassBrightness`) to just `uDimLevel` (0.20), compounding the dimness even where the NaN issue didn't dominate.
+
+This was an incomplete-migration bug, not a regression from Baseline Recovery Pass 1 or Runtime Diagnostics Phase 1 — the uniforms were missing before either of those passes touched this file.
+
+### Fix applied
+In `StellarNursery.cs`, `Render()` now sets:
+- `uCamPos = (0, 0, -200)`, `uCamForward = (0, 0, 1)`, `uCamRight = (1, 0, 0)`, `uCamUp = (0, 1, 0)` — a fixed camera ~200 ly from the origin looking toward it, matching the shader's own doc comment ("Camera: ~200 ly from origin, looking forward through the nebula").
+- `uBassCombined = max(calibrated uBass1, calibrated uBass2)`, reusing the same calibrated values already computed for `uBass1`/`uBass2`.
+
+No shader logic, art direction, or scene composition was changed — this is strictly a "set the uniforms the shader already expected" fix.
+
+Additionally, for the process-cleanup issue: `Environment.Exit(0)` was added at the end of `OnUnload()`, gated to only fire when `--smoke-test`, `--diagnostic baseline`, or `--diagnostic visual` was requested — a hard guarantee on top of the already-correct `Stop()`/daemon-thread behavior, directly targeting the user's report. `CLAUDE.md` was updated with the requested standing rule to prefer bounded commands and to explicitly stop normal `dotnet run` before reporting completion.
+
+### Build result
+`dotnet build` — succeeded, 0 warnings, 0 errors.
+
+### Run/diagnostic result
+- `dotnet run -- --smoke-test`: 8.0s, avg fps 57.9, exit code 0, no orphaned process.
+- `dotnet run -- --diagnostic baseline`: 8.0s, avg fps 59.4, `REPORT.md` written, exit code 0, no orphaned process.
+- `dotnet run -- --diagnostic visual`: all three phases confirmed non-black:
+  - SolidColor: average luminance 0.285, 100.0% non-black pixels
+  - Gradient: average luminance 0.500, 100.0% non-black pixels
+  - StellarNursery: average luminance 0.318, 100.0% non-black pixels
+  Screenshots (PPM) manually converted to PNG and visually inspected — solid magenta fill, a clean diagonal color gradient, and a dark-teal nebula field respectively, confirming the logged numbers.
+- `ps aux` checked after each run: no `CosmicEngine.App.dll` process remained in any case.
+
+### Screenshots/report path
+`DiagnosticReports/Visual_20260705_122748/` — `SolidColor.ppm`, `Gradient.ppm`, `StellarNursery.ppm`, `REPORT.md` (this directory is gitignored, generated output, not committed).
+
+### Known limitations
+- The fixed StellarNursery camera is static and placed for correctness, not composed for visual polish — camera framing/motion remains a future visual-polish decision.
+- Screenshots are raw PPM (NetPBM), not PNG — no image-encoding dependency was added to keep this pass minimal; convertible with e.g. `sips -s format png shot.ppm --out shot.png` on macOS.
+- Visual-test phases are short (2s each) — a pass/fail visibility check, not a sustained visual QA pass.
+- No RenderScale, Live/Safe profile system, or performance-profile work was in scope for this pass.
+- No physical OptiPlex validation performed.
+- Real guitar/audio-interface hardware validation still pending (unchanged from prior entries).
+- Tuning/calibration duplication between `Tuning.cs` and `StellarNursery.cs` remains unresolved (unchanged from prior entries).
+
+---
+
+## Entry 5 — Diagnostic Review Package — Visible Frame / Black Screen Investigation
+
+**Date:** 2026-07-05
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _(blank — pending review)_
+
+### Purpose
+Assemble a single, self-contained diagnostic package (`DiagnosticReports/ReviewPackage_<timestamp>.zip`) for external (ChatGPT) review of the black-screen investigation, without requiring the user to manually copy terminal output or screenshots.
+
+### Commands run
+```bash
+dotnet build
+dotnet run -- --smoke-test
+dotnet run -- --diagnostic baseline
+dotnet run -- --diagnostic visual
+```
+All four succeeded (exit code 0 each); full output captured under `logs/` in the package.
+
+### Small addition made to support this pass
+`--diagnostic visual`'s `CaptureVisualFrame` (added in Baseline Recovery Pass 2) now also records **min** and **max** luminance per phase (previously only average + non-black %), and saves an extra grayscale luminance-debug PPM for the StellarNursery phase specifically (`StellarNursery_Luminance.ppm`). No other behavior changed. PPM screenshots were converted to PNG for the package using macOS's built-in `sips` (no new C# image-encoding dependency added, consistent with Pass 2's stated approach).
+
+### Screenshots captured
+`solid_color_render_path.png`, `gradient_or_colorbars_shader.png`, `stellar_nursery_normal.png`, `stellar_nursery_luminance_debug.png`, `final_frame.png` (identical to `stellar_nursery_normal.png` — see note below).
+
+**Note on `final_frame.png`:** rather than launching a separate open-ended `dotnet run` and capturing a screenshot from it (which would have meant babysitting and force-closing an unbounded process, directly against this pass's critical process rule), the StellarNursery phase of the bounded `--diagnostic visual` run was reused for both `stellar_nursery_normal.png` and `final_frame.png`, since both are "the world's actual render output." Documented transparently rather than silently duplicated.
+
+### Build/run results
+- `dotnet build`: succeeded, 0 warnings, 0 errors.
+- `dotnet run -- --smoke-test`: 8.0s, avg fps 58.5, exit code 0.
+- `dotnet run -- --diagnostic baseline`: 8.0s, avg fps 58.6, `REPORT.md` written, exit code 0.
+- `dotnet run -- --diagnostic visual`: all 3 phases 100% non-black by the >0.02 luminance threshold; screenshots + luminance-debug view + `REPORT.md` written.
+
+### Black-screen finding — important nuance beyond Pass 2
+The deterministic cause fixed in Baseline Recovery Pass 2 (unset camera-basis uniforms producing a `normalize(vec3(0))` NaN) is confirmed fixed. **However, running `--diagnostic visual` three times back-to-back with different random seeds produced StellarNursery average luminance of 0.318, 0.090, and 0.142 respectively** — and the 0.090 run had a luminance range of only 0.090–0.096 across the *entire frame*, which reads as visually flat/near-black to a human even though it is "100% non-black" by the >0.02 threshold used here. This strongly suggests a **secondary, seed-dependent issue**: the fixed static camera (`uCamPos = (0,0,-200)`, looking toward the origin) does not reliably intersect a visually-interesting density region of the noise field for every random seed, since `uSeed` shifts the entire hash-based noise field (`hash3`'s `p = fract(p * ... + uSeed * 0.017)`). Some seeds land the camera's fixed march range in a low-density, low-contrast part of the field. This was not investigated further or fixed in this pass — it is out of scope (no scene rewrite / no camera-path design in this diagnostic pass) but is flagged as the most likely explanation if the user still perceives a black or near-black screen intermittently after Pass 2.
+
+### Zip created
+`DiagnosticReports/ReviewPackage_20260705_163227.zip`
+
+### Known limitations
+- The >0.02 non-black-pixel threshold does not distinguish "visually flat and dim" from "genuinely varied and visible" — the min/max luminance spread added in this pass is a better signal and should be preferred going forward.
+- Seed-to-seed StellarNursery brightness/contrast variance (0.090–0.318 avg luminance observed across 3 runs) is unresolved and is the most likely remaining source of a perceived black/near-black screen.
+- Screenshots are single frames from short (2s) bounded phases, not a sustained visual QA pass.
+- No RenderScale, Live/Safe profile system, or scene/camera-path redesign was in scope for this pass.
+- No physical OptiPlex validation performed.
+- Real guitar/audio-interface hardware validation still pending (unchanged from prior entries).
+
+---
+
+## Entry 6 — Stellar Nursery Regression Recovery
+
+**Date:** 2026-07-05
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _(blank — pending review)_
+
+### Original issue
+Square/rectangular artifacts around stars in the Stellar Nursery scene.
+
+### Regression treated as separate from the original issue
+Entries 4–5 above treated a flat/black scene as the primary defect. This pass was explicitly scoped to *not* treat that flat/dark output as the artistic baseline — it is a regression on top of whatever state the square-star-artifact bug was originally observed in. The original star-artifact bug was never the subject of Entries 4–5 and remains unfixed.
+
+### Investigation performed
+- Full `git log -p --follow` history of `StellarNursery.cs` and `stellar_nursery.frag` inspected. Only two commits ever touch either file (`951bfee`, `8719a03`); neither ever set `uCamPos`/`uCamForward`/`uCamRight`/`uCamUp`/`uBassCombined`. **No committed "last known good" state exists** — every commit since the initial implementation has the identical NaN/black defect, so a `git worktree` comparison against an older commit would not have shown a different result and was not performed (source-inspection evidence was conclusive).
+- Ran a controlled A/B test: `git stash`ed the (already-uncommitted) camera-uniform fix in `StellarNursery.cs`, rebuilt, and ran bounded `--diagnostic visual` to confirm the pre-fix state is a perfectly flat single-value frame (min = max = avg luminance = 0.051). Restored the stash, rebuilt, and re-ran the same diagnostic to confirm the post-fix state has real spatial variance and visible nebula/star structure.
+- Discovered and fixed a **build-hygiene regression** unrelated to the shader bug: `CosmicEngine.App.csproj` had no exclude for `DiagnosticReports/`, so a previously-extracted review package's `source_context/*.cs` snapshot files were being picked up by the SDK's default compile glob, causing `dotnet build` to fail with 45 `CS0111` duplicate-member errors. Fixed via a `<Compile Remove="DiagnosticReports/**" />` / `<None Remove="DiagnosticReports/**" />` exclude in the `.csproj`, and removed the stale extracted folder (the `.zip` deliverable itself was preserved).
+
+### Root cause
+Same root cause as Entry 4 (unset `uCamPos`/`uCamForward`/`uCamRight`/`uCamUp`/`uBassCombined` uniforms causing a `normalize(vec3(0))` NaN) — confirmed by A/B test in this pass, not a new finding. The fix for this was already sitting uncommitted in the working tree at the start of this pass; this pass verified it, did not alter its logic, and additionally fixed the unrelated build-hygiene issue above.
+
+### Fix applied
+1. No new shader/camera/uniform code changes — the existing uncommitted `uCamPos`/`uCamForward`/`uCamRight`/`uCamUp`/`uBassCombined` fix in `StellarNursery.cs` was verified correct via the A/B test and left as-is.
+2. Added a `DiagnosticReports/` compile-exclude to `CosmicEngine.App.csproj` (build hygiene, see above).
+
+### Screenshots / package path
+`DiagnosticReports/StellarRegressionRecovery_20260705_170911.zip` (extracted folder: `DiagnosticReports/StellarRegressionRecovery_20260705_170911/`), containing `REPORT.md`, `screenshots/`, `logs/`, `source_context/`, `git/`, `audit/`.
+
+### Build/run results
+- `dotnet build`: succeeded, 0 warnings, 0 errors (after the csproj fix).
+- `dotnet run -- --smoke-test`: 8.0s, avg fps 48.1, 386 frames, exit code 0, no orphaned process.
+- `dotnet run -- --diagnostic baseline`: 8.0s, `REPORT.md` written, exit code 0, no orphaned process.
+- `dotnet run -- --diagnostic visual`: run twice pre-fix/post-fix plus additional seed samples; all bounded, all exited cleanly, no orphaned process at any point (`ps aux` checked after every run).
+
+### Remaining star-artifact status
+**Square/rectangular star artifacts are still present** after this recovery pass — visible in `restored_stellar_after_recovery.png`, `stellar_nursery_luminance_debug.png`, and a cropped close-up `star_artifact_closeup.png` in the review package. Root cause identified (not fixed, out of scope for this pass): stars are placed by flooring the per-pixel ray direction into a voxel grid (`floor(rayDir * 18.0 + uCamPos * 0.003)`) and hash-testing each voxel — since ray direction varies roughly linearly across a narrow-FOV screen, each voxel projects to a whole flat-shaded rectangular region of screen space rather than a small point/sprite. The rest of the nebula scene (gradient, color, gas structure) is otherwise visually coherent.
+
+### Known limitations
+- No committed "last known good" Stellar Nursery state exists to reference — see investigation notes above.
+- Seed-dependent brightness/contrast variance (avg luminance observed 0.051–0.318 across different seeds with the fixed camera) remains unresolved; some seeds still look flat/near-black or uniformly fogged even with the camera-uniform fix in place. Not fixed in this pass (would require camera-path or scene design changes, out of scope).
+- No dedicated "stars-only" diagnostic render mode exists.
+- Original star-artifact bug (square/rectangular star shapes) is root-caused but not fixed — recommended as the next concrete piece of work.
+- No physical OptiPlex hardware validation performed. Audio interface was capturing but silent (levels 0.000) throughout — no real guitar signal exercised.
+
+### Recommended next action
+Fix the star-placement math in `stellar_nursery.frag` (the `floor(rayDir * 18.0 + uCamPos * 0.003)` voxel-hash block) so stars render as small soft points rather than flat-shaded rectangular cells.
+
+---
+
+## Entry 7 — Star Artifact Fix — Replace Cell-Fill Stars with Point Stars
+
+**Date:** 2026-07-05
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — **ACCEPTED** (2026-07-05)
+
+**Review scope:** Reviewed `StarArtifactFix_20260705_172314.zip`, including `REPORT.md`, before/after screenshots, star close-up screenshot, shader diff, build/run results, process-cleanup notes, and audit/project-state context.
+
+**Accepted findings:**
+1. The original star artifact was correctly identified as whole-cell star rendering in `stellar_nursery.frag`, where `floor(rayDir * 18.0 + uCamPos * 0.003)` selected a ray-direction cell and applied color to the entire cell.
+2. The resulting artifacts appeared as large square/rectangular/triangular patches rather than point stars.
+3. The fix replaced the whole-cell star block with bounded radial point-star layers using finite `smoothstep` falloff.
+4. The new stars render as small bounded points, confirmed by `after_star_closeup.png`.
+5. The large square/rectangular/triangular star patches visible in `before_star_artifact.png` are not present in the after screenshots.
+6. The fix is appropriately scoped to the star block and does not intentionally change the nebula raymarching, camera, audio, tuning, RenderScale, or profile systems.
+7. `dotnet build` succeeds and bounded diagnostics exit without leaving an orphan process.
+
+**Acceptance decision: ACCEPTED** for the original star-square artifact fix.
+
+**Important limitation (reviewer note):** This sign-off does not accept the overall Stellar Nursery visual baseline as finished. The after full-frame image remains very dark/sparse and lacks strong nebula structure. That is deferred to a separate visual recovery/tuning pass (see Recommended next action, updated below).
+
+### Original issue
+Stars in Stellar Nursery rendered as large, hard-edged square/rectangular/triangular cells instead of small soft points (root-caused in Entry 6, fixed in this pass).
+
+### Root cause
+In `stellar_nursery.frag`, the star block hashed a floored `rayDir` voxel (`floor(rayDir * 18.0 + uCamPos * 0.003)`) and, above a threshold, added flat color to the **entire cell**. Since `rayDir` varies roughly linearly across a narrow-FOV screen, each voxel projected to a whole contiguous rectangular/triangular region of screen space with hard cell-boundary edges.
+
+### Files changed
+- `CosmicEngine.App/Worlds/World01_StellarNursery/Shaders/stellar_nursery.frag` (only file with logic changes this pass; +52/-8 lines, isolated to the star block and one new helper function)
+
+### Fix summary
+Added a `pointStarLayer(rayDir, cellFreq, density, radius, offset)` helper: still hashes a floored `rayDir` cell to decide whether it contains a star, but places a jittered star **center** inside the cell and computes a `smoothstep(radius, 0.0, distanceFromCenter)` radial falloff (squared), bounded to exactly zero outside `radius`. Replaced the old whole-cell block in `main()` with two `pointStarLayer` calls at different cell frequencies/densities/radii, summed and tinted with a simple hash-based cool/warm color. No changes to the raymarch loop, nebula density field, camera uniforms, audio uniforms, or tuning values.
+
+### Build/run results
+- `dotnet build`: succeeded, 0 warnings, 0 errors.
+- `dotnet run -- --smoke-test`: 8.0s, avg fps 59.1, 473 frames, exit code 0, no orphaned process.
+- `dotnet run -- --diagnostic visual`: run multiple times across different random seeds; shader compiled and ran in every case (a GLSL compile error would have thrown at `Load()`); stars confirmed rendering as small bounded dots with no square/rectangular/triangular cells in any run.
+- `ps aux` checked after every run in this pass: no orphaned process at any point.
+
+### Screenshots / package path
+`DiagnosticReports/StarArtifactFix_20260705_172314.zip` (extracted folder: `DiagnosticReports/StarArtifactFix_20260705_172314/`), containing `REPORT.md`, `screenshots/`, `logs/`, `source_context/`, `git/`, `audit/`. Screenshots confirm: `before_star_artifact.png` (sharp rectangular/triangular blobs, carried over from Entry 6's capture), `after_stellar_full_frame.png` and `after_luminance_debug.png` (small scattered dots, no cells), `after_star_closeup.png` (single soft round dot with visible radial falloff), `solid_color_render_path.png` and `gradient_or_colorbars_shader.png` (render-path/shader-pipeline sanity checks, unaffected).
+
+### Known limitations
+- Star design is deliberately conservative (two simple radial layers, no twinkle/temperature variation) — may need later artistic polish, explicitly out of scope for this pass.
+- Seed-dependent nebula framing/brightness (Entry 6) is unaffected by this fix and still varies run to run.
+- No RenderScale / Live/Safe profile system yet.
+- No physical OptiPlex hardware validation performed.
+- No real guitar/audio-interface signal exercised beyond passive capture-device presence (levels 0.000 — silence, not a fault).
+
+### Recommended next action
+Per reviewer sign-off: commit this accepted star-artifact fix as its own commit, then perform a separate Stellar Nursery visual recovery/tuning pass focused on restoring visible nebula structure (the after full-frame screenshots are still very dark/sparse) and producing deterministic review screenshots (e.g. a fixed `uSeed` for diagnostic capture instead of the current per-load random seed).

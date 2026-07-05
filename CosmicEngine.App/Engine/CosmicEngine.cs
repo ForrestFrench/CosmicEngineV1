@@ -5,7 +5,9 @@ using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
 
 namespace CosmicEngine.App.Engine
 {
@@ -50,6 +52,19 @@ namespace CosmicEngine.App.Engine
         private string _glVersion  = "";
         private string _glslVersion = "";
 
+        // Visible-frame diagnostic (Baseline Recovery Pass 2) - runs 3 short phases,
+        // captures a screenshot + luminance reading per phase, then exits.
+        private enum VisualPhase { SolidColor, Gradient, StellarNursery, Done }
+        private const float VisualPhaseDurationSeconds = 2f;
+        private bool         _visualTestMode;
+        private VisualPhase  _visualPhase = VisualPhase.SolidColor;
+        private float        _visualPhaseElapsed;
+        private bool         _visualPhaseCaptured;
+        private string       _visualReportDir = "";
+        private ShaderProgram? _debugGradientShader;
+        private FullscreenQuad? _debugQuad;
+        private readonly List<(string Label, double AvgLuminance, double MinLuminance, double MaxLuminance, double NonBlackPct, string ScreenshotPath)> _visualResults = new();
+
         public CosmicEngineApp()
         {
             var nativeSettings = new NativeWindowSettings()
@@ -93,12 +108,19 @@ namespace CosmicEngine.App.Engine
                     _smokeTestMode  = true; // diagnostic mode needs a bounded sample window too
                     i++;
                 }
+                else if (args[i] == "--diagnostic" && i + 1 < args.Length && args[i + 1] == "visual")
+                {
+                    _visualTestMode = true;
+                    i++;
+                }
             }
 
             if (_smokeTestMode)
                 Console.WriteLine($"[Smoke Test] Enabled — will run for {SmokeTestDurationSeconds:F0}s then exit.");
             if (_diagnosticMode)
                 Console.WriteLine("[Diagnostic] Baseline report will be written on exit.");
+            if (_visualTestMode)
+                Console.WriteLine($"[Visual Test] Enabled — 3 phases x {VisualPhaseDurationSeconds:F0}s (solid color, gradient, StellarNursery), then exit.");
         }
 
         private void OnLoad()
@@ -116,6 +138,19 @@ namespace CosmicEngine.App.Engine
             _renderTarget = new RenderTarget(RenderWidth, RenderHeight);
             _activeWorld?.Load();
 
+            if (_visualTestMode)
+            {
+                _debugGradientShader = new ShaderProgram(
+                    Path.Combine("Diagnostics", "Shaders", "debug_gradient.vert"),
+                    Path.Combine("Diagnostics", "Shaders", "debug_gradient.frag"));
+                _debugQuad = new FullscreenQuad();
+
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                _visualReportDir = Path.Combine("DiagnosticReports", $"Visual_{timestamp}");
+                Directory.CreateDirectory(_visualReportDir);
+                Console.WriteLine($"[Visual Test] Report directory: {_visualReportDir}");
+            }
+
             Console.WriteLine("[CosmicEngine] Started.");
             Console.WriteLine($"  Internal render resolution: {RenderWidth}x{RenderHeight}");
             Console.WriteLine("  Window can be resized freely - shader cost stays fixed.");
@@ -127,6 +162,12 @@ namespace CosmicEngine.App.Engine
             if (_exitRequested) return;
 
             float dt = (float)args.Time;
+
+            if (_visualTestMode)
+            {
+                RunVisualTestFrame(dt);
+                return;
+            }
 
             var signal = BuildAudioSignal();
 
@@ -236,12 +277,208 @@ namespace CosmicEngine.App.Engine
             Console.WriteLine($"[Diagnostic] Report written to {reportPath}");
         }
 
+        /// <summary>
+        /// Runs one of three bounded phases (solid color -> gradient shader -> normal
+        /// StellarNursery), capturing a screenshot + luminance reading near the end of
+        /// each, then exits. See AUDIT.md "Baseline Recovery Pass 2" for why this exists:
+        /// it isolates whether a black screen comes from the window/blit path, the
+        /// shader/quad pipeline, or the world's own rendering.
+        /// </summary>
+        private void RunVisualTestFrame(float dt)
+        {
+            _visualPhaseElapsed += dt;
+            _renderTarget!.Bind();
+
+            switch (_visualPhase)
+            {
+                case VisualPhase.SolidColor:
+                    // Bright, unmistakable color with no shader involved at all -
+                    // isolates the window/render-target/blit path.
+                    GL.ClearColor(1f, 0f, 1f, 1f);
+                    GL.Clear(ClearBufferMask.ColorBufferBit);
+                    break;
+
+                case VisualPhase.Gradient:
+                    // Isolated debug shader with no uniforms - isolates the
+                    // shader-compile/quad/uniform pipeline from world-specific state.
+                    _debugGradientShader!.Use();
+                    _debugQuad!.Draw();
+                    break;
+
+                case VisualPhase.StellarNursery:
+                    // The real world, rendered normally - proves (or disproves) that
+                    // the actual scene output is non-black after the uniform fix.
+                    var signal = BuildAudioSignal();
+                    _camera.Update(dt, signal.Bass1);
+                    _activeWorld?.Update(dt, signal);
+                    _activeWorld?.Render();
+                    break;
+            }
+
+            var fb = _window.FramebufferSize;
+            _renderTarget.BlitToScreen(fb.X, fb.Y);
+
+            if (!_visualPhaseCaptured && _visualPhaseElapsed >= VisualPhaseDurationSeconds * 0.75f)
+            {
+                _visualPhaseCaptured = true;
+                CaptureVisualFrame(_visualPhase.ToString());
+            }
+
+            _window.SwapBuffers();
+
+            if (_visualPhaseElapsed >= VisualPhaseDurationSeconds)
+            {
+                _visualPhaseElapsed   = 0f;
+                _visualPhaseCaptured  = false;
+                _visualPhase = _visualPhase switch
+                {
+                    VisualPhase.SolidColor     => VisualPhase.Gradient,
+                    VisualPhase.Gradient       => VisualPhase.StellarNursery,
+                    VisualPhase.StellarNursery => VisualPhase.Done,
+                    _                          => VisualPhase.Done
+                };
+
+                if (_visualPhase == VisualPhase.Done && !_exitRequested)
+                {
+                    _exitRequested = true;
+                    WriteVisualReport();
+                    _window.Close();
+                }
+            }
+        }
+
+        /// <summary>Reads the back buffer, logs average luminance / non-black %, and saves a PPM screenshot.</summary>
+        private void CaptureVisualFrame(string label)
+        {
+            var fb = _window.FramebufferSize;
+            int w = fb.X, h = fb.Y;
+            byte[] pixels = new byte[w * h * 3];
+
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
+            GL.ReadPixels(0, 0, w, h, PixelFormat.Rgb, PixelType.UnsignedByte, pixels);
+
+            double sumLuminance = 0;
+            float  minLuminance = 1f;
+            float  maxLuminance = 0f;
+            long   nonBlackCount = 0;
+            byte[]? grayscale = label == "StellarNursery" ? new byte[w * h] : null;
+
+            for (int i = 0, p = 0; i < pixels.Length; i += 3, p++)
+            {
+                float r = pixels[i]     / 255f;
+                float g = pixels[i + 1] / 255f;
+                float b = pixels[i + 2] / 255f;
+                float luminance = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+                sumLuminance += luminance;
+                if (luminance < minLuminance) minLuminance = luminance;
+                if (luminance > maxLuminance) maxLuminance = luminance;
+                if (luminance > 0.02f) nonBlackCount++;
+                if (grayscale != null) grayscale[p] = (byte)Math.Clamp(luminance * 255f, 0f, 255f);
+            }
+
+            long   totalPixels = (long)w * h;
+            double avgLuminance = sumLuminance / totalPixels;
+            double nonBlackPct  = 100.0 * nonBlackCount / totalPixels;
+
+            Console.WriteLine($"[Visual Test] {label}: average luminance: {avgLuminance:F3}");
+            Console.WriteLine($"[Visual Test] {label}: min luminance: {minLuminance:F3} | max luminance: {maxLuminance:F3}");
+            Console.WriteLine($"[Visual Test] {label}: non-black pixels: {nonBlackPct:F1}%");
+
+            string screenshotPath = Path.Combine(_visualReportDir, $"{label}.ppm");
+            SavePpm(screenshotPath, w, h, pixels);
+            Console.WriteLine($"[Visual Test] {label}: screenshot saved to {screenshotPath}");
+
+            if (grayscale != null)
+            {
+                // Luminance debug view: same frame, mapped to grayscale, to help tell
+                // "truly black" apart from "very dim but technically non-zero."
+                string lumPath = Path.Combine(_visualReportDir, $"{label}_Luminance.ppm");
+                SavePpmGrayscale(lumPath, w, h, grayscale);
+                Console.WriteLine($"[Visual Test] {label}: luminance debug view saved to {lumPath}");
+            }
+
+            _visualResults.Add((label, avgLuminance, minLuminance, maxLuminance, nonBlackPct, screenshotPath));
+        }
+
+        /// <summary>
+        /// Writes a raw PPM (P6/NetPBM) screenshot. Chosen over PNG to avoid adding an
+        /// image-encoding dependency for this diagnostic pass - view with any NetPBM-aware
+        /// tool, or convert (e.g. macOS: `sips -s format png shot.ppm --out shot.png`).
+        /// </summary>
+        private static void SavePpm(string path, int width, int height, byte[] rgb)
+        {
+            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+            byte[] header = Encoding.ASCII.GetBytes($"P6\n{width} {height}\n255\n");
+            fs.Write(header, 0, header.Length);
+
+            // GL.ReadPixels returns rows bottom-to-top; PPM expects top-to-bottom.
+            int stride = width * 3;
+            for (int y = height - 1; y >= 0; y--)
+                fs.Write(rgb, y * stride, stride);
+        }
+
+        /// <summary>Writes a single-channel luminance map as a grayscale PPM (P5).</summary>
+        private static void SavePpmGrayscale(string path, int width, int height, byte[] gray)
+        {
+            using var fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+            byte[] header = Encoding.ASCII.GetBytes($"P5\n{width} {height}\n255\n");
+            fs.Write(header, 0, header.Length);
+
+            int stride = width;
+            for (int y = height - 1; y >= 0; y--)
+                fs.Write(gray, y * stride, stride);
+        }
+
+        private void WriteVisualReport()
+        {
+            string reportPath = Path.Combine(_visualReportDir, "REPORT.md");
+            var sb = new StringBuilder();
+
+            sb.AppendLine("# Visible-Frame Diagnostic Report");
+            sb.AppendLine();
+            sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+            sb.AppendLine("## OpenGL");
+            sb.AppendLine($"- Renderer: {_glRenderer}");
+            sb.AppendLine($"- Vendor: {_glVendor}");
+            sb.AppendLine($"- Version: {_glVersion}");
+            sb.AppendLine($"- GLSL: {_glslVersion}");
+            sb.AppendLine();
+            sb.AppendLine("## Phases");
+
+            foreach (var r in _visualResults)
+            {
+                sb.AppendLine($"### {r.Label}");
+                sb.AppendLine($"- Average luminance: {r.AvgLuminance:F3}");
+                sb.AppendLine($"- Min luminance: {r.MinLuminance:F3} | Max luminance: {r.MaxLuminance:F3}");
+                sb.AppendLine($"- Non-black pixels: {r.NonBlackPct:F1}%");
+                sb.AppendLine($"- Screenshot: `{Path.GetFileName(r.ScreenshotPath)}` (PPM/NetPBM format)");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("## Known limitations");
+            sb.AppendLine("- Screenshots are raw PPM, not PNG - no image-encoding dependency was added to keep this pass minimal.");
+            sb.AppendLine($"- Each phase samples for {VisualPhaseDurationSeconds:F0}s; this is a pass/fail visibility check, not a sustained visual QA pass.");
+
+            File.WriteAllText(reportPath, sb.ToString());
+            Console.WriteLine($"[Visual Test] Report written to {reportPath}");
+        }
+
         private void OnUnload()
         {
             _activeWorld?.Unload();
             _renderTarget?.Dispose();
+            _debugGradientShader?.Dispose();
+            _debugQuad?.Dispose();
             AudioEngine.Stop();
             ControlServer.Stop();
+
+            // Belt-and-suspenders process exit for bounded test/diagnostic modes: the
+            // window is already closing and both background threads above are daemon
+            // threads that should let the process exit on their own, but a user-reported
+            // issue was Cosmic Engine being left running after test runs. Force it.
+            if (_smokeTestMode || _diagnosticMode || _visualTestMode)
+                Environment.Exit(0);
         }
 
         private static AudioSignal BuildAudioSignal() => new AudioSignal

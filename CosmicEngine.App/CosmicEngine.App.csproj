@@ -13,4 +13,13 @@
     <PackageReference Include="OpenTK" Version="4.9.4" />
   </ItemGroup>
 
+  <!-- DiagnosticReports/ holds generated review packages, including source-code
+       snapshots under source_context/. Without this exclude, the SDK's default
+       **/*.cs glob picks those snapshots up as real compile items and every build
+       after a package is generated fails with CS0111 duplicate-member errors. -->
+  <ItemGroup>
+    <Compile Remove="DiagnosticReports/**" />
+    <None Remove="DiagnosticReports/**" />
+  </ItemGroup>
+
 </Project>

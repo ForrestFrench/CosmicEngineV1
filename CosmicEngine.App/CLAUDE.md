@@ -13,9 +13,14 @@ Run from this directory (`CosmicEngine.App/`, which contains the `.csproj`; the 
 ```bash
 dotnet build          # build
 dotnet run             # run — opens a window, starts audio capture, and starts the control server
+dotnet run -- --smoke-test          # bounded ~8s run, prints an fps/frame-time summary, exits cleanly
+dotnet run -- --diagnostic baseline # same, plus writes DiagnosticReports/Baseline_<timestamp>/REPORT.md
+dotnet run -- --diagnostic visual   # bounded 3-phase visible-frame check (solid color / gradient / world), writes screenshots + REPORT.md
 ```
 
 There is no test project and no lint config in this repo.
+
+**Do not leave Cosmic Engine running after diagnostics or tests.** Prefer bounded commands such as `dotnet run -- --smoke-test` or `dotnet run -- --diagnostic baseline`/`--diagnostic visual`. If normal `dotnet run` is used, run it only for a bounded manual check and explicitly stop/close the process before reporting completion — it does not exit on its own (see `Engine/CosmicEngine.cs`).
 
 Note: shader files are loaded from disk at runtime via relative paths (e.g. `Worlds/World01_StellarNursery/Shaders/...`), not copied/embedded by the build. Always run `dotnet run` with this directory as the working directory, otherwise shader loading will fail with `FileNotFoundException`.
 
@@ -36,4 +41,6 @@ Note: shader files are loaded from disk at runtime via relative paths (e.g. `Wor
 
 **Live control panel** (`ControlServer.cs`): a plain `HttpListener` on `http://localhost:8080` (no framework) serving a single self-contained HTML page with sliders bound to `Tuning.*` fields via `POST /set` and `GET /values`. This is meant to be tweaked live during a performance/soundcheck, separate from a rebuild — if you add a new tunable, add it to `Tuning.cs`, the `switch` in `ControlServer.Handle`, the `/values` serializer, and the HTML slider markup.
 
-**Camera** (`Engine/Camera.cs`): a slow, layered sine/cosine drift + zoom (three superimposed frequencies each axis) applied independently of audio, giving worlds a continuous ambient motion; worlds read `Camera.Zoom`/`Camera.Offset` and pass them into shaders as uniforms rather than transforming geometry directly (there is no geometry — everything is fullscreen-quad fragment shader work).
+**Camera** (`Engine/Camera.cs`): a slow, layered sine/cosine drift + zoom (three superimposed frequencies each axis) applied independently of audio, giving worlds a continuous ambient motion; worlds read `Camera.Zoom`/`Camera.Offset` and pass them into shaders as uniforms rather than transforming geometry directly (there is no geometry — everything is fullscreen-quad fragment shader work). Note this 2D drift/zoom camera is separate from — and currently unused by — `stellar_nursery.frag`'s own 3D raymarch camera basis (`uCamPos`/`uCamForward`/`uCamRight`/`uCamUp`), which `StellarNursery.cs` sets directly with a fixed placement.
+
+**Runtime diagnostics** (`Engine/CosmicEngine.cs`): `Program.cs` passes `args` into `CosmicEngineApp.Run(args)`, parsed by `ParseArgs`. Three bounded modes exist beyond normal `dotnet run`: `--smoke-test` (fixed-duration run + fps summary), `--diagnostic baseline` (same, plus a `REPORT.md`), and `--diagnostic visual` (cycles solid-color → debug-gradient-shader → normal world, capturing a screenshot and luminance reading per phase — see `Diagnostics/Shaders/` for the isolated debug shader used in the gradient phase). All three force `Environment.Exit(0)` in `OnUnload` as a deliberate belt-and-suspenders measure so bounded runs never leave the process alive.
