@@ -23,10 +23,22 @@ namespace CosmicEngine.App.Engine
     /// </summary>
     public class CosmicEngineApp
     {
-        // Internal render resolution - always fixed regardless of window size.
-        // Increase this on machines with discrete GPUs for crisper output.
-        private const int RenderWidth  = 1280;
-        private const int RenderHeight = 720;
+        // Base/design render resolution at PerformanceProfile.RenderScale = 1.0.
+        // The window's client size always stays this size (the blit fills whatever
+        // window size is actually current); only the internal RenderTarget shrinks
+        // or grows with the active profile's RenderScale (P1: RenderScale + Live/Safe
+        // Profiles - see ROADMAP.md). Increase this on machines with discrete GPUs
+        // for crisper output.
+        private const int BaseRenderWidth  = 1280;
+        private const int BaseRenderHeight = 720;
+
+        // P1: active performance profile. Defaults to High so normal `dotnet run`
+        // (no --profile flag) behaves exactly as it always has (RenderScale 1.00,
+        // i.e. no change for the existing dev workflow) - Safe must be explicitly
+        // requested via --profile Safe. See ROADMAP.md P1 for the rationale.
+        private PerformanceProfile _profile = PerformanceProfile.High;
+        private int _renderWidth;
+        private int _renderHeight;
 
         private readonly GameWindow _window;
         private readonly Camera     _camera;
@@ -41,11 +53,25 @@ namespace CosmicEngine.App.Engine
         private bool   _diagnosticMode;
         private bool   _exitRequested;
 
+        // P1: set only when this instance is a sub-run driven by PerformanceSweep -
+        // suppresses the per-instance AudioEngine/ControlServer lifecycle and the
+        // forced process exit, since the sweep orchestrator owns both across all
+        // sub-runs and decides when the whole sweep (and process) actually ends.
+        private bool  _perfSweepSubRun;
+        private float? _sweepDurationOverride;
+        private float EffectiveSmokeTestDuration => _sweepDurationOverride ?? SmokeTestDurationSeconds;
+
         private float _perfTimer;
         private int   _perfFrameCount;
 
         private float _runElapsed;
         private int   _runFrameCount;
+        private float _minObservedFps = float.MaxValue;
+
+        // P1: last completed bounded run's summary, read back by PerformanceSweep
+        // after _window.Run() returns (OnUnload has already fired by then).
+        public float LastAvgFps      { get; private set; }
+        public float LastAvgFrameMs  { get; private set; }
 
         private string _glRenderer = "";
         private string _glVendor   = "";
@@ -69,7 +95,7 @@ namespace CosmicEngine.App.Engine
         {
             var nativeSettings = new NativeWindowSettings()
             {
-                ClientSize = new OpenTK.Mathematics.Vector2i(RenderWidth, RenderHeight),
+                ClientSize = new OpenTK.Mathematics.Vector2i(BaseRenderWidth, BaseRenderHeight),
                 Title      = "Cosmic Engine - Stellar Nursery"
             };
 
@@ -113,14 +139,34 @@ namespace CosmicEngine.App.Engine
                     _visualTestMode = true;
                     i++;
                 }
+                else if (args[i] == "--profile" && i + 1 < args.Length)
+                {
+                    string requested = args[i + 1];
+                    if (PerformanceProfile.TryParse(requested, out var parsed))
+                    {
+                        _profile = parsed;
+                    }
+                    else
+                    {
+                        // P1: fall back to Safe (not High) on an invalid profile name -
+                        // Safe is the deliberate failsafe choice here, matching its
+                        // live/stage-safety purpose rather than silently running at
+                        // full cost after a typo.
+                        Console.WriteLine(
+                            $"[Profile] WARNING: unknown profile '{requested}'. Valid profiles: {PerformanceProfile.ValidNamesList}. Falling back to Safe.");
+                        _profile = PerformanceProfile.Safe;
+                    }
+                    i++;
+                }
             }
 
             if (_smokeTestMode)
-                Console.WriteLine($"[Smoke Test] Enabled — will run for {SmokeTestDurationSeconds:F0}s then exit.");
+                Console.WriteLine($"[Smoke Test] Enabled — will run for {EffectiveSmokeTestDuration:F0}s then exit.");
             if (_diagnosticMode)
                 Console.WriteLine("[Diagnostic] Baseline report will be written on exit.");
             if (_visualTestMode)
                 Console.WriteLine($"[Visual Test] Enabled — 5 phases x {VisualPhaseDurationSeconds:F0}s (solid color, gradient, StellarNursery, density debug, radiance debug), then exit.");
+            Console.WriteLine($"[Profile] Using profile: {_profile.Name} (RenderScale {_profile.RenderScale:F2}) — {_profile.Purpose}");
         }
 
         private void OnLoad()
@@ -135,7 +181,14 @@ namespace CosmicEngine.App.Engine
             Console.WriteLine("[OpenGL] Version:  " + _glVersion);
             Console.WriteLine("[OpenGL] GLSL:     " + _glslVersion);
 
-            _renderTarget = new RenderTarget(RenderWidth, RenderHeight);
+            // P1: actual RenderTarget size is scaled by the active profile's
+            // RenderScale - this is what makes RenderScale affect real render cost,
+            // not just a logged number. Window client size is unaffected (stays at
+            // BaseRenderWidth/Height); BlitToScreen still scales the smaller/larger
+            // target up/down to fill whatever the window's framebuffer size is.
+            _renderWidth  = (int)MathF.Round(BaseRenderWidth  * _profile.RenderScale);
+            _renderHeight = (int)MathF.Round(BaseRenderHeight * _profile.RenderScale);
+            _renderTarget = new RenderTarget(_renderWidth, _renderHeight);
             _activeWorld?.Load();
 
             if (_visualTestMode)
@@ -152,8 +205,9 @@ namespace CosmicEngine.App.Engine
             }
 
             Console.WriteLine("[CosmicEngine] Started.");
-            Console.WriteLine($"  Internal render resolution: {RenderWidth}x{RenderHeight}");
-            Console.WriteLine("  Window can be resized freely - shader cost stays fixed.");
+            Console.WriteLine($"  Profile: {_profile.Name} (RenderScale {_profile.RenderScale:F2})");
+            Console.WriteLine($"  Internal render resolution: {_renderWidth}x{_renderHeight} (base design {BaseRenderWidth}x{BaseRenderHeight})");
+            Console.WriteLine("  Window can be resized freely - shader cost stays fixed per profile.");
             Console.WriteLine("  Control panel: http://localhost:8080");
         }
 
@@ -212,24 +266,28 @@ namespace CosmicEngine.App.Engine
                 string world  = _activeWorld?.GetType().Name ?? "none";
                 string audio  = AudioEngine.IsCapturing ? "capturing" : "stopped";
 
+                if (fps < _minObservedFps) _minObservedFps = fps;
+
                 Console.WriteLine(
-                    $"[Perf] fps: {fps:F1} | frame: {frameMs:F1}ms | world: {world} | " +
-                    $"window: {client.X}x{client.Y} | target: {RenderWidth}x{RenderHeight} | audio: {audio}");
+                    $"[Perf] profile: {_profile.Name} | scale: {_profile.RenderScale:F2} | fps: {fps:F1} | frame: {frameMs:F1}ms | world: {world} | " +
+                    $"window: {client.X}x{client.Y} | target: {_renderWidth}x{_renderHeight} | audio: {audio}");
 
                 _perfTimer      = 0f;
                 _perfFrameCount = 0;
             }
 
-            if (_smokeTestMode && !_exitRequested && _runElapsed >= SmokeTestDurationSeconds)
+            if (_smokeTestMode && !_exitRequested && _runElapsed >= EffectiveSmokeTestDuration)
             {
                 _exitRequested = true;
 
                 float avgFps     = _runFrameCount / _runElapsed;
                 float avgFrameMs = (_runElapsed / _runFrameCount) * 1000f;
+                LastAvgFps     = avgFps;
+                LastAvgFrameMs = avgFrameMs;
 
                 Console.WriteLine(
-                    $"[Smoke Test] Complete. avg fps: {avgFps:F1} | avg frame: {avgFrameMs:F1}ms | " +
-                    $"duration: {_runElapsed:F1}s | frames: {_runFrameCount}");
+                    $"[Smoke Test] Complete. profile: {_profile.Name} | avg fps: {avgFps:F1} | avg frame: {avgFrameMs:F1}ms | " +
+                    $"min observed fps: {_minObservedFps:F1} | duration: {_runElapsed:F1}s | frames: {_runFrameCount}");
 
                 if (_diagnosticMode)
                     WriteDiagnosticReport(avgFps, avgFrameMs);
@@ -258,17 +316,23 @@ namespace CosmicEngine.App.Engine
                 - Version: {_glVersion}
                 - GLSL: {_glslVersion}
 
+                ## Profile (P1: RenderScale + Live/Safe Profiles)
+                - Profile: {_profile.Name} ({_profile.Purpose})
+                - RenderScale: {_profile.RenderScale:F2}
+                - Render target size: {_renderWidth}x{_renderHeight} (base design {BaseRenderWidth}x{BaseRenderHeight})
+
                 ## Run
                 - World loaded: {world}
                 - Build status: succeeded (assumed — this report only runs from a built executable)
                 - Run status: completed cleanly via --diagnostic baseline smoke run
                 - Sample window: {_runElapsed:F1}s ({_runFrameCount} frames)
                 - Average FPS: {avgFps:F1}
+                - Minimum observed FPS (per-second sample): {_minObservedFps:F1}
                 - Average frame time: {avgFrameMs:F1}ms
 
                 ## Known limitations
-                - No RenderScale / performance-profile system exists yet — this is a fixed-resolution, fixed-shader-cost measurement.
-                - Sample window is short (~{SmokeTestDurationSeconds:F0}s); not a sustained-load or thermal-throttling test.
+                - Single-run measurement — do not treat this alone as a performance claim; see `--diagnostic perf-sweep` for repeated-run evidence across profiles.
+                - Sample window is short (~{EffectiveSmokeTestDuration:F0}s); not a sustained-load or thermal-throttling test.
                 - Not yet run against target/OptiPlex deployment hardware.
                 - Audio input reflects whatever capture device was available at run time, not necessarily a live guitar signal.
                 """;
@@ -504,15 +568,62 @@ namespace CosmicEngine.App.Engine
             _renderTarget?.Dispose();
             _debugGradientShader?.Dispose();
             _debugQuad?.Dispose();
-            AudioEngine.Stop();
-            ControlServer.Stop();
+
+            // P1: a perf-sweep sub-run doesn't own AudioEngine/ControlServer or the
+            // process lifetime - PerformanceSweep starts/stops those once for the
+            // whole sweep and decides when the process actually exits, so this
+            // instance must not stop them or force-exit out from under it.
+            if (!_perfSweepSubRun)
+            {
+                AudioEngine.Stop();
+                ControlServer.Stop();
+            }
 
             // Belt-and-suspenders process exit for bounded test/diagnostic modes: the
             // window is already closing and both background threads above are daemon
             // threads that should let the process exit on their own, but a user-reported
             // issue was Cosmic Engine being left running after test runs. Force it.
-            if (_smokeTestMode || _diagnosticMode || _visualTestMode)
+            if ((_smokeTestMode || _diagnosticMode || _visualTestMode) && !_perfSweepSubRun)
                 Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// P1: runs one bounded sub-run of a specific profile as part of a
+        /// PerformanceSweep, reusing the exact same smoke-test measurement path as
+        /// `--smoke-test` (same [Perf] sampling, same avg-fps/frame-time computation)
+        /// so sweep numbers are directly comparable to a normal single-run smoke test.
+        /// Does not start/stop AudioEngine/ControlServer or force-exit the process -
+        /// the caller (PerformanceSweep) owns both across the whole sweep.
+        /// </summary>
+        public PerfSweepRunResult RunSweepSubRun(PerformanceProfile profile, float durationSeconds)
+        {
+            _profile               = profile;
+            _smokeTestMode         = true;
+            _perfSweepSubRun       = true;
+            _sweepDurationOverride = durationSeconds;
+
+            _activeWorld = new StellarNursery(_camera);
+
+            _window.Load        += OnLoad;
+            _window.RenderFrame += OnRenderFrame;
+            _window.Unload      += OnUnload;
+
+            string exitStatus = "ok";
+            try
+            {
+                _window.Run();
+            }
+            catch (Exception ex)
+            {
+                exitStatus = $"error: {ex.Message}";
+            }
+
+            return new PerfSweepRunResult(
+                profile.Name, profile.RenderScale, _renderWidth, _renderHeight,
+                LastAvgFps, LastAvgFrameMs, _minObservedFps,
+                _glRenderer, _glVendor, _glVersion,
+                AudioEngine.IsCapturing ? "capturing" : "stopped",
+                exitStatus);
         }
 
         private static AudioSignal BuildAudioSignal() => new AudioSignal

@@ -7,3 +7,4 @@ obj/
 *.log
 CosmicMachine_Backup/
 DiagnosticReports/
+.DS_Store

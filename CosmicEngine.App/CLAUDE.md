@@ -16,11 +16,36 @@ dotnet run             # run — opens a window, starts audio capture, and start
 dotnet run -- --smoke-test          # bounded ~8s run, prints an fps/frame-time summary, exits cleanly
 dotnet run -- --diagnostic baseline # same, plus writes DiagnosticReports/Baseline_<timestamp>/REPORT.md
 dotnet run -- --diagnostic visual   # bounded 3-phase visible-frame check (solid color / gradient / world), writes screenshots + REPORT.md
+dotnet run -- --profile Safe --smoke-test   # P1: run at a named performance profile (Safe/Balanced/High, default High) - any bounded mode above accepts --profile
+dotnet run -- --diagnostic perf-sweep       # P1: 10 bounded sub-runs per profile (Safe, High), ~2 min total, writes DiagnosticReports/PerfSweep_<timestamp>/raw_results.csv + summary.txt
 ```
 
 There is no test project and no lint config in this repo.
 
 **Do not leave Cosmic Engine running after diagnostics or tests.** Prefer bounded commands such as `dotnet run -- --smoke-test` or `dotnet run -- --diagnostic baseline`/`--diagnostic visual`. If normal `dotnet run` is used, run it only for a bounded manual check and explicitly stop/close the process before reporting completion — it does not exit on its own (see `Engine/CosmicEngine.cs`).
+
+## Operating rules (governance)
+
+These rules were formalized after the 2026-07-06 Fable strategy review (see `AUDIT.md` Entry 12 and
+`ROADMAP.md`) in response to repeated open-ended shader-iteration cycles with contested visual payoff.
+They apply to every pass, not just visual/shader work:
+
+1. Do not leave Cosmic Engine running after diagnostics or tests.
+2. Prefer bounded runs: `--smoke-test`, `--diagnostic baseline`, or specific diagnostic commands.
+3. Do not push to GitHub without explicit user approval.
+4. Do not self-sign `AUDIT.md` reviewer sign-off — the implementation model never signs its own audit entry.
+5. No visual pass is accepted without screenshots.
+6. No performance claim is accepted without FPS/frame-time evidence — and evidence means repeated runs (a distribution), not a single reading.
+7. No hardware-viability claim is accepted without running on the actual target hardware.
+8. Do not accept "non-black pixels" (or any similarly weak proxy metric) as visual success.
+9. Commit by intent whenever possible — one concern per commit, not large mixed commits.
+10. Do not let shader-art debugging continue indefinitely. If a visual pass fails acceptance twice, or exceeds one agent-day, stop and escalate to the user/ChatGPT with a written options memo instead of continuing to iterate.
+11. Infrastructure passes (RenderScale, diagnostics, profiles, etc.) must not include shader-art changes.
+12. Shader-art passes must not include unrelated infrastructure changes.
+13. If visual payoff is weak relative to the shader complexity being added, stop and escalate rather than adding more procedural noise.
+14. Use bounded profile commands for performance testing (`--profile <name> --smoke-test`/`--diagnostic baseline`, or `--diagnostic perf-sweep` for repeated-run evidence) — see `AUDIT.md` Entry 13 (P1) for why single-run readings on this project have repeatedly produced misleading "stable" numbers that hid real variance.
+15. Do not make a performance or profile-comparison claim from a single run of any profile — P1's own sweep showed one profile's single-run FPS can land anywhere in a 3x range depending on the run; always cite a run count.
+16. Profile/infrastructure passes (RenderScale, diagnostics, perf-sweep, etc.) must not include shader-art changes — see rule 11.
 
 Note: shader files are loaded from disk at runtime via relative paths (e.g. `Worlds/World01_StellarNursery/Shaders/...`), not copied/embedded by the build. Always run `dotnet run` with this directory as the working directory, otherwise shader loading will fail with `FileNotFoundException`.
 

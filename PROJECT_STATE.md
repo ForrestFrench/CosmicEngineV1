@@ -2,16 +2,56 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-05 (Stellar Nursery Visual Detail Pass 1 Revision — see `AUDIT.md` Entry 10)
+**Last updated:** 2026-07-06 (P1 — RenderScale and Live/Safe Profiles, see `AUDIT.md` Entry 13)
 
 ## Branch / status
 
 - **Branch:** `cosmicos`
 - **Star Artifact Fix (Entry 7): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `1051e27`. Remains intact and unmodified — see below.
-- **Visual Recovery Pass 1 (Entry 8): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `3cf74ea`. Addressed the reviewer-flagged limitation that the post-star-fix scene was too dark/sparse. Accepted as a visual recovery baseline, not final art — reviewer flagged the scene as still soft/sparse/blobby/mostly-purple, requiring a follow-up detail pass.
-- **Visual Detail Pass 1 (Entry 9): reviewed and REJECTED by ChatGPT** on 2026-07-05. Added fine texture, dust-lane erosion, a warm-color pocket, depth tint, and composition offset to `stellar_nursery.frag`, but the color-mapping introduced hard-edged/posterized/masked artifacts (a `step()` density gate produced a visible hard seam and a flat "sticker" look to the warm pocket).
-- **Visual Detail Pass 1 Revision (Entry 10, this pass, not yet committed):** fixes the rejection. Replaced the hard `step(0.05, d)` gate with a continuous `smoothstep(0.02, 0.10, d)`; broadened and softened the warm-pocket and dust-lane smoothstep masks so both read as embedded/gradual rather than flat/punched-out. Fine texture, depth tint, and composition offset unchanged (not implicated). Awaiting ChatGPT re-review before commit.
-- **Original bug fixed (Entry 7):** the square/rectangular star artifacts are fixed — stars now render as small bounded radial points. **Unaffected by Entries 8, 9, or 10** — re-confirmed via close-up crop in each pass's package.
+- **Visual Recovery Pass 1 (Entry 8): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `3cf74ea`. Accepted as a visual recovery baseline, not final art.
+- **Visual Detail Pass 1 (Entry 9): reviewed and REJECTED by ChatGPT** on 2026-07-05 — hard-edged/posterized/masked artifacts from a `step()` density gate.
+- **Visual Detail Pass 1 Revision (Entry 10): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `1150667`. Reviewer flagged the accepted result as still soft/blurry/low-frequency/under-detailed, requiring a follow-up detail pass.
+- **Visual Detail Pass 2 (Entry 11): REJECTED / PARKED** on 2026-07-06 (not committed — the `stellar_nursery.frag` diff remains uncommitted in the working tree, undisturbed). Further pure-GLSL density-detail tweaking is paused pending the Fable Strategy Review pivot.
+- **Fable Strategy Review — Roadmap Pivot (Entry 12):** documentation-only pass, not yet committed. Decision: Stellar Nursery visual polish is parked (not abandoned) until infrastructure (`RenderScale`/Live-Safe profiles) and hardware/audio validation (OptiPlex, real guitar) are done. See `ROADMAP.md` for the new P1-P6 order.
+- **P1 — RenderScale and Live/Safe Profiles (Entry 13, this pass, not yet committed):** implemented. `RenderScale` now actually resizes the `RenderTarget` (`Safe` 0.50 → 640x360, `Balanced` 0.75 → 960x540, `High` 1.00 → 1280x720, default `High`); `--profile <name>` CLI flag with warning+fallback-to-Safe on an invalid name; `[Perf]` logs profile name, RenderScale, and actual render target size; new `--diagnostic perf-sweep` runs 10 bounded sub-runs per profile in one process. **10-run evidence gathered for both required profiles: `Safe` is rock-solid (58.87-59.75 fps, stdev 0.26) while `High` is highly bimodal (18.94-59.76 fps, stdev 16.43 — 3 of 10 runs collapsed to ~19-47 fps).** This reproduces the previously-unproven "system load" FPS-dip hypothesis with real repeated-run data — see below and `AUDIT.md` Entry 13 for full analysis. No shader-art changes; the parked Visual Detail Pass 2 diff was left untouched. Awaiting ChatGPT review before commit.
+- **Original bug fixed (Entry 7):** the square/rectangular star artifacts are fixed — stars now render as small bounded radial points. **Unaffected by Entries 8-13** — re-confirmed via close-up crop in each pass's package, including this one.
+
+## P1 Acceptance Criteria (RenderScale + Live/Safe Profiles + FPS Variance Evidence) — STATUS: implemented, evidence gathered, awaiting review
+
+- [x] `RenderScale` exists and affects the actual render-target resolution (not just window/blit scale). — confirmed: `Safe` measured at a real 640x360 target, `High` at 1280x720.
+- [x] At least two named profiles exist: `Safe` and `High` (or `Art`). — `Safe`, `Balanced` (bonus), `High` all implemented.
+- [x] The currently active profile is logged in `[Perf]`.
+- [x] The actual render target size is logged in `[Perf]`.
+- [x] `Safe` profile is measurably cheaper (lower render cost / higher FPS) than `High`/`Art`. — `Safe` avg frame time 16.78ms (stdev 0.26 fps) vs. `High` avg frame time 24.33ms (stdev 16.43 fps, 3/10 runs collapsing to 19-47 fps).
+- [x] FPS evidence is gathered across repeated bounded runs, not a single run.
+- [x] At least 10 bounded runs per profile are recorded. — exactly 10 each, via `--diagnostic perf-sweep`.
+- [x] The report includes average FPS, min FPS, max FPS, and variance/range per profile. — see `AUDIT.md` Entry 13 and the `PerformanceProfiles_<timestamp>` package `REPORT.md`.
+- [x] No shader-art changes are included in this pass. — `stellar_nursery.frag`'s only diff is the pre-existing parked Detail Pass 2 work, untouched.
+- [x] No unbounded Cosmic Engine process is left running at any point. — verified after every command, including the ~2-minute sweep.
+- [x] `AUDIT.md` reviewer sign-off remains blank (not self-signed by the implementation model).
+
+## Open risk — FPS variance — CONFIRMED REAL, root cause still unknown
+
+Recent diagnostics across the last three Stellar Nursery visual passes showed mostly stable 57-59 FPS
+readings, but also anomalous low readings around 26 FPS and 45 FPS, repeatedly attributed to "system
+load" without proof. **P1's 10-run-per-profile sweep confirms this is a real, reproducible phenomenon,
+not noise:** at full resolution (`High`), 3 of 10 runs collapsed to 18.94-47.46 avg fps while the other
+7 sat at 56.53-59.76 (vsync-capped); at half resolution (`Safe`), all 10 runs stayed within a tight
+58.87-59.75 band with zero collapses. This strongly correlates the dips with running at/near this GPU's
+real-time budget ceiling rather than pure chance — but the *specific mechanism* (GPU power state,
+thermal, OS scheduling, or genuine external contention) is still not isolated, and no system-load
+correlation tooling was added in this pass (out of scope — see `AUDIT.md` Entry 13 Known Limitations).
+
+## P2 requirements (OptiPlex + Real Guitar/Scarlett Validation, for reference)
+
+- Physical run on the Dell OptiPlex 5070 Micro (never yet tested — all testing so far has been on the
+  dev machine's Intel Iris Graphics 6100, which is not the stage target).
+- FPS evidence captured on that real stage hardware, per profile.
+- Actual audio interface identity confirmed and reconciled in docs — project intent is believed to be a
+  Scarlett 2i2, but some existing docs/code still reference a Focusrite Clarett. This must be resolved,
+  not left ambiguous.
+- Real guitar signal confirmed driving FFT values (not just "capture device opened").
+- Screenshot/video or log evidence proving audio reactivity with a real signal.
 
 ## Build / run status
 
@@ -45,22 +85,27 @@ Seed-dependent variation is reduced but not eliminated: 5 test seeds (100, 250, 
 
 `stellar_nursery.frag` gained a 4th fbm octave (0.027 ly⁻¹, ~37 ly scale) for fine wisp/knot texture; its raw sample is reused (via a new `out float fineOctave` param on `fbm3D()`, zero extra cost) as a dust-lane erosion mask in `nebulaDensity()`. A separate cheap `noise3D()` sample drove a `warmPocket` mask added directly to `emitCol`. A free depth cue (reusing the already-computed march distance `t`) tints near material warmer/brighter and far material cooler/dimmer. A constant `compositionOffset` shifts the sampled density-field position (not any camera uniform) for off-center framing. ChatGPT rejected this pass: the warm-pocket mask used a hard `step(0.05, d)` gate that produced a visible hard vertical seam and a flat, posterized "sticker" look rather than volumetric emission — see Entry 10 for the fix.
 
-## Visual Detail Pass 1 Revision / Entry 10 — softening the hard-edged artifacts
+## Visual Detail Pass 1 Revision / Entry 10 — softening the hard-edged artifacts (ACCEPTED, commit `1150667`)
 
-Root cause (confirmed via `DensityDebug`, which showed the underlying density field is smooth): the hard seam/posterization was a pure color-mapping artifact, not a geometry/density bug. `step(0.05, d)` (a true binary switch) gated the warm glow on/off exactly at a density contour. Fix: replaced with `smoothstep(0.02, 0.10, d)`; broadened and reduced the warm-pocket mask/intensity (`smoothstep(0.55, 0.85, warmNoise)`, additive capped ~(0.77,0.34,0.20), was ~(1.30,0.65,0.47)); broadened and eased the dust-lane erosion (`smoothstep(0.50, 0.90, fineDetail)`, `mix(1.0, 0.70, dustMask)`, was 0.62-0.82 / `mix(1.0, 0.35, ...)`). Fine texture, depth tint, and composition offset unchanged. Revised full-frame metrics are intentionally *lower* in contrast than the rejected version (range 0.206 vs 0.461, stddev 0.025 vs 0.045) since the harsh contrast was itself the artifact — screenshot/visual judgment, not metrics, drove this pass. FPS unaffected (58.2→59.7-59.9 avg on stable runs).
+Root cause (confirmed via `DensityDebug`, which showed the underlying density field is smooth): the hard seam/posterization was a pure color-mapping artifact, not a geometry/density bug. `step(0.05, d)` (a true binary switch) gated the warm glow on/off exactly at a density contour. Fix: replaced with `smoothstep(0.02, 0.10, d)`; broadened and reduced the warm-pocket mask/intensity (`smoothstep(0.55, 0.85, warmNoise)`, additive capped ~(0.77,0.34,0.20), was ~(1.30,0.65,0.47)); broadened and eased the dust-lane erosion (`smoothstep(0.50, 0.90, fineDetail)`, `mix(1.0, 0.70, dustMask)`, was 0.62-0.82 / `mix(1.0, 0.35, ...)`). Fine texture, depth tint, and composition offset unchanged. Revised full-frame metrics are intentionally *lower* in contrast than the rejected version (range 0.206 vs 0.461, stddev 0.025 vs 0.045) since the harsh contrast was itself the artifact — screenshot/visual judgment, not metrics, drove this pass. FPS unaffected (58.2→59.7-59.9 avg on stable runs). Reviewer accepted this as complete but flagged the result as still soft/blurry/low-frequency/under-detailed.
+
+## Visual Detail Pass 2 / Entry 11 — finer texture, tendrils, cool pockets
+
+Follow-up to the accepted, soft Revision baseline. Three additions to `stellar_nursery.frag`, all avoiding hard `step()` gates: (1) a free `sin`/`cos`-only domain warp (14 ly amplitude, per-axis frequency/phase) applied to the density-sampling position before the fbm lookup, bending the field into curved/organic tendril-like silhouettes instead of round blobs; (2) a fine wisp modulation — one extra high-frequency (~11 ly) `noise3D()` sample used as a smooth `mix(0.82, 1.22, smoothstep(...))` multiplier on the already-thresholded density, riding on existing density (0 stays 0) rather than a new threshold; (3) a cool/teal emission-pocket counterpart to the existing warm pocket, same smoothstep-gated mechanism (reuses the existing density gate), distinct frequency/phase, for richer warm/cool interplay. Dust lanes, warm pockets, and composition offset unchanged from the accepted Revision. Before/after at seed 400: full-frame range 0.206→0.344, stddev 0.025→0.038; density/radiance debug both show increased fine structure without harder dust-lane edges (re-verified against the before crop). FPS unaffected on stable runs (58.2-58.6→57.3-59.1 avg).
 
 ## Architecture summary
 
-- **Engine loop** (`Engine/CosmicEngine.cs`): owns the OpenTK window, the `Camera`, and the single active `IWorld`. Each frame builds an `AudioSignal` snapshot, updates the camera, renders the active world into a fixed 1280x720 `RenderTarget`, then blits that to the actual window framebuffer (shader cost is independent of window size). Parses `--smoke-test` / `--diagnostic baseline` / `--diagnostic visual` from `args` (passed through from `Program.cs`). All three bounded modes force `Environment.Exit(0)` in `OnUnload` to guarantee the process cannot outlive the window.
+- **Engine loop** (`Engine/CosmicEngine.cs`): owns the OpenTK window, the `Camera`, and the single active `IWorld`. Each frame builds an `AudioSignal` snapshot, updates the camera, renders the active world into a `RenderTarget` sized by the active `PerformanceProfile`'s RenderScale (P1, Entry 13 — was a fixed 1280x720; now `Safe`=640x360, `Balanced`=960x540, `High`=1280x720, default `High`), then blits that to the actual window framebuffer regardless of size (shader cost scales with RenderScale, not window size). Parses `--smoke-test` / `--diagnostic baseline` / `--diagnostic visual` / `--profile <name>` from `args` (passed through from `Program.cs`, which separately dispatches `--diagnostic perf-sweep` to `PerformanceSweep` before any window is constructed). All bounded modes force `Environment.Exit(0)` in `OnUnload` to guarantee the process cannot outlive the window (sweep sub-runs are the one exception, by design — see `PerformanceSweep.cs`).
+- **Performance profiles** (`Engine/PerformanceProfile.cs`, `Engine/PerformanceSweep.cs`, new in P1/Entry 13): named RenderScale tiers (`Safe`/`Balanced`/`High`) and a repeated-run sweep orchestrator (`--diagnostic perf-sweep`) that runs N bounded sub-runs per profile in one process and writes raw CSV + summary evidence — see `AUDIT.md` Entry 13 for the first real dataset this produced.
 - **Worlds** (`Engine/IWorld.cs`, `Worlds/`): a world implements `Load()/Update()/Render()/Unload()`. Only one exists today: `Worlds/World01_StellarNursery/StellarNursery.cs`, a volumetric raymarched nebula shader reacting to two guitar audio channels (Guitar 1 = "Creator": energy/color; Guitar 2 = "Sculptor": density/structure). Now correctly sets the shader's 3D camera basis and `uBassCombined` (see above).
 - **Audio pipeline** (`Audio/`): `AudioEngine` captures stereo audio via OpenAL on a background thread, runs an FFT per buffer (MathNet.Numerics), and exposes `Bass`/`Mid`/`Treble`/`Level` per channel, plus a static `IsCapturing` flag used by the perf logger.
 - **Live tuning** (`ControlServer.cs`, `Tuning.cs`): a plain `HttpListener` on `http://localhost:8080` serves sliders bound to `Tuning.*` fields for live soundcheck adjustment.
 - **Diagnostics** (`Diagnostics/Shaders/`): an isolated debug gradient shader (no uniforms, no dependency on world state) used only by `--diagnostic visual` to prove the shader/quad/uniform pipeline independently of any world. `--diagnostic visual` now runs 5 phases (Entry 8): SolidColor, Gradient, StellarNursery, DensityDebug, RadianceDebug — the latter two gated by `StellarNursery.DebugMode` (0 in all normal rendering) and a matching `uDebugMode` shader uniform, reusing the raymarch's already-computed transmittance/radiance to visualize density and raw emission structure in isolation.
-- **Render resolution and raymarch step count are hardcoded** — 1280x720 in `CosmicEngine.cs`, 16 march steps in the shader. No dynamic scaling exists yet.
+- **Render resolution now scales with the active profile (P1); raymarch step count is still hardcoded** — 16 march steps in the shader, unaffected by RenderScale. No shader-quality tiers exist yet (out of scope for P1 — see `ROADMAP.md`).
 
 ## Known limitations
 
-- **No RenderScale / performance-profile system yet.** Render resolution and shader march/shadow step counts are still fixed constants, not configurable. Out of scope for this pass.
+- **No shader-quality profile tiers yet.** P1 (Entry 13) implemented RenderScale only; march-step count, octave count, etc. are still fixed constants regardless of profile. Would be a natural P1 follow-up if RenderScale alone proves insufficient on the OptiPlex.
 - **Diagnostic tooling is minimal, not a full suite.** Short (~2-8s) sample windows, no multi-scenario sweep, no historical comparison. Screenshots are raw PPM, not PNG (no image-encoding dependency added).
 - **The fixed StellarNursery camera is static** — a minimal fix to stop the scene from being black, not a designed camera path. Camera motion/framing is a visual-polish decision, out of scope for this pass.
 - **FPS baseline is measurable but not yet recorded as an accepted number.** Observed ~48-60 fps on the current dev machine (Intel Iris Graphics 6100); no target/pass-fail threshold agreed yet.
