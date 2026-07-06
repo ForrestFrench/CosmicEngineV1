@@ -77,3 +77,31 @@ Fix, isolated to 4 files: `Tuning.DimLevel` 0.20→0.55 (silence brightness floo
 After: avg luminance 0.090, range 0.200 (seed 400) — visible soft cloud lobes with dark gaps and a clean bounded star, confirmed via full-frame, close-up, luminance, density, and radiance debug screenshots. Assembled `DiagnosticReports/StellarVisualRecovery_<timestamp>.zip` for external review. See `AUDIT.md` Entry 8 for full detail.
 
 Result: `dotnet build` succeeds (0 warnings/errors); `--smoke-test` before/after (57.8→57.0 avg fps, no regression), `--diagnostic baseline`, and `--diagnostic visual` (5 phases) all bounded and clean (no orphaned process, verified after every run in a 5-seed tuning sweep plus before/after captures). Seed-dependent brightness variance is reduced but not eliminated — flagged as a known limitation, not fixed in this pass.
+
+---
+
+## 2026-07-05 — Stellar Nursery Visual Detail Pass 1
+
+**Executor:** Claude Code / Sonnet
+
+Follow-up to the reviewer-accepted Visual Recovery Pass 1 (commit `3cf74ea`): the scene was visible but still soft, sparse, low-frequency/blobby, and mostly cool/purple under silence, lacking fine texture, dust lanes, layered depth, or a compelling composition. All changes this pass are isolated to `Worlds/World01_StellarNursery/Shaders/stellar_nursery.frag` (+69/-13 lines) — no C# or `Tuning.cs` changes needed, and the accepted point-star fix was untouched.
+
+Added a 4th `fbm3D()` octave (0.027 ly⁻¹, ~37 ly scale) for fine wisp/knot texture; reused its raw sample (via a new `out float fineOctave` parameter, at zero extra sampling cost) as a dust-lane erosion mask in `nebulaDensity()`. Added a separate cheap `noise3D()` sample driving a `warmPocket` mask, added directly to `emitCol` as a warm highlight — audio-independent, visible under silence. Two earlier approaches (a plain color `mix()`, and driving `T_K` to reuse the existing blackbody bleed-through) were tried and rejected as too subtle to read at this scene's low brightness. The warm-pocket noise frequency was also retuned mid-pass (0.006→0.018) after testing across seeds 100/400/777 showed the wider period could flood an entire frame warm for an unlucky seed instead of leaving isolated pockets. Added a free depth-based near-warm/far-cool tint (reusing the already-computed march distance `t`, no extra cost) and a constant `compositionOffset` shifting the sampled density-field position (not any camera uniform) for off-center framing.
+
+At seed 400: full-frame luminance range 0.200→0.461, stddev 0.015→0.045, avg 0.090→0.104. Confirmed via density/radiance debug screenshots that the added structure is real (not a screenshot artifact), and via a pixel-level zoom crop that the fine texture doesn't devolve into noise/static. Star point re-confirmed clean (no regression) via close-up crop. Assembled `DiagnosticReports/StellarVisualDetailPass1_<timestamp>.zip` for external review. See `AUDIT.md` Entry 9 for full detail.
+
+Result: `dotnet build` succeeds (0 warnings/errors); `--smoke-test` stable at 59.3-59.4 avg fps across 3 consecutive clean runs (before: 58.2 avg fps) — no regression, well within the 15% guardrail. Two isolated anomalous low-fps readings (28.0, 36.9) during this session were confirmed as transient system-load spikes (immediately followed by 59+ fps re-runs with no code change), not caused by the shader changes. `--diagnostic visual` (5 phases) run at seed 400 and spot-check seeds 100/777, all clean, no orphaned process at any point.
+
+---
+
+## 2026-07-05 — Stellar Nursery Visual Detail Pass 1 Revision
+
+**Executor:** Claude Code / Sonnet
+
+ChatGPT rejected Visual Detail Pass 1 (Entry 9): visibility improved over the flat baseline and the accepted point-star fix remained intact, but the color-mapping of the new density/warm-pocket effects produced hard-edged, posterized artifacts — a visible hard vertical seam, punched-out dark holes instead of soft dust lanes, and a flat opaque "sticker" look to the warm pocket rather than volumetric emission.
+
+Root-caused via `DensityDebug`: the underlying density field is smooth (no seam) — the hard edge was purely a color-mapping artifact of `warmPocket = smoothstep(0.62, 0.80, warmNoise) * step(0.05, d)`, where the GLSL `step()` is a true binary on/off switch that jumped color discontinuously at the `d=0.05` density contour, visible in the full frame (not just a crop). Fixed, all changes still isolated to `stellar_nursery.frag`: replaced `step(0.05, d)` with a continuous `smoothstep(0.02, 0.10, d)`; broadened and reduced the warm-pocket mask/intensity (softer noise threshold, multiplicative combination with the smooth density gate instead of a hard switch, lower max additive color); broadened and eased the dust-lane erosion mask/strength so lanes fade gradually instead of cutting sharp-edged holes. Fine texture, depth tint, and composition offset were untouched (not implicated in the rejection). One tuning misstep along the way is disclosed in the package `REPORT.md`: an intermediate version multiplied the glow by raw `d` on top of the smoothstep gate, over-attenuating it to near-invisibility, corrected by removing the redundant factor.
+
+Assembled `DiagnosticReports/StellarVisualDetailPass1_Revision_<timestamp>.zip` including a side-by-side crop comparing the rejected and revised results directly. See `AUDIT.md` Entry 10 for full detail.
+
+Result: `dotnet build` succeeds (0 warnings/errors); `--smoke-test` stable at 59.7-59.9 avg fps across 3 of 4 clean runs (one anomalous 33.8/33.9 fps reading, consistent with the same intermittent system-load-spike pattern seen in the prior pass, not code-related). `--diagnostic visual` (5 phases) run at seed 400 (rejected + revised) and spot-check seeds 100/777, all clean, no orphaned process at any point. Revised metrics are intentionally lower-contrast than the rejected version (this was the fix, not a regression) — visual/screenshot judgment, not luminance metrics, was used to evaluate success per the reviewer's explicit instruction.

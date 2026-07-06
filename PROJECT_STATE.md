@@ -2,15 +2,16 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-05 (Stellar Nursery Visual Recovery Pass 1 — see `AUDIT.md` Entry 8)
+**Last updated:** 2026-07-05 (Stellar Nursery Visual Detail Pass 1 Revision — see `AUDIT.md` Entry 10)
 
 ## Branch / status
 
 - **Branch:** `cosmicos`
 - **Star Artifact Fix (Entry 7): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `1051e27`. Remains intact and unmodified — see below.
-- **Visual Recovery Pass 1 (Entry 8, this pass, not yet committed):** addresses the reviewer's noted limitation that the post-star-fix scene was still too dark/sparse. Changes: `nebulaDensity()` threshold `0.42→0.38` and raymarch extinction coefficient `0.80→0.35` (`stellar_nursery.frag`), `Tuning.DimLevel` `0.20→0.55` (ambient floor under silence), a diagnostic-only `COSMICENGINE_SEED` env var override (`StellarNursery.cs`), and two new bounded `--diagnostic visual` phases (`DensityDebug`/`RadianceDebug`, `Engine/CosmicEngine.cs`) gated by a new `StellarNursery.DebugMode` static field. Awaiting ChatGPT review before commit.
-- **Original bug fixed (Entry 7):** the square/rectangular star artifacts are fixed — stars now render as small bounded radial points. **Unaffected by this pass** — confirmed via `after_visual_recovery_closeup.png` in Entry 8's package.
-- **Reviewer's important limitation from Entry 7, now addressed by this pass:** the post-star-fix scene was too dark/sparse; Entry 8 raises silence brightness and retunes density/extinction so the scene shows visible cloud structure (`after_visual_recovery_full_frame.png`: avg luminance 0.090, range 0.200, vs. before 0.082 avg / 0.046 range). Awaiting review of whether this is sufficient.
+- **Visual Recovery Pass 1 (Entry 8): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `3cf74ea`. Addressed the reviewer-flagged limitation that the post-star-fix scene was too dark/sparse. Accepted as a visual recovery baseline, not final art — reviewer flagged the scene as still soft/sparse/blobby/mostly-purple, requiring a follow-up detail pass.
+- **Visual Detail Pass 1 (Entry 9): reviewed and REJECTED by ChatGPT** on 2026-07-05. Added fine texture, dust-lane erosion, a warm-color pocket, depth tint, and composition offset to `stellar_nursery.frag`, but the color-mapping introduced hard-edged/posterized/masked artifacts (a `step()` density gate produced a visible hard seam and a flat "sticker" look to the warm pocket).
+- **Visual Detail Pass 1 Revision (Entry 10, this pass, not yet committed):** fixes the rejection. Replaced the hard `step(0.05, d)` gate with a continuous `smoothstep(0.02, 0.10, d)`; broadened and softened the warm-pocket and dust-lane smoothstep masks so both read as embedded/gradual rather than flat/punched-out. Fine texture, depth tint, and composition offset unchanged (not implicated). Awaiting ChatGPT re-review before commit.
+- **Original bug fixed (Entry 7):** the square/rectangular star artifacts are fixed — stars now render as small bounded radial points. **Unaffected by Entries 8, 9, or 10** — re-confirmed via close-up crop in each pass's package.
 
 ## Build / run status
 
@@ -39,6 +40,14 @@ Fix: `Tuning.DimLevel` raised to `0.55`; `nebulaDensity()` threshold lowered to 
 ## Known limitation carried forward — seed-dependent brightness
 
 Seed-dependent variation is reduced but not eliminated: 5 test seeds (100, 250, 400, 555, 777) with the new tuning ranged 0.09–0.45 avg luminance and 0.005–0.20 per-frame range — some seeds still land in a fairly flat region, though none reproduced the original near-zero-range "flat wash" or "solid fog wall" failure modes. Not fully fixed — would require camera-path or scene design changes, out of scope for a diagnostic-recovery pass.
+
+## Visual Detail Pass 1 / Entry 9 — texture, dust lanes, color, depth, composition (REJECTED, see Entry 10)
+
+`stellar_nursery.frag` gained a 4th fbm octave (0.027 ly⁻¹, ~37 ly scale) for fine wisp/knot texture; its raw sample is reused (via a new `out float fineOctave` param on `fbm3D()`, zero extra cost) as a dust-lane erosion mask in `nebulaDensity()`. A separate cheap `noise3D()` sample drove a `warmPocket` mask added directly to `emitCol`. A free depth cue (reusing the already-computed march distance `t`) tints near material warmer/brighter and far material cooler/dimmer. A constant `compositionOffset` shifts the sampled density-field position (not any camera uniform) for off-center framing. ChatGPT rejected this pass: the warm-pocket mask used a hard `step(0.05, d)` gate that produced a visible hard vertical seam and a flat, posterized "sticker" look rather than volumetric emission — see Entry 10 for the fix.
+
+## Visual Detail Pass 1 Revision / Entry 10 — softening the hard-edged artifacts
+
+Root cause (confirmed via `DensityDebug`, which showed the underlying density field is smooth): the hard seam/posterization was a pure color-mapping artifact, not a geometry/density bug. `step(0.05, d)` (a true binary switch) gated the warm glow on/off exactly at a density contour. Fix: replaced with `smoothstep(0.02, 0.10, d)`; broadened and reduced the warm-pocket mask/intensity (`smoothstep(0.55, 0.85, warmNoise)`, additive capped ~(0.77,0.34,0.20), was ~(1.30,0.65,0.47)); broadened and eased the dust-lane erosion (`smoothstep(0.50, 0.90, fineDetail)`, `mix(1.0, 0.70, dustMask)`, was 0.62-0.82 / `mix(1.0, 0.35, ...)`). Fine texture, depth tint, and composition offset unchanged. Revised full-frame metrics are intentionally *lower* in contrast than the rejected version (range 0.206 vs 0.461, stddev 0.025 vs 0.045) since the harsh contrast was itself the artifact — screenshot/visual judgment, not metrics, drove this pass. FPS unaffected (58.2→59.7-59.9 avg on stable runs).
 
 ## Architecture summary
 

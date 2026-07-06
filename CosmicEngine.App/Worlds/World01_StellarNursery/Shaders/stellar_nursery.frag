@@ -89,25 +89,32 @@ float noise3D(vec3 p) {
                    mix(n011, n111, u.x), u.y), u.z);
 }
 
-// 3D FBM: 3 octaves with specified frequencies.
+// 3D FBM: 4 octaves with specified frequencies.
 // Octave 0: 0.001 ly^-1 -> structure at ~1000 ly scale
 // Octave 1: 0.003 ly^-1 -> structure at ~333 ly scale
 // Octave 2: 0.009 ly^-1 -> structure at ~111 ly scale
-// Returns value in approximately [0, 1].
-float fbm3D(vec3 p, float t) {
+// Octave 3: 0.027 ly^-1 -> structure at ~37 ly scale (Visual Detail Pass 1:
+//   fine wisp/knot texture - see nebulaDensity, which also reuses this
+//   octave's raw value as a dust-lane erosion mask instead of sampling a
+//   separate noise field, to keep the extra cost to one octave).
+// Returns value in approximately [0, 1]. `fineOctave` outputs the raw
+// (un-normalized, [0,1]) octave-3 sample for reuse by the caller.
+float fbm3D(vec3 p, float t, out float fineOctave) {
     float v    = 0.0;
     float freq = 0.001;
     float amp  = 1.000;
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         // Slow time evolution per octave (higher octaves evolve faster)
         float tScale = float(i + 1) * 0.0004;
-        v += amp * noise3D(p * freq + vec3(t * tScale, float(i) * 7.3, 0.0));
-        freq *= 3.0; // 0.001 -> 0.003 -> 0.009
-        amp  *= 0.5; // 1.0   -> 0.5   -> 0.25
+        float n = noise3D(p * freq + vec3(t * tScale, float(i) * 7.3, 0.0));
+        v += amp * n;
+        if (i == 3) fineOctave = n;
+        freq *= 3.0; // 0.001 -> 0.003 -> 0.009 -> 0.027
+        amp  *= 0.5; // 1.0   -> 0.5   -> 0.25  -> 0.125
     }
-    // Normalize: sum of amps = 1 + 0.5 + 0.25 = 1.75
-    return v / 1.75;
+    // Normalize: sum of amps = 1 + 0.5 + 0.25 + 0.125 = 1.875
+    return v / 1.875;
 }
 
 // -------------------------------------------------------
@@ -119,8 +126,20 @@ float fbm3D(vec3 p, float t) {
 // Returns density in [0, 1].
 // -------------------------------------------------------
 
-float nebulaDensity(vec3 pos, float g2bass, float g2mid) {
-    float raw = fbm3D(pos, uTime);
+float nebulaDensity(vec3 pos, float g2bass, float g2mid, out float fineDetail) {
+    float raw = fbm3D(pos, uTime, fineDetail);
+
+    // Dust lane erosion (Visual Detail Pass 1, softened in Revision 1): reuse
+    // the fine (octave-3) sample as a mask that locally thins the density
+    // where it's high, cutting dark lanes/gaps through the nebula instead of
+    // leaving it a single soft blob. Revision 1: the original 0.62-0.82 mask
+    // combined with a 65% erosion strength read as hard "punched out" holes
+    // with visible edges rather than soft dust lanes (ChatGPT review
+    // rejection). Broadened to 0.50-0.90 (softer transition in) and eased the
+    // erosion strength to 30% (was 65%) so lanes darken gradually instead of
+    // cutting a sharp-edged void.
+    float dustMask = smoothstep(0.50, 0.90, fineDetail);
+    raw *= mix(1.0, 0.70, dustMask);
 
     // Base threshold (Visual Recovery Pass 1: lowered from 0.42 to 0.38). The
     // camera is fixed and the dominant fbm octave varies on a ~1000 ly scale -
@@ -290,15 +309,24 @@ void main() {
     float g2bass  = uBass2;
     float g2mid   = uMid2;
 
+    // Composition offset (Visual Detail Pass 1): shifts which part of the
+    // seed-random density field the fixed camera samples, without touching
+    // uCamPos/uCamForward/uCamRight/uCamUp (the accepted camera-uniform fix).
+    // Tuned against the COSMICENGINE_SEED=400 diagnostic seed so the default
+    // review frame reads as off-center structure with visible negative space
+    // rather than one blob centered dead-on.
+    vec3 compositionOffset = vec3(-55.0, 30.0, 0.0);
+
     for (int i = 0; i < STEPS; i++) {
         if (transmittance < 0.005) { break; }
 
         // Step center position in world space (ly)
         float t   = tNear + (float(i) + 0.5) * dt;
-        vec3  pos = rayPos + rayDir * t;
+        vec3  pos = rayPos + rayDir * t + compositionOffset;
 
         // Sample density field at this world position
-        float d = nebulaDensity(pos, g2bass, g2mid);
+        float fineDetail;
+        float d = nebulaDensity(pos, g2bass, g2mid, fineDetail);
 
         if (d > 0.002) {
             // Beer-Lambert extinction coefficient (Visual Recovery Pass 1: base
@@ -325,6 +353,46 @@ void main() {
 
             // Emission color at this point
             vec3 emitCol = nebulaEmission(d, T_K);
+
+            // Warm emission pockets (Visual Detail Pass 1, softened in
+            // Revision 1): one extra cheap noise sample (not a full fbm) at a
+            // distinct frequency/phase from the density field, so warm
+            // patches don't coincide with the dust lanes/density peaks.
+            // Frequency 0.018 (not the original 0.006): at 0.006 the noise's
+            // spatial period (~166 ly) was wide enough that some seeds' fixed
+            // camera frustum landed entirely inside one high lobe, flooding
+            // most of the frame warm instead of leaving isolated pockets -
+            // checked across seeds 100/400/777 during tuning. 0.018 (~55 ly
+            // period) keeps pockets patch-sized relative to the frame for any
+            // seed.
+            //
+            // Revision 1: the original `step(0.05, d)` hard-gated the glow
+            // fully on/off at a density contour, which is exactly what read
+            // as a flat opaque "mask" with a hard edge in ChatGPT's review
+            // (the density field itself is smooth - see DensityDebug - the
+            // hard edge was purely a color-mapping artifact of this gate).
+            // Replaced with a smoothstep density gate (0.02-0.10) so the glow
+            // fades in/out continuously with local density instead of
+            // switching on at a fixed strength - it now reads as a soft rim-
+            // light along cloud edges, embedded in the volume, rather than a
+            // flat pocket laid on top. (An earlier attempt in this revision
+            // also multiplied by raw `d` on top of the smoothstep gate,
+            // which double-attenuated and made the glow nearly invisible -
+            // removed; the smoothstep alone is sufficient softening.)
+            // Audio-independent - visible under silence without uBass1/uLevel1.
+            float warmNoise    = noise3D(pos * 0.018 + vec3(91.3, -47.8, 22.1));
+            float warmPocket   = smoothstep(0.55, 0.85, warmNoise);
+            float densityGate  = smoothstep(0.02, 0.10, d);
+            float warmPocketSoft = warmPocket * densityGate;
+            emitCol += vec3(0.55, 0.24, 0.14) * warmPocketSoft * 1.4;
+
+            // Depth cue (Visual Detail Pass 1): free (reuses t, no extra noise
+            // sampling) - near material reads slightly warmer/brighter,
+            // far material slightly cooler/dimmer (aerial-perspective-style
+            // depth separation) so the nebula reads as layered, not a flat wash.
+            float depthT = t / tFar;
+            vec3  depthTint = mix(vec3(1.10, 1.03, 0.94), vec3(0.86, 0.92, 1.06), depthT);
+            emitCol *= depthTint;
 
             // Scattering contribution from sun
             emitCol += sunColor * sunPhase * d * 0.25;
