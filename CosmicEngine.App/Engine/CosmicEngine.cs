@@ -54,7 +54,7 @@ namespace CosmicEngine.App.Engine
 
         // Visible-frame diagnostic (Baseline Recovery Pass 2) - runs 3 short phases,
         // captures a screenshot + luminance reading per phase, then exits.
-        private enum VisualPhase { SolidColor, Gradient, StellarNursery, Done }
+        private enum VisualPhase { SolidColor, Gradient, StellarNursery, DensityDebug, RadianceDebug, Done }
         private const float VisualPhaseDurationSeconds = 2f;
         private bool         _visualTestMode;
         private VisualPhase  _visualPhase = VisualPhase.SolidColor;
@@ -120,7 +120,7 @@ namespace CosmicEngine.App.Engine
             if (_diagnosticMode)
                 Console.WriteLine("[Diagnostic] Baseline report will be written on exit.");
             if (_visualTestMode)
-                Console.WriteLine($"[Visual Test] Enabled — 3 phases x {VisualPhaseDurationSeconds:F0}s (solid color, gradient, StellarNursery), then exit.");
+                Console.WriteLine($"[Visual Test] Enabled — 5 phases x {VisualPhaseDurationSeconds:F0}s (solid color, gradient, StellarNursery, density debug, radiance debug), then exit.");
         }
 
         private void OnLoad()
@@ -306,13 +306,44 @@ namespace CosmicEngine.App.Engine
                     break;
 
                 case VisualPhase.StellarNursery:
+                {
                     // The real world, rendered normally - proves (or disproves) that
                     // the actual scene output is non-black after the uniform fix.
+                    // Explicitly reset debug mode so no prior phase's state can leak
+                    // into normal-mode output.
+                    StellarNursery.DebugMode = 0;
                     var signal = BuildAudioSignal();
                     _camera.Update(dt, signal.Bass1);
                     _activeWorld?.Update(dt, signal);
                     _activeWorld?.Render();
                     break;
+                }
+
+                case VisualPhase.DensityDebug:
+                {
+                    // Same scene, but the shader outputs raw raymarch opacity
+                    // (1-transmittance) instead of the final composite - proves
+                    // density/cloud structure exists independent of color/exposure.
+                    StellarNursery.DebugMode = 1;
+                    var signal = BuildAudioSignal();
+                    _camera.Update(dt, signal.Bass1);
+                    _activeWorld?.Update(dt, signal);
+                    _activeWorld?.Render();
+                    break;
+                }
+
+                case VisualPhase.RadianceDebug:
+                {
+                    // Same scene, shader outputs raw accumulated emission color
+                    // before background/stars/brightness-envelope/gamma - proves
+                    // nebula color/structure exists independent of final exposure.
+                    StellarNursery.DebugMode = 2;
+                    var signal = BuildAudioSignal();
+                    _camera.Update(dt, signal.Bass1);
+                    _activeWorld?.Update(dt, signal);
+                    _activeWorld?.Render();
+                    break;
+                }
             }
 
             var fb = _window.FramebufferSize;
@@ -334,12 +365,15 @@ namespace CosmicEngine.App.Engine
                 {
                     VisualPhase.SolidColor     => VisualPhase.Gradient,
                     VisualPhase.Gradient       => VisualPhase.StellarNursery,
-                    VisualPhase.StellarNursery => VisualPhase.Done,
+                    VisualPhase.StellarNursery => VisualPhase.DensityDebug,
+                    VisualPhase.DensityDebug   => VisualPhase.RadianceDebug,
+                    VisualPhase.RadianceDebug  => VisualPhase.Done,
                     _                          => VisualPhase.Done
                 };
 
                 if (_visualPhase == VisualPhase.Done && !_exitRequested)
                 {
+                    StellarNursery.DebugMode = 0; // belt-and-suspenders: never leave debug mode active
                     _exitRequested = true;
                     WriteVisualReport();
                     _window.Close();

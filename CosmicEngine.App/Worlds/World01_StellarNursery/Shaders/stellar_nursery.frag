@@ -34,6 +34,12 @@ uniform float uDimLevel;
 uniform float uBassBrightness;
 uniform float uSeed;
 
+// Diagnostic-only (Visual Recovery Pass 1): 0 in all normal rendering. 1 shows
+// raymarch opacity (1-transmittance) in isolation; 2 shows raw accumulated
+// radiance before background/stars/audio-envelope/gamma. Lets --diagnostic
+// visual prove density/color structure independently of final compositing.
+uniform int uDebugMode;
+
 // 3D camera (in light-years)
 uniform vec3 uCamPos;
 uniform vec3 uCamForward;
@@ -116,8 +122,19 @@ float fbm3D(vec3 p, float t) {
 float nebulaDensity(vec3 pos, float g2bass, float g2mid) {
     float raw = fbm3D(pos, uTime);
 
+    // Base threshold (Visual Recovery Pass 1: lowered from 0.42 to 0.38). The
+    // camera is fixed and the dominant fbm octave varies on a ~1000 ly scale -
+    // far larger than the 400 ly march range - so a given uSeed effectively
+    // picks one large-scale sample for the whole visible frame. At 0.42, many
+    // seeds landed below threshold almost everywhere (flat/near-black frame).
+    // (0.30 was tried and overcorrected: combined with the old extinction
+    // coefficient it made density cross threshold almost everywhere, which
+    // saturated transmittance to zero within the first couple of march steps -
+    // still visually flat, just a uniform fog-colored wall instead of a
+    // uniform dark wash. See the extinction-coefficient comment below for the
+    // other half of that fix.)
     // Guitar 2 bass: compression shifts distribution toward extremes
-    float thresh = 0.42 - g2bass * 0.10 - g2mid * 0.04;
+    float thresh = 0.38 - g2bass * 0.10 - g2mid * 0.04;
     float d = (raw - thresh) / (1.0 - thresh);
     return clamp(d, 0.0, 1.0);
 }
@@ -284,9 +301,19 @@ void main() {
         float d = nebulaDensity(pos, g2bass, g2mid);
 
         if (d > 0.002) {
-            // Beer-Lambert extinction coefficient
+            // Beer-Lambert extinction coefficient (Visual Recovery Pass 1: base
+            // lowered from 0.80 to 0.35). At 0.80, a single 24.9 ly march step
+            // through moderate density was already ~90%+ opaque, so transmittance
+            // collapsed to ~0 within the first 1-2 steps for most rays - every
+            // pixel then showed the same near-camera density (rays haven't
+            // diverged much that close in), reading as a flat wall of color
+            // instead of a nebula. 0.35 lets opacity build up gradually across
+            // more of the 16-step march, so the ray survives long enough to
+            // reach depths where per-pixel rays have diverged (revealing the
+            // higher-frequency octaves as visible screen-space structure) and
+            // gaps still let stars/background show through in places.
             // Guitar 2 bass increases extinction (denser gas absorbs more)
-            float sigma = d * (0.80 + g2bass * 0.40);
+            float sigma = d * (0.35 + g2bass * 0.40);
 
             // Opacity of this slab: 1 - exp(-sigma * dt)
             float slabAlpha = 1.0 - exp(-sigma * dt);
@@ -308,6 +335,26 @@ void main() {
             // Attenuate transmittance through this slab
             transmittance *= (1.0 - slabAlpha);
         }
+    }
+
+    // Diagnostic debug views (Visual Recovery Pass 1): bypass background/star/
+    // audio-envelope compositing entirely so density and raw emission structure
+    // can be inspected in isolation. Both still apply gamma so they're legible
+    // on screen (raw linear radiance is too dark to read otherwise). uDebugMode
+    // is 0 in all normal rendering (see StellarNursery.Render()).
+    if (uDebugMode == 1) {
+        // Density/opacity debug: how much of the ray was absorbed/emitted into,
+        // independent of color - reveals whether density structure exists at all.
+        float opacity = 1.0 - transmittance;
+        fragColor = vec4(vec3(pow(opacity, 1.0 / 2.2)), 1.0);
+        return;
+    }
+    if (uDebugMode == 2) {
+        // Radiance debug: raw accumulated nebula emission color, before the
+        // deep-space background, stars, or brightness envelope are applied.
+        vec3 dbgColor = pow(clamp(radiance, 0.0, 1.0), vec3(1.0 / 2.2));
+        fragColor = vec4(dbgColor, 1.0);
+        return;
     }
 
     // Background: deep space visible through remaining transmittance

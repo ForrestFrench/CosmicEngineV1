@@ -16,6 +16,11 @@ namespace CosmicEngine.App
 
         // Overall brightness response.
         public static float BassBrightness = 1.20f;
-        public static float DimLevel       = 0.20f;
+
+        // Ambient floor under silence (Visual Recovery Pass 1: raised from 0.20).
+        // This multiplies the whole composited frame before gamma; at 0.20 the
+        // scene was visibly too dark with no audio input. 0.45 keeps plenty of
+        // headroom for uBassBrightness to still brighten further with live audio.
+        public static float DimLevel       = 0.55f;
     }
 }

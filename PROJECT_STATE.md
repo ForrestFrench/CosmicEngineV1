@@ -2,15 +2,15 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-05 (Star Artifact Fix — see `AUDIT.md` Entry 7)
+**Last updated:** 2026-07-05 (Stellar Nursery Visual Recovery Pass 1 — see `AUDIT.md` Entry 8)
 
 ## Branch / status
 
 - **Branch:** `cosmicos`
-- **Star Artifact Fix (Entry 7): reviewed and ACCEPTED by ChatGPT** on 2026-07-05 — see `AUDIT.md` Entry 7 for full sign-off. Being committed as its own commit per reviewer instruction.
-- **Commit contents:** `StellarNursery.cs` camera-uniform/`uBassCombined` fix, `--diagnostic visual` mode + screenshot/luminance capture in `Engine/CosmicEngine.cs`, `Diagnostics/Shaders/debug_gradient.{vert,frag}`, `Environment.Exit(0)` safety net for bounded modes, a `CosmicEngine.App.csproj` compile-exclude for `DiagnosticReports/`, `stellar_nursery.frag`'s star block replaced with bounded point stars, plus `CLAUDE.md`, this file, `AUDIT.md`, and `IMPLEMENTATION_LOG.md`.
-- **Original bug fixed (Entry 7):** the square/rectangular star artifacts are fixed — stars now render as small bounded radial points. See below.
-- **Reviewer's important limitation:** acceptance of the star fix does **not** extend to the overall Stellar Nursery visual baseline — the after full-frame screenshots are still very dark/sparse and lack strong nebula structure. **Next required phase:** a separate Stellar Nursery visual recovery/tuning pass (restore visible nebula structure, deterministic review screenshots) — not yet started.
+- **Star Artifact Fix (Entry 7): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `1051e27`. Remains intact and unmodified — see below.
+- **Visual Recovery Pass 1 (Entry 8, this pass, not yet committed):** addresses the reviewer's noted limitation that the post-star-fix scene was still too dark/sparse. Changes: `nebulaDensity()` threshold `0.42→0.38` and raymarch extinction coefficient `0.80→0.35` (`stellar_nursery.frag`), `Tuning.DimLevel` `0.20→0.55` (ambient floor under silence), a diagnostic-only `COSMICENGINE_SEED` env var override (`StellarNursery.cs`), and two new bounded `--diagnostic visual` phases (`DensityDebug`/`RadianceDebug`, `Engine/CosmicEngine.cs`) gated by a new `StellarNursery.DebugMode` static field. Awaiting ChatGPT review before commit.
+- **Original bug fixed (Entry 7):** the square/rectangular star artifacts are fixed — stars now render as small bounded radial points. **Unaffected by this pass** — confirmed via `after_visual_recovery_closeup.png` in Entry 8's package.
+- **Reviewer's important limitation from Entry 7, now addressed by this pass:** the post-star-fix scene was too dark/sparse; Entry 8 raises silence brightness and retunes density/extinction so the scene shows visible cloud structure (`after_visual_recovery_full_frame.png`: avg luminance 0.090, range 0.200, vs. before 0.082 avg / 0.046 range). Awaiting review of whether this is sufficient.
 
 ## Build / run status
 
@@ -30,9 +30,15 @@ Point-in-time snapshot of the actual repo state. Update this file when the state
 
 The original reported bug — stars rendering as square/rectangular shapes instead of points — is fixed. `stellar_nursery.frag`'s star block no longer floors `rayDir` into a voxel and lights the whole cell; a new `pointStarLayer()` helper places a jittered star center inside each qualifying cell and applies a `smoothstep`-based radial falloff bounded to zero outside a small `radius`, so a star is now a small soft dot, never a filled cell. Confirmed visually across multiple random seeds in Entry 7's review package (`after_stellar_full_frame.png`, `after_star_closeup.png`, `after_luminance_debug.png`) — no square/rectangular/triangular patches in any run. Star design (density, radius, color) is intentionally conservative and may need a later artistic-polish pass.
 
+## Visual Recovery Pass 1 / Entry 8 — dark/sparse scene root cause and fix
+
+Under silence, `uBassCombined = 0` collapsed the shader's final brightness envelope (`color *= uDimLevel + uBassCombined * uBassBrightness`) to just `uDimLevel` (was `0.20`) — the single largest brightness suppressor. Separately, `nebulaDensity()`'s threshold (`0.42`) combined with the dominant fbm octave's ~1000 ly scale (larger than the 400 ly march range) meant a fixed camera + a given `uSeed` effectively sampled one large-scale value for the whole frame, often landing below threshold almost everywhere.
+
+Fix: `Tuning.DimLevel` raised to `0.55`; `nebulaDensity()` threshold lowered to `0.38`; raymarch extinction coefficient lowered from `0.80` to `0.35` (an intermediate attempt — threshold 0.30 alone with the original 0.80 coefficient was tried and rejected: it saturated transmittance to zero within 1-2 march steps, producing a uniform "fog wall" instead of a dark wash — same flatness, different color). A diagnostic-only `COSMICENGINE_SEED` env var override was added to `StellarNursery.Load()` for reproducible captures; seed `400` is the current recommended known-reasonable value.
+
 ## Known limitation carried forward — seed-dependent brightness
 
-With the camera-uniform fix in place, StellarNursery's average frame luminance still varies a lot from run to run purely due to the random per-load `uSeed` (observed 0.051–0.318 across sessions) because the camera position is fixed while `uSeed` shifts the whole procedural density field. Some seeds land the camera in a near-empty region (looks flat/near-black) or a fully-dense region (looks like a uniform gray fog wall) rather than a visually interesting boundary region. Not fixed — would require camera-path or scene design changes, out of scope for a diagnostic-recovery pass.
+Seed-dependent variation is reduced but not eliminated: 5 test seeds (100, 250, 400, 555, 777) with the new tuning ranged 0.09–0.45 avg luminance and 0.005–0.20 per-frame range — some seeds still land in a fairly flat region, though none reproduced the original near-zero-range "flat wash" or "solid fog wall" failure modes. Not fully fixed — would require camera-path or scene design changes, out of scope for a diagnostic-recovery pass.
 
 ## Architecture summary
 
@@ -40,7 +46,7 @@ With the camera-uniform fix in place, StellarNursery's average frame luminance s
 - **Worlds** (`Engine/IWorld.cs`, `Worlds/`): a world implements `Load()/Update()/Render()/Unload()`. Only one exists today: `Worlds/World01_StellarNursery/StellarNursery.cs`, a volumetric raymarched nebula shader reacting to two guitar audio channels (Guitar 1 = "Creator": energy/color; Guitar 2 = "Sculptor": density/structure). Now correctly sets the shader's 3D camera basis and `uBassCombined` (see above).
 - **Audio pipeline** (`Audio/`): `AudioEngine` captures stereo audio via OpenAL on a background thread, runs an FFT per buffer (MathNet.Numerics), and exposes `Bass`/`Mid`/`Treble`/`Level` per channel, plus a static `IsCapturing` flag used by the perf logger.
 - **Live tuning** (`ControlServer.cs`, `Tuning.cs`): a plain `HttpListener` on `http://localhost:8080` serves sliders bound to `Tuning.*` fields for live soundcheck adjustment.
-- **Diagnostics** (`Diagnostics/Shaders/`): an isolated debug gradient shader (no uniforms, no dependency on world state) used only by `--diagnostic visual` to prove the shader/quad/uniform pipeline independently of any world.
+- **Diagnostics** (`Diagnostics/Shaders/`): an isolated debug gradient shader (no uniforms, no dependency on world state) used only by `--diagnostic visual` to prove the shader/quad/uniform pipeline independently of any world. `--diagnostic visual` now runs 5 phases (Entry 8): SolidColor, Gradient, StellarNursery, DensityDebug, RadianceDebug — the latter two gated by `StellarNursery.DebugMode` (0 in all normal rendering) and a matching `uDebugMode` shader uniform, reusing the raymarch's already-computed transmittance/radiance to visualize density and raw emission structure in isolation.
 - **Render resolution and raymarch step count are hardcoded** — 1280x720 in `CosmicEngine.cs`, 16 march steps in the shader. No dynamic scaling exists yet.
 
 ## Known limitations

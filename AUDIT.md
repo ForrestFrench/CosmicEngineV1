@@ -382,3 +382,73 @@ Added a `pointStarLayer(rayDir, cellFreq, density, radius, offset)` helper: stil
 
 ### Recommended next action
 Per reviewer sign-off: commit this accepted star-artifact fix as its own commit, then perform a separate Stellar Nursery visual recovery/tuning pass focused on restoring visible nebula structure (the after full-frame screenshots are still very dark/sparse) and producing deterministic review screenshots (e.g. a fixed `uSeed` for diagnostic capture instead of the current per-load random seed).
+
+---
+
+## Entry 8 — Stellar Nursery Visual Recovery Pass 1
+
+**Date:** 2026-07-05
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — **ACCEPTED** (2026-07-05)
+
+**Review scope:** Reviewed `StellarVisualRecovery_20260705_183249.zip`, including `REPORT.md`, before/after screenshots, density/radiance/luminance debug captures, git diff summaries, build/smoke-test results, process-cleanup notes, and project/audit documentation updates.
+
+**Accepted findings:**
+1. The prior post-star-fix Stellar Nursery output was effectively a flat dark/purple wash and was not an acceptable visual baseline.
+2. The accepted bounded point-star fix remains intact; no square/rectangular/triangular star artifacts are visible in the after screenshots.
+3. The recovery pass restored visible nebula structure without changing RenderScale, adding performance profiles, rewriting the scene, or reintroducing the old cell-fill star logic.
+4. The density debug screenshot confirms meaningful opacity/density structure is present.
+5. The radiance debug screenshot confirms nebula radiance exists independently of the final brightness envelope.
+6. The full-frame after screenshot shows visible large-scale cloud structure and dark gaps rather than a flat blank frame.
+7. `dotnet build` succeeds, smoke-test passes, diagnostics exit automatically, and no orphaned Cosmic Engine process remains.
+8. FPS remained effectively stable, with no meaningful performance regression reported.
+
+**Acceptance decision: ACCEPTED** as a visual recovery baseline.
+
+**Important limitation (reviewer note):** This is not final Stellar Nursery art quality. The recovered scene is still soft, sparse, mostly cool/purple under silence, and dominated by large low-frequency blobs. It needs a dedicated visual detail/polish pass to add finer nebula texture, dust lanes, richer color variation, stronger depth, and more compelling composition while preserving the recovered baseline and accepted star fix.
+
+**Next required phase:** Stellar Nursery Visual Detail Pass 1.
+
+### Accepted star artifact fix remains intact
+The bounded point-star fix (`pointStarLayer`, accepted in Entry 7 / commit `1051e27`) was **not modified** in this pass. Confirmed via close-up screenshot (`after_visual_recovery_closeup.png`) that stars are still small bounded soft points, no square/rectangular/triangular cells.
+
+### Remaining issue addressed
+The full Stellar Nursery frame was still too dark/sparse under silence — `before_visual_recovery_full_frame.png` measured avg luminance 0.082, range only 0.046, stddev 0.004, 0% of pixels above 0.10 luminance: a near-uniform dark wash, not a readable nebula.
+
+### Investigation summary
+- Density existed but rarely crossed the `nebulaDensity()` threshold (0.42) reliably; the dominant fbm octave varies on a ~1000 ly scale (larger than the 400 ly march range), so with a fixed camera, `uSeed` effectively picks one large-scale sample for the entire visible frame — confirming the seed-dependence flagged in Entry 6.
+- Silence zeroes `uBassCombined`, collapsing the shader's final brightness envelope to just `uDimLevel` (was 0.20) — the single largest brightness suppressor.
+- `Tuning.cs`/`StellarNursery.cs` duplicate `BassFloor`/`MidFloor`/`TrebleFloor`/`BassMax`/`MidMax`/`TrebleMax` (`StellarNursery.Render()`'s `Calibrate()` uses its own private consts, not `Tuning.cs`'s live copies) — real tech debt, confirmed not to be the cause of the current dimness (raw audio is 0 regardless under silence), left untouched.
+- Camera position/orientation was not the bug itself — it's the interaction of a fixed camera with a seed-shifted large-scale density field that causes unreliable framing.
+
+### Fix summary
+Four files changed, all isolated to this pass's concern:
+1. `nebulaDensity()` base threshold `0.42 → 0.38` (`stellar_nursery.frag`).
+2. Raymarch extinction coefficient base `0.80 → 0.35` (`stellar_nursery.frag`) — this was the fix for an intermediate overcorrection (threshold 0.30 alone saturated transmittance to zero within 1-2 march steps, producing a uniform flat-colored "fog wall" instead of a dark wash — tried and rejected before landing on the 0.38/0.35 combination).
+3. `Tuning.DimLevel` `0.20 → 0.55` (`Tuning.cs`) — ambient floor under silence, still leaves headroom for `uBassBrightness` with live audio.
+4. `COSMICENGINE_SEED` diagnostic-only env var override (`StellarNursery.Load()`) for reproducible diagnostic captures; seed `400` selected as a representative known-reasonable value.
+5. Two new bounded `--diagnostic visual` phases, `DensityDebug` and `RadianceDebug` (`Engine/CosmicEngine.cs`), gated by a new `StellarNursery.DebugMode` static int (0 in all normal rendering, explicitly reset at the top of the normal `StellarNursery` phase) and a matching `uDebugMode` shader uniform with two gamma-corrected early-return debug branches, reusing already-computed `transmittance`/`radiance` values.
+
+No changes to the point-star block, camera uniforms, audio architecture, or controls.
+
+### Screenshots / package path
+`DiagnosticReports/StellarVisualRecovery_20260705_183249.zip` (extracted folder: `DiagnosticReports/StellarVisualRecovery_20260705_183249/`), containing `REPORT.md`, `screenshots/`, `logs/`, `source_context/`, `git/`, `audit/`. Screenshots: `before_visual_recovery_full_frame.png` + `before_visual_recovery_luminance.png` (flat dark wash), `after_visual_recovery_full_frame.png` (visible soft cloud lobes + one star, seed 400), `after_visual_recovery_closeup.png` (star still a clean bounded point), `after_luminance_debug.png`, `after_density_debug.png` (clean opacity map matching cloud shapes), `after_radiance_debug.png` (raw emission color, same shapes), `solid_color_render_path.png` and `gradient_or_colorbars_shader.png` (sanity checks, unaffected).
+
+### Build/run results
+- `dotnet build`: succeeded, 0 warnings, 0 errors.
+- `dotnet run -- --smoke-test`: before 57.8 avg fps, after 57.0 avg fps — no measurable regression.
+- `dotnet run -- --diagnostic baseline`: completed, `REPORT.md` written, exit code 0.
+- `dotnet run -- --diagnostic visual`: run many times (before-capture, 5-seed tuning sweep, final after-capture with seed 400); all 5 phases (now including `DensityDebug`/`RadianceDebug`) completed cleanly every time.
+- `ps aux` checked after every run: no orphaned process at any point.
+
+### Known limitations
+- Not final art polish — after-screenshots are still fairly dim/moody by design (avg luminance ~0.09 for seed 400); satisfies "visible and structurally readable," not a finished look.
+- Warm/cool color variation under complete silence is limited (strong warm/hot blackbody colors need live Guitar 1 energy); the silent baseline shows mostly cool violet/indigo tones.
+- Seed-dependent variation reduced but not eliminated: 5 test seeds ranged 0.09–0.45 avg luminance and 0.005–0.20 per-frame range with the new tuning; `COSMICENGINE_SEED=400` recommended as the known-reasonable diagnostic seed going forward.
+- No RenderScale / Live/Safe profile system yet.
+- No physical OptiPlex hardware validation performed.
+- No real guitar/audio-interface signal exercised beyond passive capture-device presence (levels 0.000 — silence, not a fault) — this pass only validates the silent floor.
+- Scene composition (camera path, palette, star/nebula balance) may still need a dedicated artistic pass later.
+
+### Recommended next action
+Human/reviewer live-viewing pass (`dotnet run`, real guitar input) to judge whether the new density/extinction/DimLevel balance holds up once live audio drives `uBass1`/`uBass2`/`uLevel1`/`uLevel2` on top of this silent baseline.

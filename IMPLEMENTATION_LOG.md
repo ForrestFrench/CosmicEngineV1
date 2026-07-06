@@ -63,3 +63,17 @@ Fixed the original reported bug (square/rectangular/triangular star artifacts), 
 Verified across multiple random seeds via bounded `--diagnostic visual` runs: shader compiles (a GLSL error would throw at `Load()`), stars render as small bounded dots in every run, no square/rectangular/triangular patches observed. Assembled `DiagnosticReports/StarArtifactFix_<timestamp>.zip` for external review. See `AUDIT.md` Entry 7 for full detail.
 
 Result: `dotnet build` succeeds (0 warnings/errors); `--smoke-test` (avg fps 59.1) and `--diagnostic visual` both bounded and clean (no orphaned process, verified after every run). Star design is intentionally conservative — density/radius/color tuning is a candidate follow-up, not required by this fix.
+
+---
+
+## 2026-07-05 — Stellar Nursery Visual Recovery Pass 1
+
+**Executor:** Claude Code / Sonnet
+
+Addressed the reviewer-flagged limitation on the accepted star-artifact fix (commit `1051e27`): the scene rendered a visible frame with clean point stars, but the full nebula was still too dark/sparse (before this pass: avg luminance 0.082, range only 0.046, stddev 0.004, 0% of pixels above 0.10). Root cause: under silence `uBassCombined=0` collapses the brightness envelope to just `uDimLevel` (was 0.20), and `nebulaDensity()`'s 0.42 threshold combined with the dominant fbm octave's ~1000 ly scale (larger than the 400 ly march range) meant a fixed camera + a given `uSeed` effectively sampled one large-scale value for the whole frame, often landing below threshold almost everywhere.
+
+Fix, isolated to 4 files: `Tuning.DimLevel` 0.20→0.55 (silence brightness floor); `nebulaDensity()` threshold 0.42→0.38 and raymarch extinction coefficient 0.80→0.35 (`stellar_nursery.frag`) — an intermediate attempt at threshold 0.30 alone was tried and rejected for overcorrecting into a uniform "fog wall" (transmittance saturated to zero within 1-2 march steps); a diagnostic-only `COSMICENGINE_SEED` env var override (`StellarNursery.Load()`) for reproducible captures; and two new bounded `--diagnostic visual` phases, `DensityDebug`/`RadianceDebug` (`Engine/CosmicEngine.cs`), gated by a new `StellarNursery.DebugMode` static field and a matching `uDebugMode` shader uniform, reusing already-computed transmittance/radiance to visualize density and raw emission structure in isolation. The accepted point-star fix was not touched — confirmed via close-up screenshot.
+
+After: avg luminance 0.090, range 0.200 (seed 400) — visible soft cloud lobes with dark gaps and a clean bounded star, confirmed via full-frame, close-up, luminance, density, and radiance debug screenshots. Assembled `DiagnosticReports/StellarVisualRecovery_<timestamp>.zip` for external review. See `AUDIT.md` Entry 8 for full detail.
+
+Result: `dotnet build` succeeds (0 warnings/errors); `--smoke-test` before/after (57.8→57.0 avg fps, no regression), `--diagnostic baseline`, and `--diagnostic visual` (5 phases) all bounded and clean (no orphaned process, verified after every run in a 5-seed tuning sweep plus before/after captures). Seed-dependent brightness variance is reduced but not eliminated — flagged as a known limitation, not fixed in this pass.

@@ -46,14 +46,30 @@ namespace CosmicEngine.App.Worlds.World01
             _camera = camera;
         }
 
+        // Diagnostic-only: set COSMICENGINE_SEED to pin uSeed to a known value so
+        // --diagnostic visual captures are reproducible instead of landing on a
+        // random (sometimes near-empty) region of the procedural density field.
+        // Normal play is unaffected unless this env var is explicitly set.
+        public static int DebugMode = 0; // 0 = normal, 1 = density/opacity debug, 2 = radiance debug
+
         public void Load()
         {
             _shader = new ShaderProgram(ShaderPath("stellar_nursery.vert"),
                                         ShaderPath("stellar_nursery.frag"));
             _quad   = new FullscreenQuad();
-            _seed   = (float)(_rng.NextDouble() * 1000.0);
 
-            Console.WriteLine($"[StellarNursery] Loaded. Seed: {_seed:F2}");
+            string? seedOverride = Environment.GetEnvironmentVariable("COSMICENGINE_SEED");
+            if (seedOverride != null && float.TryParse(seedOverride, out float forcedSeed))
+            {
+                _seed = forcedSeed;
+                Console.WriteLine($"[StellarNursery] Loaded. Seed: {_seed:F2} (COSMICENGINE_SEED override)");
+            }
+            else
+            {
+                _seed = (float)(_rng.NextDouble() * 1000.0);
+                Console.WriteLine($"[StellarNursery] Loaded. Seed: {_seed:F2}");
+            }
+
             Console.WriteLine("[Startup] StellarNursery loaded successfully");
         }
 
@@ -125,6 +141,11 @@ namespace CosmicEngine.App.Worlds.World01
             _shader.SetFloat("uBassCombined",   MathF.Max(bass1, bass2));
             _shader.SetFloat("uDimLevel",       Tuning.DimLevel);
             _shader.SetFloat("uBassBrightness", Tuning.BassBrightness);
+
+            // Diagnostic-only debug view (Visual Recovery Pass 1): 0 in all normal
+            // play/capture, only ever non-zero for the --diagnostic visual
+            // DensityDebug/RadianceDebug phases (see Engine/CosmicEngine.cs).
+            _shader.SetInt("uDebugMode", DebugMode);
 
             _quad.Draw();
         }
