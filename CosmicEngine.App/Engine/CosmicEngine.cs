@@ -1,6 +1,7 @@
 using CosmicEngine.App.Audio;
 using CosmicEngine.App.Rendering;
 using CosmicEngine.App.Worlds.World01;
+using CosmicEngine.App.Worlds.World02;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
@@ -39,6 +40,11 @@ namespace CosmicEngine.App.Engine
         private PerformanceProfile _profile = PerformanceProfile.High;
         private int _renderWidth;
         private int _renderHeight;
+
+        // Lava Lamp Scene Draft v0.1: active world selection. Defaults to
+        // StellarNursery (unchanged prior behavior) - LavaLamp must be requested
+        // explicitly via --world LavaLamp. See WorldSelector.cs.
+        private string _worldName = WorldSelector.DefaultWorldName;
 
         private readonly GameWindow _window;
         private readonly Camera     _camera;
@@ -107,11 +113,12 @@ namespace CosmicEngine.App.Engine
         public void Run(string[] args)
         {
             ParseArgs(args);
+            _window.Title = $"Cosmic Engine - {_worldName}";
 
             AudioEngine.Start();
             ControlServer.Start();
 
-            _activeWorld = new StellarNursery(_camera);
+            _activeWorld = WorldSelector.Create(_worldName, _camera);
 
             _window.Load        += OnLoad;
             _window.RenderFrame += OnRenderFrame;
@@ -158,6 +165,23 @@ namespace CosmicEngine.App.Engine
                     }
                     i++;
                 }
+                else if (args[i] == "--world" && i + 1 < args.Length)
+                {
+                    string requestedWorld = args[i + 1];
+                    if (WorldSelector.TryParse(requestedWorld, out var resolvedWorld))
+                    {
+                        _worldName = resolvedWorld;
+                    }
+                    else
+                    {
+                        // Fall back to the default (StellarNursery) rather than exit -
+                        // same non-destructive pattern as an invalid --profile name.
+                        Console.WriteLine(
+                            $"[World] WARNING: unknown world '{requestedWorld}'. Valid worlds: {WorldSelector.ValidNamesList}. Falling back to {WorldSelector.DefaultWorldName}.");
+                        _worldName = WorldSelector.DefaultWorldName;
+                    }
+                    i++;
+                }
             }
 
             if (_smokeTestMode)
@@ -167,6 +191,7 @@ namespace CosmicEngine.App.Engine
             if (_visualTestMode)
                 Console.WriteLine($"[Visual Test] Enabled — 5 phases x {VisualPhaseDurationSeconds:F0}s (solid color, gradient, StellarNursery, density debug, radiance debug), then exit.");
             Console.WriteLine($"[Profile] Using profile: {_profile.Name} (RenderScale {_profile.RenderScale:F2}) — {_profile.Purpose}");
+            Console.WriteLine($"[World] Using world: {_worldName}");
         }
 
         private void OnLoad()
@@ -189,6 +214,11 @@ namespace CosmicEngine.App.Engine
             _renderWidth  = (int)MathF.Round(BaseRenderWidth  * _profile.RenderScale);
             _renderHeight = (int)MathF.Round(BaseRenderHeight * _profile.RenderScale);
             _renderTarget = new RenderTarget(_renderWidth, _renderHeight);
+
+            // Lava Lamp Scene Draft v0.1: profile-aware blob count (harmless no-op
+            // when StellarNursery is the active world - only LavaLampScene reads it).
+            LavaLampScene.BlobCount = _profile.Name == "High" ? 8 : 6;
+
             _activeWorld?.Load();
 
             if (_visualTestMode)
@@ -595,14 +625,15 @@ namespace CosmicEngine.App.Engine
         /// Does not start/stop AudioEngine/ControlServer or force-exit the process -
         /// the caller (PerformanceSweep) owns both across the whole sweep.
         /// </summary>
-        public PerfSweepRunResult RunSweepSubRun(PerformanceProfile profile, float durationSeconds)
+        public PerfSweepRunResult RunSweepSubRun(PerformanceProfile profile, float durationSeconds, string worldName = WorldSelector.DefaultWorldName)
         {
             _profile               = profile;
+            _worldName             = worldName;
             _smokeTestMode         = true;
             _perfSweepSubRun       = true;
             _sweepDurationOverride = durationSeconds;
 
-            _activeWorld = new StellarNursery(_camera);
+            _activeWorld = WorldSelector.Create(_worldName, _camera);
 
             _window.Load        += OnLoad;
             _window.RenderFrame += OnRenderFrame;
@@ -619,7 +650,7 @@ namespace CosmicEngine.App.Engine
             }
 
             return new PerfSweepRunResult(
-                profile.Name, profile.RenderScale, _renderWidth, _renderHeight,
+                _worldName, profile.Name, profile.RenderScale, _renderWidth, _renderHeight,
                 LastAvgFps, LastAvgFrameMs, _minObservedFps,
                 _glRenderer, _glVendor, _glVersion,
                 AudioEngine.IsCapturing ? "capturing" : "stopped",

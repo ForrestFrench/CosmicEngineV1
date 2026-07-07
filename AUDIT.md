@@ -743,3 +743,88 @@ Proceed to P2 (OptiPlex + real guitar/Scarlett validation) using `Safe` as the f
 
 ### Correction — clean-baseline rerun (2026-07-06)
 ChatGPT's review of `PerformanceProfiles_20260706_081235.zip` found the RenderScale/profile implementation itself correct, but blocked final P1 sign-off because the evidence above was gathered while the parked/rejected Visual Detail Pass 2 shader diff (Entry 11) was still active in `stellar_nursery.frag`, and an untracked `.DS_Store` was present. Cleanup performed: the parked diff was saved to `DiagnosticReports/ParkedShaderWork/VisualDetailPass2_parked_20260706.patch` (recoverable, not discarded) and `stellar_nursery.frag` was reverted to `HEAD` (`1150667`) via `git restore` — `git diff` on that file now produces no output. `.DS_Store` was deleted and added to `.gitignore`. The full 10-run-per-profile sweep was rerun against this clean, accepted-baseline shader: **`Safe` remained rock-solid (59.20-59.96 fps, stdev 0.22, zero anomalous runs)**, and **`High` again reproduced the collapse (4 of 10 runs at 30.52-31.50 fps — a tight half-vsync-rate cluster — vs. 59.13-59.88 fps for the other 6)**, confirming the phenomenon is not caused by the (now-reverted) Detail Pass 2 shader additions specifically. Full analysis, raw data, and screenshots (luminance-matched exactly to the pre-Detail-Pass-2 accepted baseline, confirming the revert's precision) are in `DiagnosticReports/PerformanceProfiles_CleanBaseline_20260706_084953.zip`. This supersedes the FPS/variance numbers recorded above as the evidence for final P1 sign-off; the qualitative conclusions (Safe stable, High reproduces dips, Safe measurably cheaper) are unchanged.
+
+---
+
+## Entry 14 — Lava Lamp Scene Draft v0.1
+
+**Date:** 2026-07-06
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — **ACCEPTED** (2026-07-06)
+
+**Review scope:** Reviewed `LavaLampDraft_20260706_183503.zip`, including `REPORT.md`, Lava Lamp Safe/High screenshots, Stellar Nursery Safe regression screenshot, Stellar Nursery star close-up, build and smoke-test logs, Lava Lamp perf-sweep results, source-context files, git status/diff outputs, and audit context.
+
+**Accepted findings:**
+1. A second world, `LavaLamp`, was added without changing Stellar Nursery shader art.
+2. `--world LavaLamp` successfully selects the new scene.
+3. Default behavior remains `StellarNursery` when no `--world` flag is provided.
+4. Invalid world names produce a warning and safely fall back to `StellarNursery`.
+5. Lava Lamp renders visible soft metaball-style blobs under silence/no guitar input.
+6. The scene uses a cheap 2D analytic shader approach rather than volumetric raymarching.
+7. Safe and High profiles both render the Lava Lamp scene successfully.
+8. Lava Lamp performance is stable at approximately 60 FPS in both Safe and High on the Intel Iris 6100 proxy, with no reproduction of Stellar Nursery's High-profile FPS collapse.
+9. Stellar Nursery still runs in Safe profile after the world-selection changes.
+10. The accepted bounded point-star fix remains intact; no square/rectangular/triangular star-cell artifacts are visible in the Stellar Nursery star close-up.
+11. Bounded diagnostics exit automatically, and no orphaned Cosmic Engine process remains.
+
+**Acceptance decision: ACCEPTED as a prototype scene draft.**
+
+**Important limitations:** This is not final Lava Lamp art quality. The current visual is clean and stable but simple: muted palette, basic blob composition, limited analog-light-show richness, and no real guitar-driven tuning yet. Future Lava Lamp work should focus on palette, motion, blob blending, analog distortion, and live audio response, but only after this accepted v0.1 scene is committed cleanly.
+
+**Required pre-commit check (resolved):** ChatGPT flagged that the review package's `git/status.txt` snapshot did not show the governance docs (`AUDIT.md`, `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md`) as modified. Confirmed this was a stale snapshot — `git/status.txt` was captured before those docs were edited later in the same pass, not a sign the docs were only copied into the package and never actually updated in the tracked working tree. Re-ran `git status --short --untracked-files=all` and `git diff --stat` directly against the working tree post-edit: `AUDIT.md`, `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md`, `ROADMAP.md`, and `CLAUDE.md` all show as modified with real diffs (163 insertions / 16 deletions across 7 files total, including the two source files). No doc update was missing.
+
+**Next required phase:** Choose between a small Lava Lamp v0.2 visual/audio-tuning pass or P2 hardware/audio validation once the OptiPlex and real guitar interface are available.
+
+### Goal
+Prove CosmicEngine's `IWorld` architecture supports more than one visual world by adding a second, deliberately cheap and simple scene — `World02_LavaLamp` — as a prototype draft (not final art), profile-aware from day one, safe on integrated GPUs, and visually readable even under total silence. Explicit constraints: no Stellar Nursery shader/art changes, no reintroduction of the old star-cell code, no OptiPlex/real-guitar validation in this pass (reserved for P2), no commit until reviewed.
+
+### Files changed
+- `Worlds/World02_LavaLamp/LavaLampScene.cs` (new) — `IWorld` implementation; smooths/calibrates both guitar channels via `Tuning.cs`, drives shader uniforms every frame; `public static int BlobCount` set profile-aware by `CosmicEngineApp.OnLoad` (6 on `Safe`/`Balanced`, 8 on `High`).
+- `Worlds/World02_LavaLamp/Shaders/lava_lamp.vert` (new) — identical pattern to `stellar_nursery.vert` (fullscreen triangle pair, UV passthrough).
+- `Worlds/World02_LavaLamp/Shaders/lava_lamp.frag` (new) — analytic 2D metaball field, `smoothstep`-only thresholding, cheap `sin`/`cos` domain warp, edge-only additive glow. No raymarch, no noise/hash textures, no hard `step()` gates.
+- `Engine/WorldSelector.cs` (new) — `TryParse`/`Create` factory, same case-insensitive/warn-and-fallback pattern as `PerformanceProfile.TryParse`. `DefaultWorldName = "StellarNursery"`.
+- `Engine/CosmicEngine.cs` — `--world <name>` CLI parsing (mirrors `--profile`); `WorldSelector.Create(_worldName, _camera)` replaces the hardcoded `new StellarNursery(_camera)` in both `Run()` and `RunSweepSubRun()`; window title includes the active world name; `[World] Using world: ...` log line; profile-aware `LavaLampScene.BlobCount` set in `OnLoad`.
+- `Engine/PerformanceSweep.cs` — optional `--world <name>` parsing (same fallback pattern); `PerfSweepRunResult` gained a `WorldName` field; CSV output gained a `world` column.
+- `Program.cs` — **not touched.** Already passed `args` through unmodified in both the perf-sweep and normal-run branches; confirmed by reading the file, included in `source_context/` for reviewer verification.
+- `Worlds/World01_StellarNursery/StellarNursery.cs`, `Worlds/World01_StellarNursery/Shaders/stellar_nursery.{vert,frag}` — **zero diff.** Confirmed via `git status`/`git diff` before packaging.
+
+### Shader approach
+Sum of `r²/d²` inverse-square falloffs from a small, fixed-size loop (`MAX_BLOBS = 8`, runtime-capped by `if (i >= uBlobCount) break;`) of analytically orbiting blob centers (`sin`/`cos` of `uTime`, golden-angle-spaced to avoid visible symmetry). Thresholded into a bounded `shape` mask via `smoothstep(0.65, 1.55, field)` only. A cosine-palette (Inigo Quilez form) background gradient animates independently of the blobs so the frame is never a flat void. Guitar 1 ("Creator") → color intensity, hue shift, glow/pulse strength; Guitar 2 ("Sculptor") → blob size, distortion/wobble amount and frequency. Every driven uniform has a non-zero baseline set in C# (e.g. `colorIntensity = 0.65 + ...`, `distortion = 0.12 + ...`) independent of audio, so the scene stays visible, colored, and moving under total silence.
+
+### Mid-pass defect found and fixed
+First shader draft drove blob color (`blobT`) from the raw, unbounded `field` value, which grows very large near each blob's center (`1/d²`) — `sin(field * ...)` cycled through multiple colors within a single blob's radius, visible as concentric "bullseye" rings, and the additive `glow` term stacked on top of an already-opaque core, washing centers toward white. Fixed by (1) rebasing `blobT` on the bounded post-`smoothstep` `shape` value instead of raw `field`, and (2) gating `glow`'s contribution by `(1.0 - shape)` so it only adds at the blob's soft edge. Confirmed visually in the recaptured screenshots below: smooth single-tone blob cores, clean edge glow, no ring artifacts, no white clipping.
+
+### Build result
+`dotnet build`: succeeded, 0 warnings, 0 errors.
+
+### Bounded run evidence
+| Command | Result |
+|---|---|
+| `--world LavaLamp --profile Safe --smoke-test` | avg fps 59.9, min observed 59.3, clean exit |
+| `--world LavaLamp --profile High --smoke-test` | avg fps 59.8, min observed 58.7, clean exit |
+| `--world StellarNursery --profile Safe --smoke-test` | avg fps 59.8, min observed 58.1, clean exit — confirms no regression |
+| `--world Bogus --profile Safe --smoke-test` | printed fallback warning, ran as `StellarNursery`, clean exit |
+| `--smoke-test` (no `--world`) | `[World] Using world: StellarNursery` — default unchanged |
+| `--diagnostic perf-sweep --world LavaLamp` | 20 bounded sub-runs (10×Safe, 10×High), clean exit |
+
+`ps aux | grep -i CosmicEngine` checked clean (no orphaned process) after every command above.
+
+### FPS variance evidence (LavaLamp, 10 runs per profile, `--diagnostic perf-sweep`, 6.0s/run)
+- **Safe:** avg-of-avg 60.2 fps, min 60.1, max 60.3, range **0.2**.
+- **High:** avg-of-avg 60.2 fps, min 59.9, max 60.3, range **0.4**.
+
+No trace of the bimodal FPS-collapse pattern documented for Stellar Nursery's `High` profile in Entry 13 (30-40% of runs collapsing to ~half vsync rate) on this same hardware. Lava Lamp satisfies the performance guardrail (cheaper than or comparable to Stellar Nursery) comfortably, with no shader simplification needed.
+
+### Screenshots / package path
+`DiagnosticReports/LavaLampDraft_20260706_183503.zip` (extracted folder: `DiagnosticReports/LavaLampDraft_20260706_183503/`), containing `REPORT.md`, `screenshots/` (`lava_lamp_safe_frame.png`, `lava_lamp_high_frame.png`, `stellar_nursery_safe_frame.png`, `stellar_nursery_star_closeup.png`), `logs/` (build log, four smoke-test logs, full perf-sweep CSV/summary), `source_context/`, `git/`, `audit/`.
+
+Point-star fix re-verified via a precisely-located (not eyeballed) close-up: the brightest pixel in the Stellar Nursery capture was found by scanning raw PPM pixel data programmatically (x=470, y=204), then a 60×60px crop was taken centered on that exact point. The raw luminance grid shows a clean, radially-symmetric falloff (79→93→120→202→120→93→79) across ~4px — a small soft point, not the old hard-edged multi-pixel cell-square artifact.
+
+### Known limitations
+- v0.1 draft: blob palette/count/speed constants are initial guesses, not tuned against a real two-guitar signal.
+- No OptiPlex or real-hardware validation performed (out of scope for this pass, reserved for P2).
+- The `--diagnostic visual` tool's mid-run phase is still internally labeled "StellarNursery" regardless of which world is actually active — a pre-existing, documented limitation of the diagnostic harness (not introduced by this pass); screenshots are correctly captured from whichever world was requested via `--world`, only the on-screen phase label is stale.
+- `Balanced` (0.75) profile was not separately exercised for Lava Lamp in this pass.
+
+### Recommended next action
+Await ChatGPT/user review of the Lava Lamp draft. If accepted, commit as a separate, contained commit (infrastructure/new-world addition, no Stellar Nursery changes) per standing commit-by-intent discipline. Do not push without explicit user approval.

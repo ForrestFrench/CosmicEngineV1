@@ -69,6 +69,13 @@ If pure-procedural Stellar Nursery continues to show weak visual payoff relative
   rather than generating 100% of visual complexity from hand-tuned procedural noise math per frame.
 - This is a spike to evaluate in P3, not a commitment. Do not implement until P3/P4.
 
+## Note — second world added (2026-07-06)
+
+A second `IWorld` implementation, `World02_LavaLamp` (Lava Lamp Scene Draft v0.1, see `AUDIT.md` Entry 14),
+was added alongside this P1-P6 sequence, not as part of it — it's an architecture proof (multi-world
+support, `--world` CLI selection) using a deliberately cheap scene, not a Stellar Nursery pass. It does not
+change the phase order above; Stellar Nursery visual polish is still parked pending P3/P4/P5 as described.
+
 ## Known risks carried into this roadmap
 
 - **FPS variance is an open, unproven risk.** Diagnostics across the last three passes showed mostly

@@ -18,6 +18,7 @@ dotnet run -- --diagnostic baseline # same, plus writes DiagnosticReports/Baseli
 dotnet run -- --diagnostic visual   # bounded 3-phase visible-frame check (solid color / gradient / world), writes screenshots + REPORT.md
 dotnet run -- --profile Safe --smoke-test   # P1: run at a named performance profile (Safe/Balanced/High, default High) - any bounded mode above accepts --profile
 dotnet run -- --diagnostic perf-sweep       # P1: 10 bounded sub-runs per profile (Safe, High), ~2 min total, writes DiagnosticReports/PerfSweep_<timestamp>/raw_results.csv + summary.txt
+dotnet run -- --world LavaLamp --smoke-test # pick a world (StellarNursery/LavaLamp, default StellarNursery) - any bounded mode above, and perf-sweep, accepts --world; unknown name prints a warning and falls back to StellarNursery rather than crashing
 ```
 
 There is no test project and no lint config in this repo.
@@ -58,7 +59,11 @@ Note: shader files are loaded from disk at runtime via relative paths (e.g. `Wor
 
 **Engine loop** (`Engine/CosmicEngine.cs`, class `CosmicEngineApp`): owns the OpenTK `GameWindow`, the `Camera`, and the single active `IWorld`. Each frame: build an `AudioSignal` snapshot from `AudioEngine` → `_camera.Update()` → world renders into a fixed 1280x720 `RenderTarget` → that target is blitted (scaled) to the actual window framebuffer. This means shader cost is constant regardless of window/display size, and resizing the window is purely a blit-scale operation, not a re-render.
 
-**Worlds** (`Engine/IWorld.cs` + `Worlds/`): a "world" is a self-contained visual scene implementing `Load()/Update()/Render()/Unload()`. Adding a new world means implementing `IWorld` and swapping `_activeWorld` in `CosmicEngineApp.Run()` — nothing else in the engine needs to change. Currently only one world exists: `Worlds/World01_StellarNursery/StellarNursery.cs` (namespace is `CosmicEngine.App.Worlds.World01`, folder is `World01_StellarNursery` — naming isn't 1:1, keep this in mind when searching). Each world owns its own `ShaderProgram`, keeps its own smoothed/calibrated copies of the audio signal, and pushes them to the shader as uniforms every frame.
+**Worlds** (`Engine/IWorld.cs` + `Worlds/`): a "world" is a self-contained visual scene implementing `Load()/Update()/Render()/Unload()`. Adding a new world means implementing `IWorld`, adding its name to `Engine/WorldSelector.cs` (`ValidNames`/`Create()`), and nothing else in the engine needs to change. Two worlds exist:
+- `Worlds/World01_StellarNursery/StellarNursery.cs` (namespace `CosmicEngine.App.Worlds.World01`, folder `World01_StellarNursery` — naming isn't 1:1, keep this in mind when searching) — the default, a volumetric raymarched nebula.
+- `Worlds/World02_LavaLamp/LavaLampScene.cs` (namespace `CosmicEngine.App.Worlds.World02`) — a cheap analytic 2D metaball-field scene, added as a multi-world architecture proof (see `AUDIT.md` Entry 14).
+
+Each world owns its own `ShaderProgram`, keeps its own smoothed/calibrated copies of the audio signal, and pushes them to the shader as uniforms every frame. `--world <name>` (see Commands above) selects which world `CosmicEngineApp` constructs via `WorldSelector.Create(name, camera)`; the default (no flag) is `StellarNursery`, unchanged from before world-selection existed.
 
 **Audio pipeline** (`Audio/`): `AudioEngine.CaptureLoop()` runs on a dedicated background thread, does an FFT per buffer (MathNet.Numerics), and exposes two `GuitarChannel`s (`Guitar1`/`Guitar2`, `volatile` fields) with `Level`/`Bass`/`Mid`/`Treble`. `AudioSignal` (in `Audio/AudioSignal.cs`) is the per-frame immutable snapshot passed into `IWorld.Update()`. By convention across worlds: **Guitar 1 = "Creator"** (energy/color/ignition), **Guitar 2 = "Sculptor"** (gravity/structure/motion) — this is a semantic convention, not enforced in code, so preserve it if you add a world.
 

@@ -9,6 +9,7 @@ namespace CosmicEngine.App.Engine
     /// <summary>One bounded sub-run's result, collected by PerformanceSweep.</summary>
     public readonly struct PerfSweepRunResult
     {
+        public readonly string WorldName;
         public readonly string ProfileName;
         public readonly float  RenderScale;
         public readonly int    RenderWidth;
@@ -22,10 +23,11 @@ namespace CosmicEngine.App.Engine
         public readonly string AudioStatus;
         public readonly string ExitStatus;
 
-        public PerfSweepRunResult(string profileName, float renderScale, int renderWidth, int renderHeight,
+        public PerfSweepRunResult(string worldName, string profileName, float renderScale, int renderWidth, int renderHeight,
             float avgFps, float avgFrameMs, float minObservedFps,
             string glRenderer, string glVendor, string glVersion, string audioStatus, string exitStatus)
         {
+            WorldName      = worldName;
             ProfileName    = profileName;
             RenderScale    = renderScale;
             RenderWidth    = renderWidth;
@@ -74,9 +76,30 @@ namespace CosmicEngine.App.Engine
             int runsPerProfile = DefaultRunsPerProfile;
             float durationSeconds = DefaultRunDurationSeconds;
 
+            // Lava Lamp Scene Draft v0.1: optional --world <name> so the sweep can
+            // target a specific world, same fallback pattern as CosmicEngineApp's
+            // own --world/--profile parsing (unknown name -> warning + default).
+            string worldName = WorldSelector.DefaultWorldName;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--world" && i + 1 < args.Length)
+                {
+                    if (WorldSelector.TryParse(args[i + 1], out var resolved))
+                    {
+                        worldName = resolved;
+                    }
+                    else
+                    {
+                        Console.WriteLine(
+                            $"[PerfSweep] WARNING: unknown world '{args[i + 1]}'. Valid worlds: {WorldSelector.ValidNamesList}. Falling back to {WorldSelector.DefaultWorldName}.");
+                    }
+                    i++;
+                }
+            }
+
             Console.WriteLine(
                 $"[PerfSweep] Starting: {runsPerProfile} runs x {profiles.Length} profiles " +
-                $"({string.Join(", ", Array.ConvertAll(profiles, p => p.Name))}), {durationSeconds:F0}s each. " +
+                $"({string.Join(", ", Array.ConvertAll(profiles, p => p.Name))}) on world '{worldName}', {durationSeconds:F0}s each. " +
                 $"Total bounded duration ~{runsPerProfile * profiles.Length * durationSeconds:F0}s.");
 
             // Started once for the whole sweep - see class doc comment for why.
@@ -91,7 +114,7 @@ namespace CosmicEngine.App.Engine
                 {
                     Console.WriteLine($"[PerfSweep] {profile.Name} run {run}/{runsPerProfile}...");
                     var app = new CosmicEngineApp();
-                    var result = app.RunSweepSubRun(profile, durationSeconds);
+                    var result = app.RunSweepSubRun(profile, durationSeconds, worldName);
                     results.Add(result);
                     Console.WriteLine(
                         $"[PerfSweep] {profile.Name} run {run}: avg fps {result.AvgFps:F1} | " +
@@ -126,11 +149,11 @@ namespace CosmicEngine.App.Engine
 
             string csvPath = Path.Combine(dir, "raw_results.csv");
             var csv = new StringBuilder();
-            csv.AppendLine("profile,render_scale,render_width,render_height,avg_fps,avg_frame_ms,min_observed_fps,gl_renderer,gl_vendor,gl_version,audio_status,exit_status");
+            csv.AppendLine("world,profile,render_scale,render_width,render_height,avg_fps,avg_frame_ms,min_observed_fps,gl_renderer,gl_vendor,gl_version,audio_status,exit_status");
             foreach (var r in results)
             {
                 csv.AppendLine(string.Join(",",
-                    r.ProfileName, r.RenderScale.ToString("F2"), r.RenderWidth, r.RenderHeight,
+                    r.WorldName, r.ProfileName, r.RenderScale.ToString("F2"), r.RenderWidth, r.RenderHeight,
                     r.AvgFps.ToString("F2"), r.AvgFrameMs.ToString("F2"), r.MinObservedFps.ToString("F2"),
                     $"\"{r.GlRenderer}\"", $"\"{r.GlVendor}\"", $"\"{r.GlVersion}\"",
                     r.AudioStatus, r.ExitStatus));
