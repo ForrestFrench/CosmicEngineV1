@@ -24,6 +24,43 @@ namespace CosmicEngine.App.Engine
     /// </summary>
     public class CosmicEngineApp
     {
+        // Scene Dashboard v0.1: the currently running "show mode" instance (set in
+        // Run(), not RunSweepSubRun() - dashboard-driven live switching only applies
+        // to a normal interactive run, never to a bounded PerformanceSweep sub-run).
+        // ControlServer reads/writes through this reference from its background HTTP
+        // thread; all actual GL/world mutation still happens on the render thread via
+        // the pending-request fields below, applied in OnRenderFrame.
+        public static CosmicEngineApp? Current { get; private set; }
+
+        // Set from ControlServer's HTTP thread, consumed once per frame on the render
+        // thread in OnRenderFrame/ApplyPendingSwitch - GL calls (shader compile, FBO
+        // create/destroy) must only ever happen on the render thread.
+        private volatile string? _pendingWorldName;
+        private volatile string? _pendingProfileName;
+        private volatile bool    _quitRequested;
+        private volatile bool    _restartRequested;
+
+        // Dashboard status read-back (Scene Dashboard v0.1).
+        public string CurrentWorldName   => _worldName;
+        public string CurrentProfileName => _profile.Name;
+        public int    CurrentRenderWidth  => _renderWidth;
+        public int    CurrentRenderHeight => _renderHeight;
+        public float  LastObservedFps     { get; private set; }
+        public bool   AudioCapturing      => AudioEngine.IsCapturing;
+
+        /// <summary>Queues a world/profile switch to be applied on the render thread next frame. Either argument may be null to leave that dimension unchanged.</summary>
+        public void RequestSwitch(string? worldName, string? profileName)
+        {
+            if (worldName   != null) _pendingWorldName   = worldName;
+            if (profileName != null) _pendingProfileName = profileName;
+        }
+
+        /// <summary>Queues a clean shutdown, applied on the render thread next frame.</summary>
+        public void RequestQuit() => _quitRequested = true;
+
+        /// <summary>Queues an unload/reload of the current world (same world, same profile) - lets a stuck or visually-odd scene be reset without a full process restart.</summary>
+        public void RequestRestart() => _restartRequested = true;
+
         // Base/design render resolution at PerformanceProfile.RenderScale = 1.0.
         // The window's client size always stays this size (the blit fills whatever
         // window size is actually current); only the internal RenderTarget shrinks
@@ -114,6 +151,7 @@ namespace CosmicEngine.App.Engine
         {
             ParseArgs(args);
             _window.Title = $"Cosmic Engine - {_worldName}";
+            Current = this;
 
             AudioEngine.Start();
             ControlServer.Start();
@@ -245,6 +283,32 @@ namespace CosmicEngine.App.Engine
         {
             if (_exitRequested) return;
 
+            // Scene Dashboard v0.1: dashboard-driven quit/switch requests only apply to
+            // a normal interactive "show mode" run - never to a bounded smoke-test,
+            // diagnostic, or visual-test run, so existing bounded-diagnostic behavior
+            // (fixed duration, forced exit) is completely unaffected.
+            if (!_smokeTestMode && !_diagnosticMode && !_visualTestMode)
+            {
+                if (_quitRequested)
+                {
+                    _exitRequested = true;
+                    _window.Close();
+                    return;
+                }
+
+                if (_restartRequested)
+                {
+                    _restartRequested = false;
+                    _activeWorld?.Unload();
+                    _activeWorld = WorldSelector.Create(_worldName, _camera);
+                    _activeWorld.Load();
+                    Console.WriteLine($"[Dashboard] Restarted world={_worldName} profile={_profile.Name}");
+                }
+
+                if (_pendingWorldName != null || _pendingProfileName != null)
+                    ApplyPendingSwitch();
+            }
+
             float dt = (float)args.Time;
 
             if (_visualTestMode)
@@ -280,6 +344,62 @@ namespace CosmicEngine.App.Engine
             RunDiagnostics(dt);
         }
 
+        /// <summary>
+        /// Scene Dashboard v0.1: applies a queued world and/or profile switch requested
+        /// via the dashboard. Runs on the render thread (called from OnRenderFrame), so
+        /// it is safe to create/destroy GL resources here (shader compile/link, FBO
+        /// create/delete) - the same rule every other GL call in this class already
+        /// follows. Old world/render-target resources are disposed before new ones are
+        /// created, mirroring the same Load()/Unload() and RenderTarget lifecycle
+        /// already used for a normal single-run startup.
+        /// </summary>
+        private void ApplyPendingSwitch()
+        {
+            string? newWorld       = _pendingWorldName;
+            string? newProfileName = _pendingProfileName;
+            _pendingWorldName   = null;
+            _pendingProfileName = null;
+
+            bool worldChanged = newWorld != null &&
+                !string.Equals(newWorld, _worldName, StringComparison.OrdinalIgnoreCase);
+
+            bool profileChanged = false;
+            PerformanceProfile parsedProfile = _profile;
+            if (newProfileName != null && PerformanceProfile.TryParse(newProfileName, out var parsed))
+            {
+                parsedProfile   = parsed;
+                profileChanged  = !string.Equals(parsed.Name, _profile.Name, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (!worldChanged && !profileChanged)
+                return;
+
+            if (worldChanged)
+            {
+                _activeWorld?.Unload();
+                _worldName   = newWorld!;
+                _activeWorld = WorldSelector.Create(_worldName, _camera);
+            }
+
+            if (profileChanged)
+            {
+                _profile      = parsedProfile;
+                _renderWidth  = (int)MathF.Round(BaseRenderWidth  * _profile.RenderScale);
+                _renderHeight = (int)MathF.Round(BaseRenderHeight * _profile.RenderScale);
+                _renderTarget?.Dispose();
+                _renderTarget = new RenderTarget(_renderWidth, _renderHeight);
+                LavaLampScene.BlobCount = _profile.Name == "High" ? 8 : 6;
+            }
+
+            if (worldChanged)
+                _activeWorld?.Load();
+
+            _window.Title = $"Cosmic Engine - {_worldName}";
+            Console.WriteLine(
+                $"[Dashboard] Switched to world={_worldName} profile={_profile.Name} " +
+                $"({_renderWidth}x{_renderHeight})");
+        }
+
         /// <summary>Logs [Perf] once/sec and, in smoke-test/diagnostic mode, ends the run after a fixed window.</summary>
         private void RunDiagnostics(float dt)
         {
@@ -297,6 +417,7 @@ namespace CosmicEngine.App.Engine
                 string audio  = AudioEngine.IsCapturing ? "capturing" : "stopped";
 
                 if (fps < _minObservedFps) _minObservedFps = fps;
+                LastObservedFps = fps;
 
                 Console.WriteLine(
                     $"[Perf] profile: {_profile.Name} | scale: {_profile.RenderScale:F2} | fps: {fps:F1} | frame: {frameMs:F1}ms | world: {world} | " +
@@ -594,6 +715,8 @@ namespace CosmicEngine.App.Engine
 
         private void OnUnload()
         {
+            if (Current == this) Current = null;
+
             _activeWorld?.Unload();
             _renderTarget?.Dispose();
             _debugGradientShader?.Dispose();

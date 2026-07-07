@@ -828,3 +828,74 @@ Point-star fix re-verified via a precisely-located (not eyeballed) close-up: the
 
 ### Recommended next action
 Await ChatGPT/user review of the Lava Lamp draft. If accepted, commit as a separate, contained commit (infrastructure/new-world addition, no Stellar Nursery changes) per standing commit-by-intent discipline. Do not push without explicit user approval.
+
+---
+
+## Entry 15 — Scene Dashboard v0.1
+
+**Date:** 2026-07-06
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — **ACCEPTED** (2026-07-06)
+
+**Review scope:** Reviewed `SceneDashboardV01_20260706_202732.zip`, including `REPORT.md`, build/smoke-test logs, live dashboard session logs, scene screenshots, git status/diff outputs, source context, and audit context.
+
+**Accepted findings:**
+1. A `SceneRegistry` was added as the shared source of truth for scene metadata.
+2. `WorldSelector` now derives scene selection from the registry while preserving existing CLI behavior.
+3. The local dashboard at `http://localhost:8080` now includes a Scene Dashboard section above the existing tuning controls.
+4. The dashboard displays current world/profile/FPS/render target/audio status and showable scene cards.
+5. `StellarNursery` and `LavaLamp` are both listed as showable scenes.
+6. Live in-process scene switching works from the dashboard.
+7. Live in-process profile switching works from the dashboard and correctly recreates the render target at the selected profile scale.
+8. Restart and Quit behavior work through dashboard endpoints.
+9. Existing tuning sliders were preserved.
+10. `run-show.sh` and `Run Cosmic Engine.command` were added to simplify launching show/review mode.
+11. Existing bounded CLI smoke-test behavior remains intact.
+12. `dotnet build`, Lava Lamp Safe smoke test, Stellar Nursery Safe smoke test, default-world Safe smoke test, and baseline diagnostic all pass.
+13. Dashboard-driven switching was verified in one continuous process with PID stability and engine log evidence.
+14. No orphaned Cosmic Engine or `dotnet run` process remained after tests.
+15. Lava Lamp and Stellar Nursery still render successfully after dashboard/world-selection changes.
+
+**Acceptance decision: ACCEPTED as Scene Dashboard v0.1.**
+
+**Important limitations:** Browser-side dashboard screenshots were not captured into the package due to environment/screenshot tooling limitations. The pass is still accepted because live dashboard behavior was verified by browser automation, engine logs, PID stability, and rendered scene captures. Future dashboard work should add a show-mode screenshot endpoint so review packages can capture the exact current dashboard-selected frame.
+
+**Required pre-commit check (resolved):** ChatGPT flagged that the review package's `git/status.txt` snapshot did not show the governance docs (`AUDIT.md`, `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md`, `CLAUDE.md`) as modified. Confirmed this was a stale snapshot — `git/status.txt` was captured before those docs were edited later in the same pass (the identical pattern noted and resolved in Entry 14), not a sign the docs were only copied into the package and never updated in the tracked working tree. Re-ran `git status --short --untracked-files=all` and `git diff --stat` directly against the working tree post-edit: `AUDIT.md`, `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md`, `ROADMAP.md`, and `CLAUDE.md` all show as modified with real diffs (407 insertions / 28 deletions across 8 files total, including the four source files and `Engine/SceneRegistry.cs`/`run-show.sh`/`Run Cosmic Engine.command` as new untracked files). No doc update was missing.
+
+**Next required phase:** Add a dashboard screenshot/capture endpoint, or proceed to a small Lava Lamp v0.2 tuning pass if the user wants creative work next.
+
+### Goal
+Workflow/usability pass, not a visual-art pass: give the user a way to launch, review, and switch between the currently accepted scenes (Stellar Nursery, Lava Lamp) via a simple local dashboard instead of typing long `--world`/`--profile` CLI flags. Served by the existing `ControlServer` (`http://localhost:8080`) — no Electron, no React, no cloud hosting, no shader/visual changes to either scene.
+
+### Files changed
+- `Engine/SceneRegistry.cs` (new) — `SceneDefinition` (Id, DisplayName, Description, Status, DefaultProfile, Showable, optional ThumbnailPath, Factory) and `SceneRegistry.All`/`TryParse`: the single source of truth for scene metadata.
+- `Engine/WorldSelector.cs` — refactored into a thin wrapper over `SceneRegistry` (`ValidNames`, `TryParse`, `Create` all now derive from the registry) so CLI `--world` parsing and the dashboard's scene cards share one source of truth, per the task's explicit requirement. `CosmicEngine.cs`/`PerformanceSweep.cs` needed no changes since `WorldSelector`'s public API/behavior is unchanged.
+- `Engine/CosmicEngine.cs` — added `CosmicEngineApp.Current` (static reference to the running show-mode instance, set in `Run()` only — never in `RunSweepSubRun()`, so dashboard control never touches a bounded perf-sweep sub-run), `RequestSwitch(world, profile)`/`RequestRestart()`/`RequestQuit()` (thread-safe volatile-field requests set from `ControlServer`'s background HTTP thread), and `ApplyPendingSwitch()` (applied once per frame in `OnRenderFrame`, on the render thread — the only thread allowed to touch GL resources). Dashboard-driven requests are explicitly gated off during `--smoke-test`/`--diagnostic baseline`/`--diagnostic visual` so bounded-diagnostic behavior is provably unaffected. `LastObservedFps` is now tracked and exposed for dashboard status.
+- `ControlServer.cs` — added `GET /status`, `GET /scenes`, `POST /launch`, `POST /restart`, `POST /quit` endpoints, and a new "COSMIC ENGINE — SCENE DASHBOARD" section prepended to the existing HTML page (status bar, experimental-scenes checkbox, scene cards with Launch Safe/Launch High/Restart buttons, Quit Engine button). The pre-existing "THE DEEPEST SPACE" audio-tuning sliders were **not removed** — this is an addition to the existing live-tunable calibration page, not a replacement.
+- `run-show.sh` (new) — starts `dotnet run -- --profile Safe` in the background, waits, then auto-opens `http://localhost:8080` (falls back to printing the URL).
+- `Run Cosmic Engine.command` (new) — double-clickable macOS launcher delegating to `run-show.sh`.
+- **Not changed:** `Worlds/World01_StellarNursery/*`, `Worlds/World02_LavaLamp/*` (both scenes' visuals and behavior are byte-for-byte unchanged — confirmed via `git status`/`git diff`, zero diff on any scene/shader file).
+
+### Scene registry summary
+Two scenes registered, both `Showable: true`:
+- `StellarNursery` — "Stellar Nursery", status "Accepted baseline / visual polish parked", default profile `Safe`.
+- `LavaLamp` — "Lava Lamp", status "Accepted prototype v0.1", default profile `Safe`.
+
+### Dashboard behavior
+Live, in-process scene AND profile switching (the task's preferred behavior, not the CLI-hint fallback) — verified via a real running `dotnet run -- --profile Safe` show-mode session driven through a live browser: `StellarNursery(Safe) → LavaLamp(Safe) → LavaLamp(High) → Restart → StellarNursery(Safe) → Quit`, all confirmed to run on the **same OS process** throughout (PID unchanged across every switch, only exiting after the final `/quit`). Each switch step also confirmed via the running process's own `[Dashboard] Switched to ...`/`[Dashboard] Restarted ...` console log lines and the subsequent `[Perf]` line's `world:`/`target:` fields matching the request.
+
+### Build/run results
+`dotnet build`: succeeded, 0 warnings, 0 errors. All four pre-existing CLI commands re-verified unchanged: `--world LavaLamp --profile Safe --smoke-test`, `--world StellarNursery --profile Safe --smoke-test`, `--profile Safe --smoke-test` (no `--world`, default still `StellarNursery`), `--diagnostic baseline`. All bounded, all exited cleanly, `ps aux` checked clean after each.
+
+### Screenshots / package path
+`DiagnosticReports/SceneDashboardV01_20260706_202732.zip`, containing `REPORT.md`, `screenshots/` (`lava_lamp_from_dashboard.png`, `stellar_nursery_from_dashboard.png` — real GL-rendered captures via `--diagnostic visual`, substituting for a live mid-session capture the engine doesn't yet support — see Known Limitations), `logs/` (build, four smoke-test/diagnostic logs, full show-mode session log with `[Dashboard]` switch lines), `source_context/`, `git/`, `audit/`.
+
+### Known limitations
+- Browser-side dashboard screenshots (`dashboard_home.png`, `dashboard_lava_lamp_selected.png`) could not be persisted to local disk this pass — the automated Chrome browser runs in a separate sandbox from this machine's filesystem, and native-screenshot fallbacks (`screencapture`, `osascript`/System Events) either returned non-representative output or failed with a permission/timeout error. Per the task's own documented fallback, the dashboard was instead verified functionally (live PID-stability + console-log evidence, arguably stronger proof of *live* switching than a static image) and the exact HTML/CSS/JS source is included in `source_context/ControlServer.cs`.
+- `lava_lamp_from_dashboard.png`/`stellar_nursery_from_dashboard.png` are bounded-diagnostic captures of each scene, not literal screenshots taken mid dashboard-session (the engine's `GL.ReadPixels` capture is currently only wired into `--diagnostic visual`, not the live show-mode loop) — visuals are unchanged by this pass, so this is a faithful stand-in, documented as such.
+- Live "Smoke Test" dashboard button intentionally not implemented — the existing smoke-test path forces a full process exit on completion, which would be unsafe to trigger mid-show.
+- No thumbnails yet (`ThumbnailPath` is `null` for both scenes); no experimental scenes exist yet so the "Show experimental scenes" checkbox is implemented but currently has no visible effect.
+- `/status` polls every 2s — up to ~2s of status-bar staleness after an action, though the action itself is not delayed.
+
+### Recommended next action
+Add a `POST /screenshot` endpoint reusing the existing `CaptureVisualFrame`/`SavePpm` logic so future dashboard packages can capture the actual live mid-session frame instead of a bounded-diagnostic proxy.

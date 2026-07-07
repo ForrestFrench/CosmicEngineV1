@@ -76,6 +76,14 @@ was added alongside this P1-P6 sequence, not as part of it — it's an architect
 support, `--world` CLI selection) using a deliberately cheap scene, not a Stellar Nursery pass. It does not
 change the phase order above; Stellar Nursery visual polish is still parked pending P3/P4/P5 as described.
 
+## Note — Scene Dashboard added (2026-07-06)
+
+A local Scene Dashboard (Scene Dashboard v0.1, see `AUDIT.md` Entry 15), served by the existing
+`ControlServer` at `http://localhost:8080`, lets scenes be launched/switched by clicking instead of typing
+`--world`/`--profile` CLI flags, with live in-process scene and profile switching. This is a workflow/
+usability improvement, not a P1-P6 phase itself — it doesn't change the phase order above, and will grow
+to expose whichever scenes P3/P6 eventually add without further roadmap changes.
+
 ## Known risks carried into this roadmap
 
 - **FPS variance is an open, unproven risk.** Diagnostics across the last three passes showed mostly
