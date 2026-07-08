@@ -20,6 +20,8 @@ dotnet run -- --profile Safe --smoke-test   # P1: run at a named performance pro
 dotnet run -- --diagnostic perf-sweep       # P1: 10 bounded sub-runs per profile (Safe, High), ~2 min total, writes DiagnosticReports/PerfSweep_<timestamp>/raw_results.csv + summary.txt
 dotnet run -- --world LavaLamp --smoke-test # pick a world (StellarNursery/LavaLamp, default StellarNursery) - any bounded mode above, and perf-sweep, accepts --world; unknown name prints a warning and falls back to StellarNursery rather than crashing
 ./run-show.sh                               # Scene Dashboard v0.1: unbounded "show mode" - dotnet run -- --profile Safe in the background, then auto-opens http://localhost:8080 (or prints the URL if auto-open fails)
+dotnet run -- --diagnostic motion           # Stellar Nursery Showability Audit: bounded, world-agnostic - runs the real (non-debug) render path and captures the actual back buffer at t=1s/5s/15s, writes DiagnosticReports/Motion_<timestamp>/REPORT.md with per-pixel frame-diff stats between captures; answers "does this world visibly move" with evidence instead of assertion
+dotnet run -- --world StellarNursery --seed 777 --diagnostic motion  # Stellar Nursery Showability Consistency Fix: --seed <value> sets COSMICENGINE_SEED for this run - makes any run (normal, dashboard, or bounded diagnostic) reproducible instead of picking randomly from KnownGoodSeeds; the active seed is now logged in every --diagnostic visual/motion REPORT.md
 ```
 
 There is no test project and no lint config in this repo.

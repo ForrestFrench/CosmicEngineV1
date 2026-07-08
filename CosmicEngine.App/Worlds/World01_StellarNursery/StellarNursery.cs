@@ -21,6 +21,14 @@ namespace CosmicEngine.App.Worlds.World01
         private float _time;
         private float _seed;
 
+        // Stellar Nursery Showability Consistency Fix: exposes the actual seed in use
+        // so diagnostic report writers (CosmicEngine.cs) can log it explicitly instead
+        // of leaving it ambiguous - the prior rejected package's t1/t5/t15 captures
+        // used a silently-random pool seed with no record of which one, while a
+        // separately-captured reference frame used an explicit different seed; the two
+        // were then incorrectly compared as if they were the same frame.
+        public float Seed => _seed;
+
         // World memory - state that accumulates across the full performance
         private float _perfTime;       // total seconds since show started
         private float _cumEnergy1;     // Guitar 1 total energy (normalised 0-1 at ~1hr)
@@ -40,6 +48,42 @@ namespace CosmicEngine.App.Worlds.World01
 
         private static string ShaderPath(string file) =>
             Path.Combine("Worlds", "World01_StellarNursery", "Shaders", file);
+
+        // Stellar Nursery Showability Audit: nebulaDensity()'s threshold sits at a
+        // narrow point relative to the dominant (~1000 ly-scale) density octave, so
+        // with a fixed camera + fixed 400 ly march range, whether a given uSeed's
+        // large-scale value lands near that threshold (visible cloud structure) or
+        // far from it (density saturates to ~0 or ~1 across the whole frustum -> a
+        // flat, featureless gradient, no stars/structure visible) is essentially a
+        // coin flip. Fully fixing this needs a deeper density/threshold rework (out
+        // of scope for a minimal fix - see AUDIT.md). Minimal mitigation: pick the
+        // per-launch seed from a small pool of seeds already confirmed (by
+        // screenshot) to produce visible structure, instead of an unconstrained
+        // random value, so "a new pattern every launch" no longer risks landing on
+        // a flat/empty one.
+        //
+        // Stellar Nursery Showability Revision: the original pool (400, 33, 610, 5)
+        // was curated against the old, much smaller compositionOffset (-55,30,0) in
+        // stellar_nursery.frag. That offset barely relocated which part of the
+        // density field the frustum samples (tiny relative to the dominant octave's
+        // ~1000 ly scale), so which seeds looked good was decoupled from where in
+        // the FRAME their structure landed - several of them read as structure
+        // clustered at the corners/edges with an empty center. The offset was
+        // changed to (0,-400,0) - large enough to meaningfully relocate the sampled
+        // region - which invalidated the old pool (a shifted offset is effectively
+        // a different sample point per seed) and required re-curating from scratch:
+        // sampled 20+ seeds against the new offset, verified each candidate at full
+        // resolution (not just a thumbnail - a first thumbnail-only pass was
+        // actively misleading).
+        //
+        // Also caught during re-curation: raising the density field's time-evolution
+        // rate (see stellar_nursery.frag's tScale, Showability Audit) means a seed
+        // that looks good at t=0 can drift toward a flat/empty state within 15s, the
+        // same threshold-crossing fragility playing out over time instead of across
+        // seeds. Two initial candidates (480, 88) looked good at t=1s but visibly
+        // flattened out by t=15s and were dropped. The final pool was verified at
+        // BOTH t=1s and t=15s (not just launch) via --diagnostic motion.
+        private static readonly float[] KnownGoodSeeds = { 777f, 33f, 61f, 155f };
 
         public StellarNursery(Camera camera)
         {
@@ -66,8 +110,8 @@ namespace CosmicEngine.App.Worlds.World01
             }
             else
             {
-                _seed = (float)(_rng.NextDouble() * 1000.0);
-                Console.WriteLine($"[StellarNursery] Loaded. Seed: {_seed:F2}");
+                _seed = KnownGoodSeeds[_rng.Next(KnownGoodSeeds.Length)];
+                Console.WriteLine($"[StellarNursery] Loaded. Seed: {_seed:F2} (picked from known-good pool)");
             }
 
             Console.WriteLine("[Startup] StellarNursery loaded successfully");

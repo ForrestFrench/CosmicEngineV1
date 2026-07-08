@@ -134,6 +134,19 @@ namespace CosmicEngine.App.Engine
         private FullscreenQuad? _debugQuad;
         private readonly List<(string Label, double AvgLuminance, double MinLuminance, double MaxLuminance, double NonBlackPct, string ScreenshotPath)> _visualResults = new();
 
+        // Stellar Nursery Showability Audit: bounded multi-timepoint capture of the
+        // *normal* render path (uDebugMode 0, real Update/Render, no synthetic debug
+        // shader) at fixed elapsed times, so motion can be judged the same way a user
+        // watching the dashboard would see it - not just a single frame. This is
+        // diagnostic instrumentation only; it does not change any world's rendering.
+        private bool   _motionTestMode;
+        private float  _motionElapsed;
+        private readonly bool[] _motionCaptured = new bool[3]; // t1, t5, t15
+        private static readonly float[] MotionCaptureTimes = { 1f, 5f, 15f };
+        private const float MotionTestDurationSeconds = 16f;
+        private string _motionReportDir = "";
+        private readonly List<(string Label, byte[] Pixels, int Width, int Height)> _motionFrames = new();
+
         public CosmicEngineApp()
         {
             var nativeSettings = new NativeWindowSettings()
@@ -184,6 +197,11 @@ namespace CosmicEngine.App.Engine
                     _visualTestMode = true;
                     i++;
                 }
+                else if (args[i] == "--diagnostic" && i + 1 < args.Length && args[i + 1] == "motion")
+                {
+                    _motionTestMode = true;
+                    i++;
+                }
                 else if (args[i] == "--profile" && i + 1 < args.Length)
                 {
                     string requested = args[i + 1];
@@ -220,6 +238,25 @@ namespace CosmicEngine.App.Engine
                     }
                     i++;
                 }
+                else if (args[i] == "--seed" && i + 1 < args.Length)
+                {
+                    // Stellar Nursery Showability Consistency Fix: makes the seed used by
+                    // a normal run/dashboard show-mode session, and every bounded
+                    // diagnostic mode, explicit and reviewable from the command line -
+                    // sets the same COSMICENGINE_SEED environment variable
+                    // StellarNursery.Load() already reads, so no changes were needed
+                    // there. Root cause of the prior rejected package: --diagnostic
+                    // motion was run with no seed control, so StellarNursery.Load()
+                    // picked a random seed from the known-good pool - not necessarily
+                    // the same seed used for the separately-captured --diagnostic visual
+                    // reference frame, producing two genuinely different (not just
+                    // differently-timed) frames that were incorrectly claimed as the
+                    // same. --seed removes that ambiguity for review captures.
+                    string requestedSeed = args[i + 1];
+                    Environment.SetEnvironmentVariable("COSMICENGINE_SEED", requestedSeed);
+                    Console.WriteLine($"[Seed] --seed {requestedSeed} -> COSMICENGINE_SEED set for this run.");
+                    i++;
+                }
             }
 
             if (_smokeTestMode)
@@ -228,6 +265,8 @@ namespace CosmicEngine.App.Engine
                 Console.WriteLine("[Diagnostic] Baseline report will be written on exit.");
             if (_visualTestMode)
                 Console.WriteLine($"[Visual Test] Enabled — 5 phases x {VisualPhaseDurationSeconds:F0}s (solid color, gradient, StellarNursery, density debug, radiance debug), then exit.");
+            if (_motionTestMode)
+                Console.WriteLine($"[Motion Test] Enabled — normal render path, captures at t=1s/5s/15s, exits at {MotionTestDurationSeconds:F0}s.");
             Console.WriteLine($"[Profile] Using profile: {_profile.Name} (RenderScale {_profile.RenderScale:F2}) — {_profile.Purpose}");
             Console.WriteLine($"[World] Using world: {_worldName}");
         }
@@ -272,6 +311,14 @@ namespace CosmicEngine.App.Engine
                 Console.WriteLine($"[Visual Test] Report directory: {_visualReportDir}");
             }
 
+            if (_motionTestMode)
+            {
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                _motionReportDir = Path.Combine("DiagnosticReports", $"Motion_{timestamp}");
+                Directory.CreateDirectory(_motionReportDir);
+                Console.WriteLine($"[Motion Test] Report directory: {_motionReportDir}");
+            }
+
             Console.WriteLine("[CosmicEngine] Started.");
             Console.WriteLine($"  Profile: {_profile.Name} (RenderScale {_profile.RenderScale:F2})");
             Console.WriteLine($"  Internal render resolution: {_renderWidth}x{_renderHeight} (base design {BaseRenderWidth}x{BaseRenderHeight})");
@@ -287,7 +334,7 @@ namespace CosmicEngine.App.Engine
             // a normal interactive "show mode" run - never to a bounded smoke-test,
             // diagnostic, or visual-test run, so existing bounded-diagnostic behavior
             // (fixed duration, forced exit) is completely unaffected.
-            if (!_smokeTestMode && !_diagnosticMode && !_visualTestMode)
+            if (!_smokeTestMode && !_diagnosticMode && !_visualTestMode && !_motionTestMode)
             {
                 if (_quitRequested)
                 {
@@ -314,6 +361,12 @@ namespace CosmicEngine.App.Engine
             if (_visualTestMode)
             {
                 RunVisualTestFrame(dt);
+                return;
+            }
+
+            if (_motionTestMode)
+            {
+                RunMotionTestFrame(dt);
                 return;
             }
 
@@ -596,6 +649,127 @@ namespace CosmicEngine.App.Engine
             }
         }
 
+        /// <summary>
+        /// Stellar Nursery Showability Audit: runs the world's completely normal
+        /// Update()/Render() path (uDebugMode 0, real audio signal, real camera/profile
+        /// - nothing synthetic) and captures the actual back buffer at t=1s/5s/15s of
+        /// elapsed run time, then exits. Unlike --diagnostic visual (which captures one
+        /// frame per synthetic phase), this exists to answer one question: does the
+        /// currently-active world visibly change over the timescale a person watching
+        /// it would notice?
+        /// </summary>
+        private void RunMotionTestFrame(float dt)
+        {
+            var signal = BuildAudioSignal();
+            _camera.Update(dt, signal.Bass1);
+            _motionElapsed += dt;
+
+            _renderTarget!.Bind();
+            _activeWorld?.Update(dt, signal);
+            _activeWorld?.Render();
+
+            var fb = _window.FramebufferSize;
+            _renderTarget.BlitToScreen(fb.X, fb.Y);
+            _window.SwapBuffers();
+
+            for (int i = 0; i < MotionCaptureTimes.Length; i++)
+            {
+                if (!_motionCaptured[i] && _motionElapsed >= MotionCaptureTimes[i])
+                {
+                    _motionCaptured[i] = true;
+                    CaptureMotionFrame($"T{MotionCaptureTimes[i]:F0}");
+                }
+            }
+
+            if (_motionElapsed >= MotionTestDurationSeconds && !_exitRequested)
+            {
+                _exitRequested = true;
+                WriteMotionReport();
+                _window.Close();
+            }
+        }
+
+        private void CaptureMotionFrame(string label)
+        {
+            var fb = _window.FramebufferSize;
+            int w = fb.X, h = fb.Y;
+            byte[] pixels = new byte[w * h * 3];
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
+            GL.ReadPixels(0, 0, w, h, PixelFormat.Rgb, PixelType.UnsignedByte, pixels);
+
+            string path = Path.Combine(_motionReportDir, $"{label}.ppm");
+            SavePpm(path, w, h, pixels);
+            Console.WriteLine($"[Motion Test] {label}: screenshot saved to {path} ({w}x{h})");
+
+            _motionFrames.Add((label, pixels, w, h));
+        }
+
+        /// <summary>
+        /// Stellar Nursery Showability Consistency Fix: reports the active world's actual
+        /// seed (StellarNursery only - other worlds don't have a seed concept) so every
+        /// diagnostic report is self-documenting about which seed produced it. Root cause
+        /// of the prior rejected package: no diagnostic report logged this, so two
+        /// separately-captured frames using different seeds were incorrectly compared as
+        /// if they were the same frame.
+        /// </summary>
+        private string ActiveWorldSeedInfo() =>
+            _activeWorld is StellarNursery sn ? $"{sn.Seed:F2}" : "n/a (world has no seed concept)";
+
+        /// <summary>Reports mean/max per-channel pixel difference and % of pixels that changed meaningfully between consecutive captures - a proxy for human-visible motion, not a substitute for looking at the frames.</summary>
+        private void WriteMotionReport()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("# Motion Test Report");
+            sb.AppendLine();
+            sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"**World:** {_worldName} | **Profile:** {_profile.Name} | **Seed:** {ActiveWorldSeedInfo()}");
+            sb.AppendLine();
+
+            for (int i = 1; i < _motionFrames.Count; i++)
+            {
+                var prev = _motionFrames[i - 1];
+                var curr = _motionFrames[i];
+                var (meanAbsDiff, maxDiff, pctChanged) = ComputeFrameDiff(prev.Pixels, curr.Pixels);
+                sb.AppendLine($"## {prev.Label} -> {curr.Label}");
+                sb.AppendLine($"- Mean absolute per-channel difference (0-255 scale): {meanAbsDiff:F3}");
+                sb.AppendLine($"- Max per-channel difference (0-255 scale): {maxDiff}");
+                sb.AppendLine($"- Percent of pixels changed by more than 2/255 in any channel: {pctChanged:F2}%");
+                sb.AppendLine();
+
+                Console.WriteLine(
+                    $"[Motion Test] {prev.Label}->{curr.Label}: mean diff {meanAbsDiff:F3}/255, " +
+                    $"max diff {maxDiff}/255, {pctChanged:F2}% pixels changed");
+            }
+
+            string reportPath = Path.Combine(_motionReportDir, "REPORT.md");
+            File.WriteAllText(reportPath, sb.ToString());
+            Console.WriteLine($"[Motion Test] Report written to {reportPath}");
+        }
+
+        private static (double meanAbsDiff, int maxDiff, double pctChanged) ComputeFrameDiff(byte[] a, byte[] b)
+        {
+            long sum = 0;
+            int  max = 0;
+            long changedPixels = 0;
+            int  pixelCount = a.Length / 3;
+
+            for (int i = 0; i < a.Length; i += 3)
+            {
+                int dr = Math.Abs(a[i]     - b[i]);
+                int dg = Math.Abs(a[i + 1] - b[i + 1]);
+                int db = Math.Abs(a[i + 2] - b[i + 2]);
+                int d  = Math.Max(dr, Math.Max(dg, db));
+
+                sum += dr + dg + db;
+                if (d > max) max = d;
+                if (d > 2) changedPixels++;
+            }
+
+            double meanAbsDiff = sum / (double)a.Length;
+            double pctChanged  = 100.0 * changedPixels / pixelCount;
+            return (meanAbsDiff, max, pctChanged);
+        }
+
         /// <summary>Reads the back buffer, logs average luminance / non-black %, and saves a PPM screenshot.</summary>
         private void CaptureVisualFrame(string label)
         {
@@ -686,6 +860,7 @@ namespace CosmicEngine.App.Engine
             sb.AppendLine("# Visible-Frame Diagnostic Report");
             sb.AppendLine();
             sb.AppendLine($"**Generated:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"**World:** {_worldName} | **Profile:** {_profile.Name} | **Seed:** {ActiveWorldSeedInfo()}");
             sb.AppendLine();
             sb.AppendLine("## OpenGL");
             sb.AppendLine($"- Renderer: {_glRenderer}");
@@ -736,7 +911,7 @@ namespace CosmicEngine.App.Engine
             // window is already closing and both background threads above are daemon
             // threads that should let the process exit on their own, but a user-reported
             // issue was Cosmic Engine being left running after test runs. Force it.
-            if ((_smokeTestMode || _diagnosticMode || _visualTestMode) && !_perfSweepSubRun)
+            if ((_smokeTestMode || _diagnosticMode || _visualTestMode || _motionTestMode) && !_perfSweepSubRun)
                 Environment.Exit(0);
         }
 
