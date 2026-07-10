@@ -1053,3 +1053,42 @@ StellarNursery: showable = yes, when launched with a controlled/known seed. Lava
 
 ### Recommended next action
 Consider exposing a "Show Seed" label/selector in the dashboard using the new `--seed` mechanism, so a live operator can deliberately pick a known-strong seed (e.g. 777) instead of relying on random pool selection — flagged as optional in the task, not implemented here to stay within diagnostic-consistency scope.
+
+---
+
+## Entry 19 — Dashboard Show Seed Support
+
+**Date:** 2026-07-07
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+Small follow-up to Entry 18's accepted "Important limitation": the dashboard could still launch Stellar Nursery via random seed selection from the known-good pool, which has real quality variance. Make dashboard/show-mode launches use a reliable, known-good show seed (`777`) by default instead of depending on random-seed luck. Not visual polish, no Stellar Nursery shader changes, no Lava Lamp changes.
+
+### Files changed
+- `Engine/SceneRegistry.cs` — new `ShowSeed` field on `SceneDefinition`; set to `"777"` for Stellar Nursery, `null` (no seed concept) for Lava Lamp.
+- `Engine/CosmicEngine.cs` — new `ApplyShowSeedIfAvailable(worldName)` helper (sets `COSMICENGINE_SEED` via the existing override mechanism, no changes needed in `StellarNursery.cs`); applied in `OnLoad()` for the initial world (only if no explicit CLI `--seed` was given, tracked via new `_explicitSeedProvided` flag) and unconditionally in `ApplyPendingSwitch()` for every dashboard-driven world switch; new public `CurrentSeedInfo` property for dashboard status.
+- `ControlServer.cs` — `GET /status` now includes `seed`; `GET /scenes` now includes `showSeed`; dashboard status bar displays `Seed: 777.00`; Stellar Nursery's scene card displays `Show Seed: 777` (Lava Lamp's card shows no seed line).
+
+### Seed behavior
+- Bare `dotnet run -- --profile Safe` (what `run-show.sh` runs) or `--world StellarNursery` with no `--seed`: now uses seed 777 automatically, logged as `[Seed] Using show seed 777 for Stellar Nursery.`
+- Dashboard `POST /launch` switching into Stellar Nursery: always applies seed 777, every time, regardless of what came before.
+- Explicit CLI `--seed <value>`: still wins for the initial launch, unchanged, confirmed via a `--seed 33` test showing no show-seed override log line.
+- Plain CLI pool-based random selection: unchanged and still reachable — only the dashboard/default-startup path was touched, not `StellarNursery.Load()`'s existing `KnownGoodSeeds` mechanism itself.
+- Lava Lamp: no-op, confirmed via zero diff on any Lava Lamp file.
+
+### Build/run results
+`dotnet build`: succeeded, 0 warnings, 0 errors. `--world StellarNursery --profile Safe --seed 777 --smoke-test`: 57.2 avg fps, clean exit. `--world LavaLamp --profile Safe --smoke-test`: 59.5 avg fps, clean exit. Live show-mode session (`nohup dotnet run -- --profile Safe`) launched, dashboard viewed live in-browser confirming `Seed: 777.00` in the status bar and `Show Seed: 777` on the Stellar Nursery card, then quit cleanly via `POST /quit`. `ps aux` checked clean after every command.
+
+### Screenshot/package path
+`DiagnosticReports/DashboardShowSeed_20260707_211317.zip`, containing `REPORT.md`, `screenshots/` (`stellar_seed777_reference.png`, `lava_lamp_reference.png` — engine-side captures, since the live browser dashboard view could not be saved to disk in this environment), `logs/` (build, two smoke-tests, full live show-mode session log showing the `[Seed] Using show seed 777...` line), `source_context/`, `git/`, `audit/`.
+
+### Known limitations
+- Live dashboard/browser session still cannot be literally screenshotted to a file (same pre-existing sandbox limitation as Entries 15/16/18) — correct behavior was directly observed in-session and is backed by console-log evidence instead.
+- Random pool selection remains reachable via plain CLI with no `--seed` flag — intentional, per the task's instruction not to remove it unless necessary.
+- Implemented a single fixed `ShowSeed` rather than a full seed selector (777/33/61/155) — the task's own fallback ("if selector is too much, just use 777 as the default") explicitly allowed this simpler version.
+- Not final art quality; no OptiPlex/real-guitar validation yet.
+
+### Recommended next action
+If a full seed selector becomes desirable later, `GET /scenes` already exposes each scene's single `showSeed`; extending it to a small array (e.g. `showSeeds: ["777","33","61","155"]`) and adding a dropdown next to each scene card's launch buttons would be a natural, low-risk follow-up using the same `--seed`/`ApplyShowSeedIfAvailable` mechanism already in place.
+

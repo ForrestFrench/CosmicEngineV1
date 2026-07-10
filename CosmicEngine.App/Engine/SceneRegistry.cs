@@ -19,6 +19,16 @@ namespace CosmicEngine.App.Engine
         public required string DefaultProfile { get; init; }
         public required bool Showable { get; init; }
         public string? ThumbnailPath { get; init; }
+
+        // Dashboard Show Seed Support: a known-good, reproducible seed to use whenever
+        // this scene is launched from the dashboard (or as the initial default-startup
+        // world) instead of leaving it to random pool selection - see AUDIT.md
+        // "Dashboard Show Seed Support" for why (the seed pool has real quality
+        // variance; showing bandmates shouldn't depend on random-seed luck). Null for
+        // scenes with no seed concept (e.g. LavaLamp). Does not apply to explicit CLI
+        // `--seed <value>`, which always takes priority for the initial launch.
+        public string? ShowSeed { get; init; }
+
         public required Func<Camera, IWorld> Factory { get; init; }
     }
 
@@ -33,6 +43,7 @@ namespace CosmicEngine.App.Engine
             DefaultProfile = "Safe",
             Showable       = true,
             ThumbnailPath  = null,
+            ShowSeed       = "777",
             Factory        = camera => new StellarNursery(camera)
         };
 

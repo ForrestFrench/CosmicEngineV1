@@ -63,7 +63,8 @@ namespace CosmicEngine.App
                     fps            = app?.LastObservedFps ?? 0f,
                     renderWidth    = app?.CurrentRenderWidth ?? 0,
                     renderHeight   = app?.CurrentRenderHeight ?? 0,
-                    audioCapturing = app?.AudioCapturing ?? false
+                    audioCapturing = app?.AudioCapturing ?? false,
+                    seed           = app?.CurrentSeedInfo ?? "-"
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -78,7 +79,8 @@ namespace CosmicEngine.App
                     description    = s.Description,
                     status         = s.Status,
                     defaultProfile = s.DefaultProfile,
-                    showable       = s.Showable
+                    showable       = s.Showable,
+                    showSeed       = s.ShowSeed
                 });
                 Respond(ctx, 200, JsonSerializer.Serialize(scenes), "application/json");
                 return;
@@ -298,12 +300,14 @@ function refreshStatus() {
                        '(idle, or mid performance-sweep). Status will resume once a normal run is active.';
       return;
     }
+    const seedPart = (s.seed && s.seed.indexOf('n/a') === -1)
+      ? ' &nbsp;|&nbsp; Seed: <b>' + s.seed + '</b>' : '';
     bar.innerHTML =
       'World: <b>' + s.world + '</b> &nbsp;|&nbsp; ' +
       'Profile: <b>' + s.profile + '</b> &nbsp;|&nbsp; ' +
       'FPS: <b>' + s.fps.toFixed(1) + '</b> &nbsp;|&nbsp; ' +
       'Target: <b>' + s.renderWidth + 'x' + s.renderHeight + '</b> &nbsp;|&nbsp; ' +
-      'Audio: <b>' + (s.audioCapturing ? 'capturing' : 'stopped') + '</b>';
+      'Audio: <b>' + (s.audioCapturing ? 'capturing' : 'stopped') + '</b>' + seedPart;
   }).catch(() => {
     document.getElementById('statusBar').textContent = 'Engine status unavailable (server not reachable).';
   });
@@ -320,6 +324,9 @@ function renderScenes() {
     const isExperimental = scene.status.toLowerCase().indexOf('experimental') !== -1;
     if (isExperimental && !showExperimental) return;
 
+    const seedLine = scene.showSeed
+      ? '<p class=\'default-profile\'>Show Seed: ' + scene.showSeed + '</p>' : '';
+
     const card = document.createElement('div');
     card.className = 'scene-card';
     card.innerHTML =
@@ -327,6 +334,7 @@ function renderScenes() {
       '<p class=\'desc\'>' + scene.description + '</p>' +
       '<p class=\'status\'>' + scene.status + '</p>' +
       '<p class=\'default-profile\'>Default profile: ' + scene.defaultProfile + '</p>' +
+      seedLine +
       '<div class=\'buttons\'>' +
         '<button data-id=\'' + scene.id + '\' data-profile=\'Safe\' class=\'launch-btn\'>Launch Safe</button>' +
         '<button data-id=\'' + scene.id + '\' data-profile=\'High\' class=\'launch-btn\'>Launch High</button>' +

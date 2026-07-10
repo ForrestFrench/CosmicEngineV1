@@ -48,6 +48,10 @@ namespace CosmicEngine.App.Engine
         public float  LastObservedFps     { get; private set; }
         public bool   AudioCapturing      => AudioEngine.IsCapturing;
 
+        // Dashboard Show Seed Support: exposes the active world's seed (StellarNursery
+        // only - other worlds have no seed concept) for the dashboard's /status endpoint.
+        public string CurrentSeedInfo => ActiveWorldSeedInfo();
+
         /// <summary>Queues a world/profile switch to be applied on the render thread next frame. Either argument may be null to leave that dimension unchanged.</summary>
         public void RequestSwitch(string? worldName, string? profileName)
         {
@@ -82,6 +86,12 @@ namespace CosmicEngine.App.Engine
         // StellarNursery (unchanged prior behavior) - LavaLamp must be requested
         // explicitly via --world LavaLamp. See WorldSelector.cs.
         private string _worldName = WorldSelector.DefaultWorldName;
+
+        // Dashboard Show Seed Support: true once an explicit CLI --seed has been
+        // parsed. Explicit CLI intent always wins for the initial world load; a
+        // scene's registry ShowSeed only fills in when the user didn't ask for a
+        // specific seed themselves.
+        private bool _explicitSeedProvided;
 
         private readonly GameWindow _window;
         private readonly Camera     _camera;
@@ -254,6 +264,7 @@ namespace CosmicEngine.App.Engine
                     // same. --seed removes that ambiguity for review captures.
                     string requestedSeed = args[i + 1];
                     Environment.SetEnvironmentVariable("COSMICENGINE_SEED", requestedSeed);
+                    _explicitSeedProvided = true;
                     Console.WriteLine($"[Seed] --seed {requestedSeed} -> COSMICENGINE_SEED set for this run.");
                     i++;
                 }
@@ -295,6 +306,11 @@ namespace CosmicEngine.App.Engine
             // Lava Lamp Scene Draft v0.1: profile-aware blob count (harmless no-op
             // when StellarNursery is the active world - only LavaLampScene reads it).
             LavaLampScene.BlobCount = _profile.Name == "High" ? 8 : 6;
+
+            // Dashboard Show Seed Support: only fills in when the user didn't already
+            // ask for a specific seed via CLI --seed - explicit intent always wins.
+            if (!_explicitSeedProvided)
+                ApplyShowSeedIfAvailable(_worldName);
 
             _activeWorld?.Load();
 
@@ -406,6 +422,21 @@ namespace CosmicEngine.App.Engine
         /// created, mirroring the same Load()/Unload() and RenderTarget lifecycle
         /// already used for a normal single-run startup.
         /// </summary>
+        /// <summary>
+        /// Dashboard Show Seed Support: sets COSMICENGINE_SEED to the given world's
+        /// registered SceneDefinition.ShowSeed, if it has one - reuses the exact same
+        /// env-var override StellarNursery.Load() and CLI --seed already read, so no
+        /// changes were needed there. No-op for worlds with no ShowSeed (e.g. LavaLamp).
+        /// </summary>
+        private static void ApplyShowSeedIfAvailable(string worldName)
+        {
+            if (SceneRegistry.TryParse(worldName, out var scene) && scene.ShowSeed != null)
+            {
+                Environment.SetEnvironmentVariable("COSMICENGINE_SEED", scene.ShowSeed);
+                Console.WriteLine($"[Seed] Using show seed {scene.ShowSeed} for {scene.DisplayName}.");
+            }
+        }
+
         private void ApplyPendingSwitch()
         {
             string? newWorld       = _pendingWorldName;
@@ -432,6 +463,13 @@ namespace CosmicEngine.App.Engine
                 _activeWorld?.Unload();
                 _worldName   = newWorld!;
                 _activeWorld = WorldSelector.Create(_worldName, _camera);
+
+                // Dashboard Show Seed Support: every dashboard-triggered switch into a
+                // scene with a known-good ShowSeed uses it, so showing bandmates never
+                // depends on random-seed luck - this is unconditional (not gated behind
+                // _explicitSeedProvided) because a dashboard switch is, by definition, a
+                // deliberate user action distinct from the process's initial CLI launch.
+                ApplyShowSeedIfAvailable(_worldName);
             }
 
             if (profileChanged)
