@@ -984,6 +984,17 @@ namespace CosmicEngine.App.Engine
             {
                 exitStatus = $"error: {ex.Message}";
             }
+            finally
+            {
+                // Each sub-run's CosmicEngineApp constructs its own GameWindow, and
+                // GameWindow.Close() only stops its render loop - it does not tear
+                // down the native OS window. Without an explicit Dispose() here, a
+                // multi-run sweep (one process, many sub-runs) accumulates visible
+                // undisposed windows on screen until the whole sweep's single
+                // Environment.Exit(0) call at the very end. Dispose immediately so
+                // each sub-run's window actually closes before the next one opens.
+                _window.Dispose();
+            }
 
             return new PerfSweepRunResult(
                 _worldName, profile.Name, profile.RenderScale, _renderWidth, _renderHeight,

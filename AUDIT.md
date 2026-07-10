@@ -1092,3 +1092,51 @@ Small follow-up to Entry 18's accepted "Important limitation": the dashboard cou
 ### Recommended next action
 If a full seed selector becomes desirable later, `GET /scenes` already exposes each scene's single `showSeed`; extending it to a small array (e.g. `showSeeds: ["777","33","61","155"]`) and adding a dropdown next to each scene card's launch buttons would be a natural, low-risk follow-up using the same `--seed`/`ApplyShowSeedIfAvailable` mechanism already in place.
 
+---
+
+## Entry 20 — Mac mini Baseline Validation
+
+**Date:** 2026-07-09
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+Hardware-baseline validation pass on the user's new active development machine, a Mac mini M4 Pro. Establish a clean performance/launch baseline on this machine, and formalize the machine transition: the old 2015 MacBook Pro / Intel Iris Graphics 6100 is retired from the active dev/art-review role (historical context only); the Mac mini is now that baseline; the Dell OptiPlex 5070 Micro remains a future stage-target validation, unchanged. Explicitly out of scope: scene visuals, shaders, new features, pushing, self-signing this entry.
+
+### Machine
+Mac mini (Mac16,11), Apple M4 Pro, 12 cores (8 performance + 4 efficiency), 24 GB RAM, macOS 26.5.1 (Darwin 25.5.0).
+
+### Build/run results
+`dotnet build`: succeeded, 0 warnings, 0 errors.
+
+OpenGL: renderer `Apple M4 Pro`, vendor `Apple`, version `4.1 Metal - 90.5`, GLSL `4.10`.
+
+Smoke tests (`--smoke-test`, ~8s each, all clean exits, no orphan process):
+- StellarNursery Safe: 74.0 avg fps, 13.5ms avg frame, min observed 67.0, target 640x360.
+- StellarNursery High: 74.6 avg fps, 13.4ms avg frame, min observed 72.3, target 1280x720.
+- LavaLamp Safe: 74.2 avg fps, 13.5ms avg frame, min observed 69.1, target 640x360.
+- LavaLamp High: 74.4 avg fps, 13.4ms avg frame, min observed 70.6, target 1280x720.
+
+`--diagnostic perf-sweep` (10 sub-runs × Safe/High, 6s each): this command sweeps **one world per invocation** — default `StellarNursery`, or `--world LavaLamp` — not both in one run, and has no CLI override for run count (hardcoded 10). Ran it twice to cover both worlds:
+- StellarNursery: Safe avg-of-avg 75.0 fps (range 1.5), High avg-of-avg 75.2 fps (range 0.8). Both stable.
+- LavaLamp: Safe avg-of-avg 75.3 fps (range 1.2, stable), **High avg-of-avg 70.8 fps (range 12.4, min 63.9, max 76.4) — a real, reproducible FPS dip**, smaller in magnitude but the same kind of pattern as the previously-documented StellarNursery High-profile collapse on the old Iris hardware (Entry 13), now on a different world/hardware combination. Root cause not investigated in this pass.
+
+Dashboard launcher (`./run-show.sh`): starts, dashboard live at `http://localhost:8080` (`GET /status`/`GET /scenes` confirmed), live in-process scene+profile switch confirmed via `POST /launch` (`StellarNursery/Safe → LavaLamp/High`, same PID throughout, verified by `GET /status` and a screenshot of the dashboard status bar updating), quit confirmed via `POST /quit` across two separate sessions. `ps aux` checked clean after every command in this entire pass, including both dashboard sessions.
+
+### Window-disposal bug found and fixed mid-pass
+During the first `--diagnostic perf-sweep` run, the user directly observed 5+ Cosmic Engine windows open simultaneously on screen and flagged it — an initial assumption (based on reading `PerformanceSweep.cs`'s sequential loop structure) that sub-runs closed their window before the next one opened was wrong, and the user's direct observation corrected it. Root-caused to `RunSweepSubRun()` in `Engine/CosmicEngine.cs`: each of the sweep's 20 sub-runs constructs a new `CosmicEngineApp` (and therefore a new `GameWindow`), but `GameWindow.Close()` — called internally when the smoke-test timer elapses — only stops that window's render loop; it does not call `Dispose()` on the native OS window. With nothing disposing `_window` between sub-runs, each sub-run's window remained open on screen, undisposed, accumulating until the whole sweep's single `Environment.Exit(0)` call at the very end (after all 20 sub-runs finish). Standalone smoke-test/diagnostic commands were unaffected — each is its own OS process, and `Environment.Exit(0)` on completion tears down everything regardless of explicit disposal.
+
+This fix was outside the pass's original "measurement only, no code changes" scope. Before making any change, the two options (document as a known limitation and skip re-sweeping vs. apply a minimal disposal fix) were presented to the user, who explicitly chose the fix. Applied a single `finally { _window.Dispose(); }` around the `_window.Run()` call in `RunSweepSubRun()` — no other files touched, no shader/visual/feature changes. Rebuilt clean, then re-ran the StellarNursery sweep; the user watched it live and confirmed: "It's one at a time. Good fix." Both perf-sweep results reported above (StellarNursery and LavaLamp) are from *after* this fix; the original pre-fix StellarNursery sweep's raw data is retained in the report package for reference but is not the report's authoritative source (FPS figures are consistent between pre- and post-fix — the bug affected window disposal, not render cost).
+
+### Screenshot/package path
+`DiagnosticReports/MacMiniBaseline_20260709_212614.zip`, containing `REPORT.md`, `screenshots/` (`macmini_stellar_safe.png`, `macmini_stellar_high.png`, `macmini_lavalamp_safe.png`, `macmini_lavalamp_high.png` — engine-side captures via the existing `--diagnostic visual` PPM path, converted to PNG with macOS `sips`), `logs/` (build, all four smoke tests, both perf-sweeps pre- and post-fix with raw CSV/summary data, both dashboard sessions), `source_context/`, `git/`, `audit/`.
+
+### Known limitations
+- OptiPlex not validated yet — this pass covers the Mac mini only; the OptiPlex 5070 Micro remains a future stage-target validation, unchanged from prior entries.
+- Real guitar/audio interface not validated as part of this pass — `AudioEngine` reported `capturing` throughout (a capture device was open), but no live guitar signal was played through it; audio levels read 0.000 in every log.
+- `dashboard_home.png` was not saved to disk — the dashboard was viewed live and confirmed working in-session (status bar, scene/profile switch, screenshots visually inspected), but the screenshot tool available in this sandboxed environment does not expose a retrievable filesystem path, and macOS `screencapture` failed (`could not create image from display`, no Screen Recording permission granted to this session). Same underlying limitation as Entry 19 ("live dashboard/browser session still cannot be literally screenshotted to a file"). Substituted with engine-side world screenshots plus `GET /status`/`GET /scenes` JSON evidence and full session logs.
+- The LavaLamp High-profile FPS dip found on this hardware (range 12.4 across 10 runs) is documented as evidence, not root-caused — out of scope for a baseline-measurement pass.
+- The window-disposal fix, while minimal and user-approved, is a real code change made mid-pass in a task that was originally scoped as measurement-only; flagged prominently here and in `PROJECT_STATE.md`/`IMPLEMENTATION_LOG.md` rather than folded in silently.
+
+### Recommended next action
+Investigate the LavaLamp High-profile FPS dip on the Mac mini (range 12.4 across 10 runs, min 63.9) using the same repeated-run evidence-gathering approach that previously root-caused the StellarNursery High collapse (Entry 13), scoped to LavaLamp only.
