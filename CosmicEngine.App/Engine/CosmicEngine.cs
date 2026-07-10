@@ -161,8 +161,9 @@ namespace CosmicEngine.App.Engine
         {
             var nativeSettings = new NativeWindowSettings()
             {
-                ClientSize = new OpenTK.Mathematics.Vector2i(BaseRenderWidth, BaseRenderHeight),
-                Title      = "Cosmic Engine - Stellar Nursery"
+                ClientSize   = new OpenTK.Mathematics.Vector2i(BaseRenderWidth, BaseRenderHeight),
+                Title        = "Cosmic Engine - Stellar Nursery",
+                StartFocused = false
             };
 
             _window        = new GameWindow(GameWindowSettings.Default, nativeSettings);

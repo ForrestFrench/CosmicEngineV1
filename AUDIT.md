@@ -1140,3 +1140,87 @@ This fix was outside the pass's original "measurement only, no code changes" sco
 
 ### Recommended next action
 Investigate the LavaLamp High-profile FPS dip on the Mac mini (range 12.4 across 10 runs, min 63.9) using the same repeated-run evidence-gathering approach that previously root-caused the StellarNursery High collapse (Entry 13), scoped to LavaLamp only.
+
+---
+
+## Entry 21 — Stellar Nursery Art Restoration Pass 1
+
+**Date:** 2026-07-10
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — Stellar Nursery Art Restoration Pass 1 ACCEPTED WITH PRE-COMMIT CORRECTIONS (2026-07-10).
+
+**Review scope:** Reviewed `StellarArtRestorationP1_20260710_084355.zip`, including `REPORT.md`, before/after Stellar Nursery Safe and High screenshots, t1/t5/t15 motion captures, density/radiance/starbirth debug images, Lava Lamp reference, metrics, smoke-test logs, perf-sweep logs, git status/diff evidence, source patches, and audit entry draft.
+
+**Accepted findings:**
+1. The prior Mac mini Stellar Nursery baseline had artistically regressed into mostly purple wisps with weak heat, weak mass, and subtle stars.
+2. This pass meaningfully restores warmer heat regions, denser mass regions, stronger center-frame structure, higher contrast, and a more cosmic read.
+3. The purple-only wash is no longer the dominant impression.
+4. Seed 777 behavior, dashboard seed assumptions, point-star artifact fixes, and visible motion are preserved.
+5. The old square/rectangular star-cell artifact was not reintroduced.
+6. Lava Lamp remains unaffected.
+7. `dotnet build` succeeds, Stellar Nursery Safe/High smoke tests succeed, Lava Lamp Safe smoke test succeeds, and no orphaned process remains.
+8. The pass is accepted as an art recovery baseline, not final art.
+
+**Important limitations:** the largest warm mass region still reads too smooth and rounded, especially in the lower-right of the frame. This partially violates the user's "no smooth orbs/ovals" direction. Starbirth/explosive accents are present but too subtle to create the desired "stars exploding / stellar birth" feeling at full-frame scale. Additional targeted art work is needed.
+
+**Required pre-commit corrections:**
+1. Update the actual tracked repo docs: `AUDIT.md`, `PROJECT_STATE.md`, and `IMPLEMENTATION_LOG.md`.
+2. Confirm that the `StartFocused = false` change in `CosmicEngine.cs` was intentionally requested/approved as part of this run. If not, remove it or split it into a separate usability commit.
+3. Do not rely on the anomalously high uncapped FPS numbers as the new performance baseline. Treat them as a separate VSync/window-focus measurement anomaly.
+
+**Acceptance decision:** ACCEPTED as Stellar Nursery Art Restoration Pass 1 after pre-commit documentation cleanup.
+
+**Next recommended phase:** a tightly scoped Stellar Nursery Art Restoration Pass 2 focused only on breaking up the dominant smooth warm blob and making starbirth/explosive accents more visible, without broad shader churn.
+
+### Pre-commit corrections — resolution
+1. **Tracked docs updated:** `AUDIT.md` (this entry, including this reviewer sign-off), `PROJECT_STATE.md`, and `IMPLEMENTATION_LOG.md` all carry this pass's entry.
+2. **`StartFocused = false` confirmed intentional and approved:** the user explicitly asked mid-session ("I want you run these cosmic engine test windows in the background rather than having them take over my screen... Fix this on the next run") after observing test windows stealing OS focus during this pass's earlier bounded runs. Kept in this commit, not split out — it's a direct response to an explicit in-session request, documented here and in `PROJECT_STATE.md`/`IMPLEMENTATION_LOG.md`.
+3. **FPS caveat documented, not treated as new baseline:** see the Performance section below and `PROJECT_STATE.md` — build and smoke tests passed, relative profile behavior (Safe faster than High) is acceptable, but the absolute FPS numbers in this pass (500-4000+ fps) are explicitly flagged as a VSync/window-focus measurement anomaly, not a replacement for the prior Mac mini display-rate baseline (~74-75 fps, Entry 20) — that number stands as the reference baseline until the anomaly is separately investigated.
+
+### User feedback
+The user reviewed the Mac mini baseline Stellar Nursery screenshots (Entry 20) and felt the visuals had regressed significantly into mostly purple wisps: sparse/faint stars, little heat, no obvious starbirth, no strong cosmic bodies, no sense of mass/weight, no explosive stellar energy, no orange accents, and not enough dust/tendril richness. The user specifically remembered and wanted recovered: orange heat accents, multiple bodies for weight, starbirth/explosive energy, richer cosmic structure, and generally more than just purple wisps. ChatGPT agreed the scene was technically stable but artistically regressed. Mac mini is now the active dev/art-review baseline (old Intel MacBook retired) — not optimized for the old hardware.
+
+### Art goals
+Restore Stellar Nursery toward the intended art direction while preserving all recent technical fixes (seed 777 default, star-point shape, dashboard code paths, performance, motion). Target: a showable prototype reading at a glance as cosmic, hot in places, dense/massive, star-forming, layered with dust/gas, alive with subtle motion. Explicitly not final art perfection.
+
+### Changes made
+All changes additive to `Worlds/World01_StellarNursery/Shaders/stellar_nursery.frag`:
+- New `massField()` — coarse, low-frequency noise (distinct frequency/phase from the density fbm octaves) that locally lowers `nebulaDensity`'s threshold in a few regions, letting existing turbulent detail survive/thicken there while the rest stays sparse. Creates several irregular, organic "body" regions — not a geometric primitive; confirmed via a temporary debug probe (reverted before final build) that lobes are irregular, not spheres.
+- New `coreGlow` emission term (`mass * d * glowTexture`, saturated orange-red `vec3(1.55, 0.45, 0.10)`) tied to body regions, textured with the existing fine-noise octave so it doesn't read as a flat gradient.
+- New `starbirthCore()` function — small, bright, tightly-bounded warm-white points (same bounded-smoothstep-falloff shape principle as `pointStarLayer`, never a filled cell) gated to only ignite inside dense body regions.
+- Second dust-lane erosion pass (differently-frequency/phased noise) crossing the existing one, for richer layered dust structure.
+- Composition (`compositionOffset`), camera basis, and `pointStarLayer` (star-artifact fix) all untouched — zero diff on the star code specifically.
+- `fbm3D`'s time-evolution (motion mechanism) untouched.
+
+One unrelated code change: `Engine/CosmicEngine.cs`'s `NativeWindowSettings` gained `StartFocused = false`, fixing a real bug the user flagged mid-session (bounded test-run windows were stealing OS focus from whatever app the user was using) — confirmed via `osascript` that frontmost-app no longer changes when a test window opens. This is the only non-shader change in the diff.
+
+### Iteration honesty
+9 shader iterations before landing on final numbers. Iteration 1: gates too narrow, nothing changed. Iteration 2: mass-field remap overcorrected, density saturated to ~100% opacity almost everywhere — reproduced exactly the flat "peach blob" wash this pass exists to fix. Caught via luminance metrics (0.452, suspiciously high) and a screenshot before being reported as a result, then fixed. Iterations 3-9: added a temporary debug probe (visualized the raw `mass` value directly) to see the field's actual spatial layout instead of guessing blindly, retuned frequency/remap/gates until several distinct lobes covered the central 60%, then fixed the glow's own smooth-gradient look via fine-noise texturing. Debug probe code fully reverted and confirmed absent via `grep` before the final build.
+
+### Before/after visual review
+14-point PASS/FAIL checklist run against `before_macmini_stellar_safe/high.png` vs. this pass's `after_*` captures (full detail in the zip's `REPORT.md`): 12 of 14 checks **PASS** (cosmic read, purple wash fixed, warm accents visible, multiple bodies visible, center-frame structure, stars visible, dust/tendrils richer, motion preserved, square artifacts absent, no flat peach blobs (after the iteration-2 fix), no hard geometric masks, Lava Lamp unaffected). One **PASS but soft**: starbirth/explosive accents are present but subtle at full-frame scale. One **PARTIAL/borderline FAIL**: the dominant warm mass region still reads somewhat smooth/rounded at its core despite several rounds of texture-modulation — a real, acknowledged shortfall against the explicit "no smooth orbs" direction, not fully resolved in this pass.
+
+### Metrics (seed 777, before vs. after)
+Average luminance: Safe/High both 0.132 → 0.212 (+60%). Warm-pixel estimate (red meaningfully above green/blue, luminance > 0.08): 0.4% → 17.9% of frame (~44x). Center-region (central 60%) average luminance: 0.114 → 0.176 (+54%). % pixels > 0.25 luminance: 5.7-5.8% → 31.8-31.9%. Standard deviation roughly doubled (0.057 → 0.107), consistent with genuine multi-region contrast rather than a uniform wash. Full metric table and computation script (`compute_metrics.py`) in the zip's `logs/`.
+
+### Performance
+`dotnet build`: succeeded, 0 warnings/errors. `--world StellarNursery --profile Safe --smoke-test`: 591.7 avg fps. `--world StellarNursery --profile High --smoke-test`: 170.9 avg fps. `--world LavaLamp --profile Safe --smoke-test`: 4464.8 avg fps, zero shader diff. `--diagnostic perf-sweep --world StellarNursery` (10×Safe/10×High): Safe avg-of-avg 584.0 fps (range 26.5), High avg-of-avg 165.6 fps (range 20.9) — both stable relative to each other, no bimodal collapse. `ps aux` checked clean after every command.
+
+**Caveat:** these absolute numbers are far above the ~74-75 fps seen throughout Entry 20 on the same hardware, including on LavaLamp (zero shader diff, 4464.8 fps here vs. ~74 fps in Entry 20). Reproduces identically with/without the `StartFocused` fix, so not caused by it. Most consistent with macOS suspending VSync/swap-interval pacing for a window that isn't frontmost/visible (the window no longer steals focus, and was frequently occluded during this pass's many runs). Not root-caused or fixed — out of scope for a shader-art pass (would be unrelated infrastructure work per governance rule 12). What matters for acceptance (Safe > High, clean exits, no orphan processes, no bimodal collapse) all hold regardless.
+
+### Showability decision
+**Showable prototype: yes.** Meaningful, honest artistic recovery from the purple-wisp regression, all preserve requirements intact (verified via zero diff on star code, seed pool, dashboard files). **Still needs more art work: yes** — smooth-orb-like core in the dominant mass region, and a subtle (not dramatic) starbirth accent, are real, acknowledged gaps.
+
+### Screenshot/package path
+`DiagnosticReports/StellarArtRestorationP1_20260710_084355.zip`, containing `REPORT.md`, `screenshots/` (13 required screenshots — before Safe/High, after t1/t5/t15 × Safe/High, density/radiance debug, starbirth closeup, stars debug, LavaLamp reference; optional side-by-side composite skipped, no image-composition tool available), `logs/` (smoke tests, perf-sweep raw data, motion reports, metrics computation), `source_context/`, `git/`, `audit/`.
+
+### Known limitations
+- "No obvious smooth orbs/ovals" only a partial pass — dominant mass region's core still reads rounded/smooth.
+- Starbirth accents present but subtle at full-frame scale, not a dramatic "wow" moment.
+- Only seed 777 was re-verified against acceptance criteria; the other three pool seeds (33, 61, 155) were not individually re-curated against the new mass-field mechanics — same category of risk that previously invalidated a seed pool after a density-field change (Entry 17).
+- FPS anomaly (absolute numbers far above historical baseline, on both touched and untouched scenes) documented but not root-caused.
+- No OptiPlex validation, no real guitar/audio validation yet.
+- May require a later hybrid/baked-asset spike if the purely procedural approach remains too weak for "no smooth orbs" and "dramatic starbirth" specifically.
+
+### Recommended next action
+Target the one clearest remaining gap directly: reduce the dominant warm mass region's peak intensity and/or apply a stronger, higher-frequency texture-breakup term specifically to it, then re-verify against "no obvious smooth orbs/ovals" alone before touching anything else.

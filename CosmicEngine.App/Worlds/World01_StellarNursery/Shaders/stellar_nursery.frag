@@ -127,16 +127,55 @@ float fbm3D(vec3 p, float t, out float fineOctave) {
 }
 
 // -------------------------------------------------------
+// MASS FIELD (Stellar Nursery Art Restoration Pass 1)
+//
+// A coarse, low-frequency field distinct from nebulaDensity's fbm octaves
+// (different frequency, different seed phase) used to bias WHERE density
+// survives threshold. It does not draw a shape itself - the existing
+// turbulent fbm octaves still supply all the organic, irregular edge detail
+// within/around each lobe - it just makes a few broad regions of the sampled
+// volume "want" to be dense (a body/mass) while the space between them stays
+// sparse/wispy. This is what turns one uniform cloud into several visually
+// distinct, irregular masses connected by tendrils, without ever evaluating
+// a smooth geometric primitive (sphere/orb) anywhere.
+// -------------------------------------------------------
+
+float massField(vec3 pos) {
+    // Frequency 0.0022 (tried first) put roughly one noise lattice cell
+    // across the entire visible frustum - confirmed via a temporary debug
+    // probe showing one huge single-direction gradient with its "high" edge
+    // sitting in a screen corner, nowhere near center. Raised so several
+    // lattice cells (several candidate lobes) fit across the ~400-700 ly
+    // frustum instead of one.
+    vec3 p = pos * 0.009 + vec3(uSeed * 0.031, 300.1, -140.7);
+    float v = noise3D(p) * 0.65 + noise3D(p * 2.3 + vec3(50.0, 0.0, 0.0)) * 0.35;
+    // Value noise (trilinear-interpolated hash corners) concentrates tightly
+    // around ~0.5. Iteration 1 of this feature used too wide/low a remap
+    // window (0.35-0.62) and nearly the entire frustum crossed into "high
+    // mass" at once, saturating density everywhere - exactly the flat/
+    // uniform "peach blob" wash this pass is supposed to fix, not reproduce.
+    // Narrowed and raised to isolate roughly the top ~15-20% of the natural
+    // distribution, so only a few genuinely distinct regions read as a
+    // massed body while the rest of the volume stays at its normal, sparser
+    // density.
+    return smoothstep(0.59, 0.70, v);
+}
+
+// -------------------------------------------------------
 // NEBULA DENSITY FIELD
 //
 // Samples 3D FBM with Guitar 2 modulation.
 // g2bass compresses density (denser peaks, emptier voids).
 // g2mid shifts the density threshold slightly.
+// `mass` (Art Restoration Pass 1) outputs the local massField sample so the
+// caller can gate warm-core-glow / starbirth accents to the same regions
+// that read as dense bodies, instead of scattering them independently.
 // Returns density in [0, 1].
 // -------------------------------------------------------
 
-float nebulaDensity(vec3 pos, float g2bass, float g2mid, out float fineDetail) {
+float nebulaDensity(vec3 pos, float g2bass, float g2mid, out float fineDetail, out float mass) {
     float raw = fbm3D(pos, uTime, fineDetail);
+    mass = massField(pos);
 
     // Dust lane erosion (Visual Detail Pass 1, softened in Revision 1): reuse
     // the fine (octave-3) sample as a mask that locally thins the density
@@ -149,6 +188,15 @@ float nebulaDensity(vec3 pos, float g2bass, float g2mid, out float fineDetail) {
     // cutting a sharp-edged void.
     float dustMask = smoothstep(0.50, 0.90, fineDetail);
     raw *= mix(1.0, 0.70, dustMask);
+
+    // Second dust-lane pass (Art Restoration Pass 1): a coarser, differently
+    // oriented/phased noise sample crosses the first erosion pattern instead
+    // of everything eroding along one direction - reads as layered, richer
+    // dust structure. Same smoothstep-gated, soft-edged approach as above
+    // (no hard masks), just a second independent sample.
+    float dustNoise2 = noise3D(pos * 0.043 + vec3(-233.0, 88.0, 17.0));
+    float dustMask2  = smoothstep(0.52, 0.88, dustNoise2);
+    raw *= mix(1.0, 0.80, dustMask2);
 
     // Base threshold (Visual Recovery Pass 1: lowered from 0.42 to 0.38). The
     // camera is fixed and the dominant fbm octave varies on a ~1000 ly scale -
@@ -163,6 +211,16 @@ float nebulaDensity(vec3 pos, float g2bass, float g2mid, out float fineDetail) {
     // other half of that fix.)
     // Guitar 2 bass: compression shifts distribution toward extremes
     float thresh = 0.38 - g2bass * 0.10 - g2mid * 0.04;
+
+    // Multiple bodies/mass (Art Restoration Pass 1): locally lower the
+    // threshold within high-massField regions so turbulent detail survives
+    // (and thickens) there while the rest of the volume keeps the normal,
+    // sparser threshold - reads as several distinct dense/massed bodies
+    // connected by wispy low-density tendrils, rather than one even wash.
+    // Gated (not applied everywhere) so contrast between body/void remains.
+    float massBoost = mass;
+    thresh -= massBoost * 0.10;
+
     float d = (raw - thresh) / (1.0 - thresh);
     return clamp(d, 0.0, 1.0);
 }
@@ -265,6 +323,50 @@ float pointStarLayer(vec3 rayDir, float cellFreq, float density, float radius, v
 }
 
 // -------------------------------------------------------
+// STARBIRTH CORES (Stellar Nursery Art Restoration Pass 1)
+//
+// A handful of small, bright, tightly-bounded emissive points embedded in
+// WORLD space (unlike pointStarLayer, which lives in ray-direction/
+// background space) - these need to sit inside the actual sampled nebula
+// volume so they read as igniting within a dense body, not floating loose
+// in empty space. Same shape principle as pointStarLayer (a jittered center
+// inside a cell, smoothstep radial falloff bounded to zero outside a small
+// radius - never a filled cell, so this cannot reintroduce the old square-
+// cell artifact): coarse cell hash, low per-cell probability so only ~2-5
+// cores are ever visible across the whole frustum, and gated to only ignite
+// where massField/density are both already high (a body's core), never in
+// open space.
+// -------------------------------------------------------
+
+float starbirthCore(vec3 pos, float mass, float d) {
+    float cellSize = 140.0;
+    vec3  cell     = floor(pos / cellSize);
+    vec3  local    = fract(pos / cellSize);
+
+    float h = hash3(cell + vec3(61.3, 8.9, 174.2));
+    if (h < 0.82) { return 0.0; } // ~18% of cells are even candidates
+
+    vec3 jitter = vec3(
+        hash3(cell + vec3(3.1, 7.7, 1.3)),
+        hash3(cell + vec3(9.9, 2.2, 5.5)),
+        hash3(cell + vec3(4.4, 8.8, 6.6))
+    );
+    vec3  center = mix(vec3(0.30), vec3(0.70), jitter) * cellSize;
+    float dist   = length(local * cellSize - center);
+
+    float core = smoothstep(11.0, 0.0, dist); // small, tightly bounded point
+    core *= core;
+
+    // Only ignite inside a dense body - "starbirth happening within the
+    // mass", not a stray point floating free of any structure. `mass` is
+    // already a near-isolated body mask (see massField) so it's used
+    // directly here rather than re-gated with another narrow smoothstep.
+    float gate = mass * smoothstep(0.16, 0.42, d);
+
+    return core * gate * (0.6 + 0.4 * h);
+}
+
+// -------------------------------------------------------
 // MAIN - VOLUMETRIC RAYMARCHER
 //
 // For each pixel:
@@ -344,7 +446,8 @@ void main() {
 
         // Sample density field at this world position
         float fineDetail;
-        float d = nebulaDensity(pos, g2bass, g2mid, fineDetail);
+        float mass;
+        float d = nebulaDensity(pos, g2bass, g2mid, fineDetail, mass);
 
         if (d > 0.002) {
             // Beer-Lambert extinction coefficient (Visual Recovery Pass 1: base
@@ -403,6 +506,38 @@ void main() {
             float densityGate  = smoothstep(0.02, 0.10, d);
             float warmPocketSoft = warmPocket * densityGate;
             emitCol += vec3(0.55, 0.24, 0.14) * warmPocketSoft * 1.4;
+
+            // Star-forming core glow (Art Restoration Pass 1): a stronger,
+            // more saturated orange/gold glow gated to the same massField
+            // regions that shape the dense bodies above, so heat reads as
+            // coming from inside a massed region (astronomically, that's
+            // where starbirth actually happens) rather than floating free of
+            // any structure. Smoothstep-gated on both mass and density (no
+            // hard cutoff) - this is the fix for the "all-purple wash, no
+            // heat" regression: the existing warmPocketSoft above is a small,
+            // scattered rim-light effect and reads as too faint on its own.
+            // `mass` is already a near-isolated 0/1 body mask after massField's
+            // own internal remap (see massField). `d` alone still saturates
+            // close to 1 across most of a strongly-boosted body's interior
+            // (that's the point of the boost), which flattened this glow back
+            // into a smooth gradient patch in practice, not the fine, broken-
+            // up texture intended - confirmed visually, not just assumed.
+            // Directly multiplying in `fineDetail` (the same octave-3 raw
+            // sample nebulaDensity uses for dust erosion) injects real fine-
+            // noise variation into the glow's own brightness regardless of
+            // how saturated `d` is, so it reads as textured/organic rather
+            // than a flat smooth-orb-like patch.
+            float glowTexture = 0.12 + 0.88 * smoothstep(0.32, 0.78, fineDetail);
+            float coreGlow = mass * d * glowTexture;
+            emitCol += vec3(1.55, 0.45, 0.10) * coreGlow * 3.1;
+
+            // Starbirth cores (Art Restoration Pass 1): a few small, bright,
+            // tightly-bounded points igniting inside the dense bodies - see
+            // starbirthCore() for the bounded-point shape guarantee (same
+            // smoothstep-falloff principle as pointStarLayer, never a filled
+            // cell). Warm-white/gold, additive, on top of the core glow.
+            float birth = starbirthCore(pos, mass, d);
+            emitCol += vec3(1.4, 0.95, 0.55) * birth * 3.0;
 
             // Depth cue (Visual Detail Pass 1): free (reuses t, no extra noise
             // sampling) - near material reads slightly warmer/brighter,
