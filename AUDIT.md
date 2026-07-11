@@ -1224,3 +1224,72 @@ Average luminance: Safe/High both 0.132 → 0.212 (+60%). Warm-pixel estimate (r
 
 ### Recommended next action
 Target the one clearest remaining gap directly: reduce the dominant warm mass region's peak intensity and/or apply a stronger, higher-frequency texture-breakup term specifically to it, then re-verify against "no obvious smooth orbs/ovals" alone before touching anything else.
+
+---
+
+## Entry 22 — Desktop Launcher Usability Pass
+
+**Date:** 2026-07-11
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — Desktop Launcher Usability Pass ACCEPTED WITH PRE-COMMIT CORRECTIONS (2026-07-11).
+
+**Review scope:** Reviewed `DesktopLauncher_20260711_102856.zip`, including `REPORT.md`, launcher scripts, `README_LAUNCHER.md`, build logs, run-show logs, duplicate-instance test logs, dashboard screenshot, git status/diff evidence, and audit context.
+
+**Accepted findings:**
+1. `Run Cosmic Engine.command` and `run-show.sh` now provide a practical no-Terminal launcher workflow for the user.
+2. The launcher resolves its project path instead of assuming the current working directory.
+3. The launcher checks required dependencies and project files before running.
+4. The launcher starts Cosmic Engine in Safe show/dashboard mode.
+5. The launcher opens the dashboard at `http://localhost:8080`.
+6. The dashboard opened successfully and reported `World: StellarNursery`, `Profile: Safe`, and `Seed: 777.00`.
+7. Duplicate-instance detection works by checking the dashboard status endpoint and opening the existing dashboard instead of starting a second engine process.
+8. Failure messages are clear and kept visible.
+9. `README_LAUNCHER.md` explains how to use the launcher, create a Desktop alias, handle macOS blocking, quit cleanly, and find logs.
+10. `dotnet build` succeeds.
+11. No scene visuals, shaders, or dashboard scene behavior were changed.
+12. No orphan process was left after tested sessions.
+
+**Required pre-commit corrections:**
+1. Add an explicit cleanup trap to `run-show.sh` so closing the launcher window or interrupting the script reliably stops the engine process started by that launcher.
+2. Update the actual tracked governance docs: `AUDIT.md`, `PROJECT_STATE.md`, and `IMPLEMENTATION_LOG.md`.
+3. Add `CosmicEngine.App/README_LAUNCHER.md` to git.
+
+**Acceptance decision:** ACCEPTED after cleanup trap and documentation updates.
+
+**Known limitations (reviewer note):** a Desktop alias was not created automatically because macOS automation permissions blocked the attempt. Manual alias instructions are acceptable. True Finder double-click was not directly exercised, but direct script execution and dashboard evidence support acceptance.
+
+**Next recommended phase:** commit the Desktop Launcher Usability Pass after the cleanup trap and documentation updates.
+
+### Pre-commit corrections — resolution
+1. **Cleanup trap added to `run-show.sh`:** `ENGINE_PID` starts empty and is only ever set once the launcher starts its own `dotnet run` process — it stays empty through every early-exit path (dependency failures, duplicate-instance detection), so the trap can never touch an already-running instance found via `/status`. `trap cleanup EXIT` runs on any script exit (a silent no-op if the engine already exited on its own, e.g. after a normal dashboard Quit — confirmed via direct test, no scary errors printed). `trap 'cleanup; exit 0' INT TERM HUP` stops the engine (SIGTERM, with a short grace period before SIGKILL) and exits explicitly on interrupt/termination/hangup. Verified directly with a real interrupt test (job-control-enabled shell, matching how Terminal.app actually runs a double-clicked `.command` file): sent SIGINT to a running launcher, confirmed both the launcher script and the engine process it started were gone afterward, zero orphan. (An initial naive test via a non-interactive, non-job-control background shell appeared to fail — bash's "ignore SIGINT for asynchronous commands without job control" rule — but that was a testing-methodology artifact, not a real bug; re-tested with `set -m` enabled to match actual interactive Terminal.app semantics, and it worked correctly.)
+2. **Tracked docs updated:** `AUDIT.md` (this entry, including this reviewer sign-off), `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md`.
+3. **`README_LAUNCHER.md` added to git** as part of this pass's commit (it was untracked after the prior pass).
+
+### Goal
+The user asked for a simple desktop-friendly launcher for CosmicEngineV1 so they don't need Terminal or memorized commands to open the visuals dashboard: a file they can leave on their Desktop and double-click, which starts show/dashboard mode at the Safe profile, opens `http://localhost:8080` automatically, shows useful logs on failure, allows quitting from the dashboard, and avoids confusing duplicate instances. Usability/launcher pass only — no scene visuals, shaders, or dashboard functionality changes beyond what launcher robustness required.
+
+### Files changed
+- `CosmicEngine.App/run-show.sh` — rewritten: robust symlink/Finder-alias-following path resolution (never assumes CWD is correct); dependency checks (`dotnet`, `CosmicEngine.App.csproj`, `curl`) with clear kept-open error messages (`read -p`) instead of the window flashing shut; duplicate-running-instance detection via `GET /status` (opens the existing dashboard instead of starting a second engine); poll-based dashboard-ready detection (checks `/status` every 0.5s up to ~30s) replacing the old fixed 3s sleep; engine stdout/stderr redirected to `DiagnosticReports/launcher_last_run.log`, with the last 40 lines shown directly in the window if the engine fails to come up.
+- `CosmicEngine.App/Run Cosmic Engine.command` — rewritten: same robust path resolution; explicit check that it's still colocated with `run-show.sh` (the most likely real failure mode a user hits — copying the file to the Desktop instead of making a Finder alias), with a specific, actionable error message pointing at `README_LAUNCHER.md`; delegates via `exec ./run-show.sh`.
+- `CosmicEngine.App/README_LAUNCHER.md` — new: what to double-click, step-by-step Finder-alias instructions, what to do if Gatekeeper blocks it, how to quit, where the failure log lives, and an explicit "what this launcher does not do" section (no visual/shader changes, no bounded diagnostics).
+
+Zero diff on any scene, shader, or engine C# source file — confirmed via `git diff --stat`.
+
+### Launcher behavior
+User double-clicks `Run Cosmic Engine.command` (or a Finder alias to it). It resolves its own real location, verifies `run-show.sh` is present, then delegates. `run-show.sh` checks dependencies, checks for an already-running instance (opening its dashboard instead of duplicating if found), starts `dotnet run -- --profile Safe` in the background with output redirected to a log file, polls for the dashboard to come up, opens `http://localhost:8080` automatically, prints quit instructions, and blocks until the engine exits (dashboard Quit button, window close, or Ctrl+C all work). Stellar Nursery continues to use the known-good show seed 777 by default via the existing `SceneDefinition.ShowSeed` mechanism (Entry 19) — untouched by this pass.
+
+### Verification results
+`dotnet build`: succeeded, 0 warnings/errors. `./run-show.sh` run directly: dashboard reachable within ~5s, confirmed via `GET /status` (`world: StellarNursery, profile: Safe, seed: 777.00`). `Run Cosmic Engine.command` run directly (end-to-end, not just inspected): same successful result. Duplicate-instance handling verified directly: a second launcher invocation while one instance was already running detected it, opened the existing dashboard, and started no second engine process (confirmed via `ps aux`, exactly one `CosmicEngine.App` process). `ps aux` checked clean after quitting both test sessions — no orphaned process. `Run Cosmic Engine.command` confirmed executable (`-rwxr-xr-x`) both via `ls -la` and by successfully running it. Zero diff on any scene/shader file.
+
+**Post-correction re-verification (pre-commit):** re-ran `dotnet build` (clean) and `./run-show.sh` (dashboard up, `seed: 777.00`), quit via the dashboard's `POST /quit` — launcher printed its normal "Cosmic Engine has exited." with no error output, `ps aux` clean. Separately tested the new cleanup trap's interrupt path: launched the engine, confirmed both the launcher script and engine process were running, sent `SIGINT` to the launcher (in a job-control-enabled shell, matching how Terminal.app actually runs a double-clicked `.command` file), and confirmed both processes were gone afterward — zero orphan.
+
+### Screenshot/package path
+`DiagnosticReports/DesktopLauncher_20260711_102856.zip`, containing `REPORT.md`, `screenshots/dashboard_opened_from_launcher.png` (dashboard live in-browser, opened by the launcher itself, showing `Seed: 777.00`), `logs/` (build log, both launcher test-run logs, duplicate-instance test evidence), `source_context/` (both scripts + README), `git/`, `audit/`.
+
+### Known limitations
+- A Desktop alias was not created automatically — an `osascript`/Finder attempt hung on an AppleEvent timeout (likely an unanswerable automation-permission dialog in this sandboxed session) and was abandoned since it's an explicit "if practical" nice-to-have, not a hard requirement. Manual, verified-accurate step-by-step alias instructions are in `README_LAUNCHER.md` instead, which the brief itself anticipated as the fallback.
+- Gatekeeper's "unidentified developer" dialog and true Finder double-click were not directly exercised in this sandboxed environment (both scripts were run via their real paths from a shell, which exercises the same underlying code path a double-click triggers, but isn't literally the same input method). Written instructions for both are standard, well-established macOS behavior, not new invention, but weren't observed firsthand this pass — manual test steps included in the report per the brief's own fallback instruction.
+- Usability/launcher pass only — intentionally did not touch scene visuals, shaders, or dashboard functionality beyond what launcher robustness required.
+
+### Recommended next action
+None required for acceptance — this pass is self-contained. If desired, a follow-up could attempt the Desktop alias creation again in a session where Finder automation permissions can be interactively granted.
