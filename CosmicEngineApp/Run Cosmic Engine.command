@@ -26,7 +26,7 @@ if [ ! -f "$SCRIPT_DIR/run-show.sh" ]; then
   echo "Could not find run-show.sh next to this launcher in:"
   echo "  $SCRIPT_DIR"
   echo ""
-  echo "This launcher must stay inside the CosmicEngine.App folder,"
+  echo "This launcher must stay inside the CosmicEngineApp folder,"
   echo "alongside run-show.sh. If you copied just this one file to your"
   echo "Desktop, that breaks it - create a Finder ALIAS instead:"
   echo "  right-click 'Run Cosmic Engine.command' > Make Alias,"

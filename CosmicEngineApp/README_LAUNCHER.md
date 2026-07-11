@@ -4,7 +4,7 @@ A no-Terminal way to start Cosmic Engine and open the Scene Dashboard.
 
 ## What to double-click
 
-**`Run Cosmic Engine.command`** — lives in the `CosmicEngine.App` folder. Double-clicking it:
+**`Run Cosmic Engine.command`** — lives in the `CosmicEngineApp` folder. Double-clicking it:
 
 1. Starts Cosmic Engine in show/dashboard mode at the **Safe** profile.
 2. Opens the Scene Dashboard automatically in your browser at `http://localhost:8080`.
@@ -15,11 +15,13 @@ A no-Terminal way to start Cosmic Engine and open the Scene Dashboard.
 
 `run-show.sh` does the actual work; `Run Cosmic Engine.command` is the double-clickable wrapper around it (Finder runs `.command` files in Terminal automatically). You only ever need to double-click the `.command` file — never type anything into Terminal yourself.
 
+> **Why the project folder is named `CosmicEngineApp` (no dot)** — it used to be `CosmicEngine.App`, but macOS Finder treats any folder name ending in `.app` (case-insensitive, so `.App` counts) as a broken application bundle and refuses to let you navigate into it normally, even though it's just a regular folder. Renaming it fixed that — you can now open the folder in Finder like any other.
+
 ## Putting it on your Desktop
 
-Don't **copy** `Run Cosmic Engine.command` to your Desktop — it needs to stay next to `run-show.sh` inside `CosmicEngine.App` to find the project. Instead, make a **Finder alias**:
+Don't **copy** `Run Cosmic Engine.command` to your Desktop — it needs to stay next to `run-show.sh` inside `CosmicEngineApp` to find the project. Instead, make a **Finder alias**:
 
-1. In Finder, open the `CosmicEngine.App` folder.
+1. In Finder, open the `CosmicEngineApp` folder (inside the CosmicEngine project folder).
 2. Right-click `Run Cosmic Engine.command` → **Make Alias**. This creates a file named `Run Cosmic Engine.command alias` (or similar) right there.
 3. Drag that alias file to your Desktop (or your Dock, if you prefer).
 4. (Optional) Rename the alias to whatever you like, e.g. "Cosmic Engine" — renaming an alias doesn't break it.
@@ -52,7 +54,7 @@ Any of these stop Cosmic Engine cleanly — no process is left running in the ba
 The launcher window itself will show what happened and stay open so you can read it. It also writes a full log to:
 
 ```
-CosmicEngine.App/DiagnosticReports/launcher_last_run.log
+CosmicEngineApp/DiagnosticReports/launcher_last_run.log
 ```
 
 which is overwritten each time you launch — useful to check (or share) if the dashboard doesn't come up.

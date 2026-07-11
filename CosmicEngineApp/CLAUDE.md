@@ -8,7 +8,7 @@ Cosmic Engine — a real-time, audio-reactive visual engine for live music perfo
 
 ## Commands
 
-Run from this directory (`CosmicEngine.App/`, which contains the `.csproj`; the `.sln` lives one level up):
+Run from this directory (`CosmicEngineApp/`, which contains the `.csproj` — still named `CosmicEngine.App.csproj`, unchanged; the `.sln` lives one level up). Note: this folder was renamed from `CosmicEngine.App` to `CosmicEngineApp` (Desktop Launcher Usability Pass, Entry 23) — a folder ending in `.App`/`.app` (case-insensitive) makes macOS Finder mistake it for a broken application bundle and refuse normal navigation into it. The `.csproj` filename, C# namespace (`CosmicEngine.App.*`), and `.sln` project display name were deliberately left unchanged - only the directory name changed.
 
 ```bash
 dotnet build          # build

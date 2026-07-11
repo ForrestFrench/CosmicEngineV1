@@ -85,7 +85,7 @@ fi
 if [ ! -f "$SCRIPT_DIR/CosmicEngine.App.csproj" ]; then
   fail "Expected to find CosmicEngine.App.csproj in:
   $SCRIPT_DIR
-but it's missing. This launcher must stay inside the CosmicEngine.App
+but it's missing. This launcher must stay inside the CosmicEngineApp
 folder - if you copied it elsewhere (e.g. to your Desktop) instead of
 making a Finder alias, move it back or re-create it as an alias.
 See README_LAUNCHER.md."
