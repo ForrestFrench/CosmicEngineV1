@@ -6,12 +6,13 @@ A no-Terminal way to start Cosmic Engine and open the Scene Dashboard.
 
 **`Run Cosmic Engine.command`** — lives in the `CosmicEngineApp` folder. Double-clicking it:
 
-1. Starts Cosmic Engine in show/dashboard mode at the **Safe** profile.
-2. Opens the Scene Dashboard automatically in your browser at `http://localhost:8080`.
-3. Uses the known-good show seed (**777**) for Stellar Nursery by default.
-4. Lets you quit the engine anytime from the dashboard's **Quit Engine** button.
-5. If something's wrong (missing `dotnet`, moved files, engine failed to start), it prints a clear error and **keeps the window open** so you can read it — it won't just flash and disappear.
-6. If Cosmic Engine is already running, it opens the existing dashboard instead of starting a confusing second copy.
+1. Starts **only the Scene Dashboard** — no Stellar Nursery, no Lava Lamp, no visual window opens automatically.
+2. Opens the Scene Dashboard automatically in your browser at `http://localhost:8080`, showing **"No visual running. Choose a scene below."**
+3. Waits for you to click **Launch Safe** or **Launch High** on whichever scene you want (Stellar Nursery or Lava Lamp) — only then does a visual window open, using that scene/profile.
+4. Uses the known-good show seed (**777**) for Stellar Nursery automatically whenever you launch it this way (no extra step needed).
+5. Lets you quit anytime from the dashboard's **Quit Engine** button — this works whether or not a scene has been launched yet.
+6. If something's wrong (missing `dotnet`, moved files, engine failed to start), it prints a clear error and **keeps the window open** so you can read it — it won't just flash and disappear.
+7. If Cosmic Engine is already running, it opens the existing dashboard instead of starting a confusing second copy.
 
 `run-show.sh` does the actual work; `Run Cosmic Engine.command` is the double-clickable wrapper around it (Finder runs `.command` files in Terminal automatically). You only ever need to double-click the `.command` file — never type anything into Terminal yourself.
 
@@ -61,6 +62,16 @@ which is overwritten each time you launch — useful to check (or share) if the 
 
 ## What this launcher does *not* do
 
-- It doesn't change any visuals, shaders, or scene behavior — it only starts the existing `dotnet run -- --profile Safe` show-mode session, the same one you'd get from Terminal.
+- It doesn't change any visuals, shaders, or scene behavior — it only starts the dashboard (`dotnet run -- --dashboard-only`), the same one you'd get from Terminal.
+- It doesn't open Stellar Nursery, Lava Lamp, or any visual window on its own — you always choose that from the dashboard first.
 - It doesn't install .NET for you — if the `dotnet` command is missing, it'll tell you to install the .NET SDK from [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download).
 - It doesn't run any bounded diagnostics/smoke-tests — for those, use Terminal directly (see the main `CLAUDE.md` for commands), since they're a developer tool, not a show-mode launcher.
+
+## Dashboard-only mode, for developers
+
+The launcher runs `dotnet run -- --dashboard-only` under the hood — a new engine mode that starts just the dashboard/control server without constructing an OpenGL window. If you want a visual immediately without going through the dashboard (e.g. for a quick manual check), the old direct-launch commands still work exactly as before and are unaffected by this change:
+
+```bash
+dotnet run -- --world StellarNursery --profile Safe   # opens Stellar Nursery directly, no dashboard-only step
+dotnet run -- --world LavaLamp --profile Safe
+```

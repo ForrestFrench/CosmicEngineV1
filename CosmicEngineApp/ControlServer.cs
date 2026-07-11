@@ -63,7 +63,12 @@ namespace CosmicEngine.App
                     fps            = app?.LastObservedFps ?? 0f,
                     renderWidth    = app?.CurrentRenderWidth ?? 0,
                     renderHeight   = app?.CurrentRenderHeight ?? 0,
-                    audioCapturing = app?.AudioCapturing ?? false,
+                    // AudioEngine is a process-wide static, not owned by any one
+                    // CosmicEngineApp instance - reading it directly (rather than
+                    // through app?.AudioCapturing) means Dashboard-Only Launcher
+                    // Mode reports the real capture state even before any scene
+                    // (and therefore any CosmicEngineApp) exists yet.
+                    audioCapturing = Audio.AudioEngine.IsCapturing,
                     seed           = app?.CurrentSeedInfo ?? "-"
                 });
                 Respond(ctx, 200, json, "application/json");
@@ -92,7 +97,18 @@ namespace CosmicEngine.App
                 var doc = JsonDocument.Parse(reader.ReadToEnd());
                 string? sceneId = doc.RootElement.TryGetProperty("sceneId", out var s) ? s.GetString() : null;
                 string? profile = doc.RootElement.TryGetProperty("profile", out var p) ? p.GetString() : null;
-                CosmicEngineApp.Current?.RequestSwitch(sceneId, profile);
+
+                // Dashboard-Only Launcher Mode: if no CosmicEngineApp exists yet (the
+                // process was started with --dashboard-only and no scene has been
+                // picked yet), there's nothing for RequestSwitch to switch - route to
+                // DashboardHost instead, which creates the first CosmicEngineApp (and
+                // its GameWindow) on the main thread. Once a scene is running, this
+                // falls back to the existing in-process live-switch path unchanged.
+                if (CosmicEngineApp.Current != null)
+                    CosmicEngineApp.Current.RequestSwitch(sceneId, profile);
+                else
+                    DashboardHost.RequestLaunch(sceneId, profile);
+
                 Respond(ctx, 200, "{}");
                 return;
             }
@@ -106,7 +122,15 @@ namespace CosmicEngine.App
 
             if (ctx.Request.HttpMethod == "POST" && path == "/quit")
             {
-                CosmicEngineApp.Current?.RequestQuit();
+                // Dashboard-Only Launcher Mode: quitting before any scene was ever
+                // launched has no CosmicEngineApp to signal - route to DashboardHost's
+                // own quit flag so the dashboard-only wait loop (and the process) can
+                // still shut down cleanly.
+                if (CosmicEngineApp.Current != null)
+                    CosmicEngineApp.Current.RequestQuit();
+                else
+                    DashboardHost.RequestQuit();
+
                 Respond(ctx, 200, "{}");
                 return;
             }
@@ -296,8 +320,10 @@ function refreshStatus() {
   fetch('/status').then(r => r.json()).then(s => {
     const bar = document.getElementById('statusBar');
     if (!s.running) {
-      bar.innerHTML = 'Engine not running a normal show session right now ' +
-                       '(idle, or mid performance-sweep). Status will resume once a normal run is active.';
+      // Dashboard-Only Launcher Mode: this is the normal, expected state right
+      // after launching with --dashboard-only, before any scene has been picked -
+      // not an error. Also covers the pre-existing idle/mid-performance-sweep case.
+      bar.innerHTML = 'No visual running. Choose a scene below.';
       return;
     }
     const seedPart = (s.seed && s.seed.indexOf('n/a') === -1)

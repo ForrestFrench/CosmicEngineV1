@@ -339,3 +339,21 @@ Verified: `dotnet build` succeeds both directly in the renamed folder and via `d
 Deliberately did not retroactively rewrite historical `AUDIT.md`/`PROJECT_STATE.md`/`IMPLEMENTATION_LOG.md` entries that reference `CosmicEngine.App/...` paths from past passes — those describe the repo as it genuinely was at the time, and rewriting history would be inaccurate. Only new entries and current-state summaries were added.
 
 Result: `dotnet build` succeeds (0 warnings/errors) from both the renamed folder and via the `.sln`. Smoke test and full `run-show.sh` cycle both clean, zero orphan process. See `AUDIT.md` Entry 23 for full detail, including the known limitation that a literal Finder screenshot re-confirmation wasn't possible this session. Committed as part of this pass (see commit for the exact scope); not pushed pending user approval.
+
+---
+
+## 2026-07-11 — Dashboard-Only Launcher Mode
+
+**Executor:** Claude Code / Sonnet
+
+Follow-up user feedback on the desktop launcher: it opened the dashboard correctly, but also immediately started Stellar Nursery (the default world, with its known-good show seed 777 already applied) — the user wants the launcher to open only the dashboard, and choose which visual to launch from there.
+
+Inspected the architecture before writing any code, per the task's own instruction. Found `ControlServer` was already almost fully decoupled from needing a live engine instance — `GET /status`/`GET /scenes` already handled a null `CosmicEngineApp.Current` gracefully, and the only real gap was `POST /launch`/`POST /quit` silently no-op'ing when `Current` was null (`CosmicEngineApp.Current?.RequestSwitch(...)`), which is exactly the state a dashboard-only process starts in. Chose the smaller of the two designs outlined in the brief — same-process lazy renderer creation — over spawning a child render process, since the only real constraint (GameWindow/GL creation must happen on the main thread on macOS) is straightforward to satisfy with a simple wait loop, while the child-process design would have meant reworking `ControlServer` into a process supervisor and risked breaking the existing live in-process scene-switching.
+
+Added a new `Engine/DashboardHost.cs`, dispatched via a new `--dashboard-only` flag in `Program.cs`. It starts `AudioEngine`/`ControlServer` exactly as the normal path already did, then blocks the main thread in a 100ms poll loop until the dashboard signals a launch or quit request (new static methods, called from `ControlServer`'s HTTP thread only when no engine exists yet). Once a launch is requested, the main thread constructs a `CosmicEngineApp` and calls a new `RunFromDashboardHost()` method — a near-twin of the existing `Run(args)` that skips the already-done `AudioEngine.Start()`/`ControlServer.Start()` and CLI parsing. Every existing mechanism (seed application, cleanup on window close) is reused completely unchanged.
+
+Found and fixed one incidental bug along the way: the dashboard's audio-capturing status was read through `app?.AudioCapturing`, always false whenever no engine existed yet — even though `AudioEngine` is a process-wide static that was already capturing. Fixed to read it directly.
+
+Verified thoroughly, including a case the naive test wouldn't catch: launched Lava Lamp as the very first scene from a fresh dashboard-only start (not just as an in-process switch after Stellar Nursery), to specifically exercise the new code path for a non-default world. Both scenes work correctly, Stellar Nursery's seed 777 is preserved, and dashboard Quit was tested in three separate scenarios (mid-scene, before any launch, and a full end-to-end launcher cycle) — all clean, zero orphan process. Direct CLI smoke tests for both worlds re-verified unaffected.
+
+Result: `dotnet build` succeeds (0 warnings/errors). Zero diff on any scene/shader file — only launcher/dashboard infrastructure changed. Assembled `DiagnosticReports/DashboardOnlyLauncher_<timestamp>.zip` with screenshots of the initial no-visual state and both scenes launching, full session logs, git/source context. See `AUDIT.md` Entry 24 for full detail. Nothing committed or pushed pending review; `AUDIT.md` reviewer sign-off left blank.

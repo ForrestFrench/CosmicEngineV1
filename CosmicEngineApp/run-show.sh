@@ -1,10 +1,11 @@
 #!/bin/bash
 # Cosmic Engine - Scene Dashboard Launcher (double-click friendly)
 #
-# Starts the engine in unbounded "show mode" at the Safe profile and opens
-# the Scene Dashboard in your browser at http://localhost:8080. This is NOT
-# a bounded diagnostic - it runs until you quit it, either via the
-# dashboard's "Quit Engine" button or by closing this window / Ctrl+C.
+# Starts ONLY the Scene Dashboard (--dashboard-only) and opens it in your
+# browser at http://localhost:8080 - no visual/scene window opens until you
+# pick one from the dashboard. This is NOT a bounded diagnostic - it runs
+# until you quit it, either via the dashboard's "Quit Engine" button or by
+# closing this window / Ctrl+C.
 #
 # Usually launched via "Run Cosmic Engine.command" (double-click from
 # Finder/Desktop) rather than run directly - see README_LAUNCHER.md.
@@ -117,8 +118,8 @@ fi
 mkdir -p "$SCRIPT_DIR/DiagnosticReports" 2>/dev/null
 LOG_FILE="$SCRIPT_DIR/DiagnosticReports/launcher_last_run.log"
 
-echo "Starting Cosmic Engine (Safe profile)..."
-dotnet run -- --profile Safe > "$LOG_FILE" 2>&1 &
+echo "Starting Cosmic Engine dashboard (no visual yet - pick a scene once it's open)..."
+dotnet run -- --dashboard-only > "$LOG_FILE" 2>&1 &
 ENGINE_PID=$!
 
 echo "Waiting for the dashboard to start..."
@@ -142,7 +143,9 @@ if [ "$DASHBOARD_UP" -eq 1 ]; then
   fi
   echo ""
   echo "Dashboard: $DASHBOARD_URL"
-  echo "Stellar Nursery uses the known-good show seed (777) by default."
+  echo "No visual is running yet - choose Stellar Nursery or Lava Lamp from the"
+  echo "dashboard to start one. Stellar Nursery uses the known-good show seed"
+  echo "(777) automatically when launched this way."
   echo "Quit the engine anytime from the dashboard's 'Quit Engine' button,"
   echo "or close this window / press Ctrl+C."
   echo ""

@@ -1323,3 +1323,53 @@ Direct follow-up to the Desktop Launcher Usability Pass (Entry 22): the user tri
 
 ### Recommended next action
 None required — self-contained fix. If desired, a future pass could rename the `.csproj` file and C# namespace for full consistency (`CosmicEngineApp` throughout), but that's a much larger, higher-risk change than what this specific user complaint required.
+
+---
+
+## Entry 24 — Dashboard-Only Launcher Mode
+
+**Date:** 2026-07-11
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User feedback
+The desktop launcher previously ran `dotnet run -- --profile Safe`, which — because StellarNursery is the default world and has a known-good show seed (777) — opened a Stellar Nursery visual window immediately alongside the dashboard. The user does not want that: double-clicking the launcher should open only the dashboard webpage; the user should then choose which visual to launch from the dashboard.
+
+### Goal
+Add a dashboard-only/control-only launch mode so the desktop launcher starts only the local dashboard/control server and opens `http://localhost:8080`, with no OpenGL visual/render window appearing until a scene/profile is selected from the dashboard. Usability/control-flow pass only — no scene visuals, no Stellar Nursery or Lava Lamp shader changes.
+
+### Implementation design
+Inspected the architecture first, per the task's own instruction, before writing any code:
+- `ControlServer` does not require a live `CosmicEngineApp` — it's fully static, and `GET /status`/`GET /scenes` already handled a null `CosmicEngineApp.Current` gracefully. Only `POST /launch`/`POST /quit` were silent no-ops when `Current` was null (calling `CosmicEngineApp.Current?.RequestSwitch(...)`), which is exactly the state a dashboard-only process starts in.
+- The dashboard can be hosted with no `GameWindow` at all — the coupling lived entirely in `CosmicEngineApp.Run()`, which always constructs a `GameWindow` in its constructor before anything else.
+- Scene launch/switch is entirely in-process (volatile fields consumed on the render thread); no child-process spawning exists anywhere.
+- **Chose Design A (same-process, lazy renderer creation)** over Design B (child-process launch): Design B would have meant reworking `ControlServer` into a process supervisor and losing the existing live in-process scene-switching (required to keep working), for no benefit given Design A's only real constraint — GameWindow/GL creation must happen on the main thread on macOS — is straightforward to satisfy with a simple wait loop.
+
+New `Engine/DashboardHost.cs`, dispatched via `--dashboard-only` in `Program.cs` (alongside the existing `--diagnostic perf-sweep` check, before any `CosmicEngineApp`/`GameWindow` exists). `DashboardHost.Run()` starts `AudioEngine` + `ControlServer` exactly as `CosmicEngineApp.Run()` already did, then blocks the **main thread** in a 100ms poll loop waiting for a launch or quit request (new static `RequestLaunch`/`RequestQuit` methods, called by `ControlServer`'s HTTP thread only when `Current` is still null). Once a launch is requested, the main thread constructs a `CosmicEngineApp` and calls a new `RunFromDashboardHost(world, profile)` method — a near-twin of `Run(args)` that skips `AudioEngine.Start()`/`ControlServer.Start()` (already running) and CLI arg parsing (world/profile came from the dashboard's `POST /launch` body). Every existing mechanism is reused unchanged: `OnLoad()`'s `ApplyShowSeedIfAvailable()` still applies StellarNursery's seed 777 automatically, `OnUnload()` still stops `AudioEngine`/`ControlServer` when the window closes by any means, and the process exits naturally afterward exactly like a normal `dotnet run -- --profile Safe` session always has.
+
+One incidental fix: `GET /status`'s `audioCapturing` field read `app?.AudioCapturing ?? false` — always `false` when `Current` was null, even though `AudioEngine` (a process-wide static) was already capturing. Changed to read `AudioEngine.IsCapturing` directly.
+
+### Files changed
+- `CosmicEngineApp/Engine/DashboardHost.cs` — new.
+- `CosmicEngineApp/Engine/CosmicEngine.cs` — new `RunFromDashboardHost` method; no existing method changed.
+- `CosmicEngineApp/ControlServer.cs` — `/launch`/`/quit` route to `DashboardHost` when `Current` is null; `audioCapturing` reads `AudioEngine.IsCapturing` directly; status-bar JS text updated to "No visual running. Choose a scene below."
+- `CosmicEngineApp/Program.cs` — dispatches `--dashboard-only`.
+- `CosmicEngineApp/run-show.sh` — launches `--dashboard-only` instead of `--profile Safe`; updated user-facing text. Cleanup trap/dependency checks/duplicate-instance detection from the prior pass unchanged.
+- `CosmicEngineApp/README_LAUNCHER.md` — updated to describe the dashboard-first flow.
+
+Zero diff on any scene, shader, or `Run Cosmic Engine.command` file (that script needed no changes — it only delegates to `run-show.sh`).
+
+### Verification results
+`dotnet build`: succeeded, 0 warnings/errors. `dotnet run -- --dashboard-only`: dashboard reachable within ~5s, `GET /status` returns `running: false, world: "(none - dashboard idle)"`, dashboard shows "No visual running. Choose a scene below." — no visual window opens automatically (confirmed via screenshot, no Stellar Nursery/Lava Lamp window visible anywhere on screen). Launching Stellar Nursery Safe from a fresh dashboard-only start: `running: true, world: StellarNursery, seed: "777.00"`, log confirms `[Seed] Using show seed 777 for Stellar Nursery.`. Launching Lava Lamp Safe from a **separate** fresh dashboard-only start (specifically exercising the new code path for a non-default world, not just an in-process switch after Stellar Nursery): `running: true, world: LavaLamp, seed: "n/a (world has no seed concept)"`. Existing in-process live-switch (Stellar Nursery → Lava Lamp while already running) re-verified unaffected. Dashboard Quit tested in three scenarios — quit with a scene active, quit before any scene was ever launched, and a full `run-show.sh` end-to-end cycle — all exit cleanly, zero orphan process each time (`ps aux` checked after every test). Direct CLI smoke tests re-verified unaffected: `--world StellarNursery --profile Safe --smoke-test` (75.0 avg fps) and `--world LavaLamp --profile Safe --smoke-test` (75.1 avg fps).
+
+### Screenshot/package path
+`DiagnosticReports/DashboardOnlyLauncher_20260711_115823.zip`, containing `REPORT.md`, `screenshots/` (`dashboard_initial_no_visual.png`, `dashboard_after_stellar_launch.png`, `dashboard_after_lavalamp_launch.png`), `logs/` (build, dashboard-only session logs for both scenes and both quit scenarios, direct-CLI smoke test logs, full launcher end-to-end log), `source_context/`, `git/`, `audit/`.
+
+### Known limitations
+- The per-scene-card `Restart` button still no-ops silently if clicked while no scene is running — pre-existing behavior, not touched by this pass, out of scope for a control-flow pass focused on initial-launch behavior.
+- `DashboardHost`'s wait loop uses a 100ms poll rather than a signal/event primitive — simplest correct option, consistent with `CosmicEngineApp`'s own existing once-per-frame poll pattern for dashboard requests. Added latency is not perceptible in practice (dashboard status reflected the new scene within ~4s in every test, dominated by shader compile/world load time).
+- Not tested: launching a scene from the dashboard while a separate bounded diagnostic process is running - already an edge case outside prior scope, remains so.
+- True Finder double-click of `Run Cosmic Engine.command` was not directly exercised in this sandboxed session (as in prior passes); `run-show.sh` was run directly via its resolved path, exercising the identical code path Finder's `.command` handling triggers.
+
+### Recommended next action
+None required for acceptance. If desired, a follow-up could make the per-scene `Restart` button behave sensibly (e.g. disabled/hidden) when no scene is running yet, for full UI consistency with the new dashboard-only initial state.

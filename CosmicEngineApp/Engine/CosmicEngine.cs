@@ -189,6 +189,45 @@ namespace CosmicEngine.App.Engine
             _window.Run();
         }
 
+        /// <summary>
+        /// Dashboard-Only Launcher Mode: starts a scene chosen from the dashboard
+        /// after the process was launched with `--dashboard-only` (see
+        /// <see cref="DashboardHost"/>). Unlike <see cref="Run"/>, this does NOT
+        /// call AudioEngine.Start()/ControlServer.Start() - DashboardHost already
+        /// started both before any scene was selected - and there is no CLI `args`
+        /// to parse, since the world/profile came from the dashboard's
+        /// `POST /launch`, not the command line. `_explicitSeedProvided` is left
+        /// false (no CLI --seed was given), so OnLoad's existing
+        /// ApplyShowSeedIfAvailable() call still applies StellarNursery's known-good
+        /// show seed (777) automatically, exactly as it does for any other
+        /// dashboard-driven launch/switch.
+        /// </summary>
+        public void RunFromDashboardHost(string? worldName, string? profileName)
+        {
+            if (worldName != null && WorldSelector.TryParse(worldName, out var resolvedWorld))
+                _worldName = resolvedWorld;
+            else
+                _worldName = WorldSelector.DefaultWorldName;
+
+            if (profileName != null && PerformanceProfile.TryParse(profileName, out var parsedProfile))
+                _profile = parsedProfile;
+            // else: leave the default profile (High) - the dashboard's Launch
+            // Safe/Launch High buttons always send an explicit profile, so this
+            // fallback shouldn't normally trigger; mirrors ParseArgs's existing
+            // safe-fallback spirit for a missing/invalid value.
+
+            _window.Title = $"Cosmic Engine - {_worldName}";
+            Current = this;
+
+            _activeWorld = WorldSelector.Create(_worldName, _camera);
+
+            _window.Load        += OnLoad;
+            _window.RenderFrame += OnRenderFrame;
+            _window.Unload      += OnUnload;
+
+            _window.Run();
+        }
+
         private void ParseArgs(string[] args)
         {
             for (int i = 0; i < args.Length; i++)
