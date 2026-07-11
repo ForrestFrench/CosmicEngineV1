@@ -1293,3 +1293,33 @@ User double-clicks `Run Cosmic Engine.command` (or a Finder alias to it). It res
 
 ### Recommended next action
 None required for acceptance — this pass is self-contained. If desired, a follow-up could attempt the Desktop alias creation again in a session where Finder automation permissions can be interactively granted.
+
+---
+
+## Entry 23 — Rename CosmicEngine.App → CosmicEngineApp (Finder Navigation Fix)
+
+**Date:** 2026-07-11
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+Direct follow-up to the Desktop Launcher Usability Pass (Entry 22): the user tried to use `open -R` / Finder navigation to reach `Run Cosmic Engine.command` and hit a wall — Finder displayed the `CosmicEngine.App` folder as a broken/prohibited application icon ("CosmicEngine.App.app") and refused normal double-click navigation into it. Root cause: macOS's default case-insensitive filesystem makes Finder treat any folder whose name ends in `.app` (case-insensitively — `.App` counts) as an application bundle; since the folder contains a plain C# project, not a real bundle, Finder shows it as broken and blocks navigation, undermining the entire "no Terminal needed" premise of Entry 22's launcher. User explicitly chose the root fix over a docs-only workaround: rename the folder.
+
+### Changes made
+- **Renamed the directory** `CosmicEngine.App` → `CosmicEngineApp` via `git mv` (preserves file history for every tracked file inside). Deliberately scoped to the directory name only — the `.csproj` filename (`CosmicEngine.App.csproj`), the C# namespace (`CosmicEngine.App.*`, unchanged throughout every `.cs` file), and the `.sln`'s internal project display name (`"CosmicEngine.App"`) were all left untouched, to keep this a minimal, low-risk path fix rather than a deep rename touching every source file's `namespace`/`using` statements.
+- `CosmicEngine.sln` — updated the one line referencing the project's relative path: `CosmicEngine.App\CosmicEngine.App.csproj` → `CosmicEngineApp\CosmicEngine.App.csproj`.
+- `CosmicEngineApp/run-show.sh`, `CosmicEngineApp/Run Cosmic Engine.command` — updated user-facing prose error messages that named the folder (`"must stay inside the CosmicEngine.App folder"` → `CosmicEngineApp`); the actual path-resolution logic needed no changes since it was already based on the scripts' own dynamic location (`resolve_script_dir`/`BASH_SOURCE`), not a hardcoded folder name.
+- `CosmicEngineApp/README_LAUNCHER.md` — updated all folder-path references, added a short explanation of why the folder is now named `CosmicEngineApp` (no dot), for future readers who might wonder.
+- `CosmicEngineApp/CLAUDE.md` — updated the "Run from this directory" line and added a note explaining the rename and what was deliberately left unchanged (csproj filename, namespace, `.sln` display name).
+- **Historical entries in `AUDIT.md`, `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md` were deliberately NOT retroactively rewritten** — they describe the repo as it was at the time of each past pass (when the folder genuinely was named `CosmicEngine.App`), and rewriting history would be inaccurate. Only this new entry and current-state summaries were added/updated.
+
+### Verification
+`dotnet build` from the renamed folder: succeeded, 0 warnings/errors. `dotnet build CosmicEngine.sln` from the repo root (exercises the `.sln` path fix specifically): succeeded, 0 warnings/errors. `--world StellarNursery --profile Safe --smoke-test` from the renamed folder: 75.1 avg fps, clean exit — confirms the engine's relative shader-loading paths (`Path.Combine("Worlds", "World01_StellarNursery", "Shaders", ...)`) still resolve correctly, since they depend on the current working directory being the app folder, not the folder's own name. `./run-show.sh` re-run end-to-end from the new path: dashboard reachable, `seed: 777.00`/`profile: Safe` confirmed via `GET /status`, quit via dashboard clean with no error output and zero orphan process (`ps aux` confirmed). Attempted a direct Finder-navigation re-test (`open -R` on the renamed path) but could not get a visual screenshot confirmation in this session (Finder screen-recording access was declined) — the functional evidence (successful `git mv`, successful builds from both the folder directly and via the `.sln`, and the fact that the root cause — a folder name ending in `.app`/`.App` — no longer applies to `CosmicEngineApp`) is the basis for this fix, not a literal screenshot.
+
+### Known limitations
+- Could not visually re-confirm via screenshot that Finder now navigates into the folder correctly (access declined this session) — the fix is verified functionally/by root-cause elimination, not by a literal before/after Finder screenshot.
+- The C# namespace (`CosmicEngine.App.*`), `.csproj` filename, and `.sln` project display name all still say "CosmicEngine.App" (with the dot) — this is intentional (minimal-risk scope), but does mean the project's internal/build-system identity and its folder name no longer match exactly. Purely cosmetic; does not affect build or runtime behavior.
+- This pass was not accompanied by a full DiagnosticReports zip package with the project's usual REPORT.md/screenshots/logs/git/audit structure — given the narrow, mechanical nature of the fix (a path rename) and that it directly follows Entry 22 in the same session, verification evidence is recorded here in the audit entry itself rather than a separate package. A combined review zip covering both Entry 22's corrections and this rename was assembled for this session's ChatGPT review instead.
+
+### Recommended next action
+None required — self-contained fix. If desired, a future pass could rename the `.csproj` file and C# namespace for full consistency (`CosmicEngineApp` throughout), but that's a much larger, higher-risk change than what this specific user complaint required.

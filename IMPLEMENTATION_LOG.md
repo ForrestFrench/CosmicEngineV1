@@ -321,3 +321,21 @@ Testing this exposed a genuine methodology trap worth recording: an initial inte
 Added the ChatGPT reviewer sign-off text to `AUDIT.md` Entry 22 verbatim (the review scope, accepted findings, required corrections, and acceptance decision the reviewer provided), plus a "Pre-commit corrections — resolution" section documenting how each of the three corrections was addressed, and updated `PROJECT_STATE.md` to reflect the corrected/accepted state.
 
 Result: `dotnet build` succeeds (0 warnings/errors). `./run-show.sh` re-verified clean (dashboard up, seed 777, clean quit) and the new interrupt-cleanup path re-verified clean (zero orphan after `SIGINT`). See `AUDIT.md` Entry 22 for full detail including the reviewer sign-off. Committed as part of this pass; not pushed pending user approval.
+
+---
+
+## 2026-07-11 — Rename CosmicEngine.App → CosmicEngineApp
+
+**Executor:** Claude Code / Sonnet
+
+Direct follow-up to the Desktop Launcher pass, same session: the user tried to use the new launcher's own instructions (browse to the project folder in Finder, find `Run Cosmic Engine.command`, make an alias) and hit a wall immediately — Finder showed the `CosmicEngine.App` folder as a broken, un-openable application icon. Root cause: macOS's case-insensitive filesystem makes Finder treat any folder ending in `.app` (case-insensitively, so `.App` counts) as an application bundle; since it's a plain project folder with no real bundle structure inside, Finder shows it broken and blocks normal double-click navigation. This directly undermined the whole point of the launcher pass — "no Terminal needed" doesn't hold if you can't even browse to the file in Finder in the first place.
+
+Offered the user two options: a docs-only workaround (mention the "Show Package Contents" trick), or the root fix (rename the folder). User chose the root fix.
+
+Renamed `CosmicEngine.App` → `CosmicEngineApp` via `git mv` (preserves history for every tracked file inside). Kept the change deliberately narrow: only the directory name changed. The `.csproj` file is still named `CosmicEngine.App.csproj`, every C# file's `namespace CosmicEngine.App.*` is unchanged, and the `.sln`'s internal project display name is still `"CosmicEngine.App"` — renaming those too would touch every source file's namespace/using statements for no functional benefit, well beyond what the actual complaint (Finder navigation) required. Updated the one line in `CosmicEngine.sln` that references the project's relative path, and updated user-facing prose in `run-show.sh`, `Run Cosmic Engine.command`, `README_LAUNCHER.md`, and `CLAUDE.md` that named the old folder — the launchers' actual path-resolution logic needed no changes, since it was already based on the scripts' own dynamic location, not a hardcoded folder name.
+
+Verified: `dotnet build` succeeds both directly in the renamed folder and via `dotnet build CosmicEngine.sln` from the repo root (exercising the `.sln` path fix specifically). A Safe-profile smoke test confirms the engine's relative shader-loading paths still resolve correctly from the new location (75.1 avg fps, clean exit) — these paths depend on the working directory being the app folder, not the folder's own name, so this was the one real risk worth directly testing. `run-show.sh` re-run end-to-end: dashboard reachable, seed 777 confirmed, quit via dashboard clean with zero orphan process.
+
+Deliberately did not retroactively rewrite historical `AUDIT.md`/`PROJECT_STATE.md`/`IMPLEMENTATION_LOG.md` entries that reference `CosmicEngine.App/...` paths from past passes — those describe the repo as it genuinely was at the time, and rewriting history would be inaccurate. Only new entries and current-state summaries were added.
+
+Result: `dotnet build` succeeds (0 warnings/errors) from both the renamed folder and via the `.sln`. Smoke test and full `run-show.sh` cycle both clean, zero orphan process. See `AUDIT.md` Entry 23 for full detail, including the known limitation that a literal Finder screenshot re-confirmation wasn't possible this session. Committed as part of this pass (see commit for the exact scope); not pushed pending user approval.
