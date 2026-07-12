@@ -76,6 +76,15 @@ was added alongside this P1-P6 sequence, not as part of it — it's an architect
 support, `--world` CLI selection) using a deliberately cheap scene, not a Stellar Nursery pass. It does not
 change the phase order above; Stellar Nursery visual polish is still parked pending P3/P4/P5 as described.
 
+## Note — Lava Lamp upgraded to v0.2 (2026-07-11)
+
+Lava Lamp's shader (`World02_LavaLamp/Shaders/lava_lamp.frag`) was upgraded from v0.1 (a "basic blob demo"
+proving multi-world architecture) to v0.2, a more deliberate analog liquid-light/lava-lamp art pass —
+organic lobed blobs, rise/fall/drift motion, layered depth, internal texture, a warm-dominant palette, and
+subtle audio reactivity reusing existing uniforms (see `AUDIT.md` Entry 25). Still a prototype, not final
+art — same "not part of the P1-P6 sequence" status as v0.1 (it's an architecture/second-scene proof, not a
+Stellar Nursery pass), and this does not change the phase order above.
+
 ## Note — Scene Dashboard added (2026-07-06)
 
 A local Scene Dashboard (Scene Dashboard v0.1, see `AUDIT.md` Entry 15), served by the existing

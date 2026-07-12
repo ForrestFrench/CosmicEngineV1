@@ -1373,3 +1373,80 @@ Zero diff on any scene, shader, or `Run Cosmic Engine.command` file (that script
 
 ### Recommended next action
 None required for acceptance. If desired, a follow-up could make the per-scene `Restart` button behave sensibly (e.g. disabled/hidden) when no scene is running yet, for full UI consistency with the new dashboard-only initial state.
+
+---
+
+## Entry 25 — Lava Lamp v0.2 — Analog Liquid Light Prototype
+
+**Date:** 2026-07-11
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** ChatGPT — Lava Lamp v0.2 Analog Liquid Light Prototype ACCEPTED WITH PRE-COMMIT CORRECTIONS (2026-07-11).
+
+**Review scope:** Reviewed `LavaLampV02_20260711_130253.zip`, including `REPORT.md`, before/after Lava Lamp Safe and High screenshots, t1/t5/t15 motion captures, mock audio peak screenshot, Stellar Nursery unchanged reference, build logs, smoke-test logs, perf-sweep logs, dashboard-only re-verification logs, source diff for `lava_lamp.frag`, git status/diff evidence, and audit entry draft.
+
+**Accepted findings:**
+1. Lava Lamp v0.2 is a meaningful visual upgrade over the v0.1 basic blob prototype.
+2. The scene now reads more clearly as analog liquid light / lava lamp rather than simple circular blobs.
+3. Blob shapes are more organic and less perfectly circular.
+4. Motion is visibly alive across t1/t5/t15 and reads as slower rise/fall/drift instead of fixed orbiting.
+5. The palette is significantly warmer and better aligned with the requested amber/orange/magenta liquid-light direction.
+6. Internal texture/marbling and layered depth are improved.
+7. Dashboard-only mode still works and Lava Lamp launches from the dashboard.
+8. Stellar Nursery remains unaffected.
+9. Build succeeds with 0 warnings and 0 errors.
+10. LavaLamp Safe, LavaLamp High, and StellarNursery Safe smoke tests succeed.
+11. LavaLamp perf sweep is stable on the Mac mini, including High profile.
+12. No orphan process remained after tests.
+13. The implementation was correctly limited to Lava Lamp shader work.
+
+**Important limitations:** the scene is accepted as a showable prototype, not final art. The current composition still feels somewhat vertical-column based and would benefit from more lateral spread, richer overlapping layers, and stronger oil-projector complexity in a future pass. Cool/cyan contrast is not yet strongly visible or measurable. Audio reactivity was verified with a temporary mock peak rather than a real guitar/interface signal, so real audio behavior remains unvalidated.
+
+**Required pre-commit correction:** update the actual tracked governance docs before committing. The review package's git status only showed `lava_lamp.frag` modified, but this pass should also update `AUDIT.md`, `PROJECT_STATE.md`, `IMPLEMENTATION_LOG.md`, and `ROADMAP.md` if Lava Lamp prototype status is tracked there.
+
+**Acceptance decision:** ACCEPTED after documentation cleanup.
+
+**Next recommended phase:** commit Lava Lamp v0.2 after documentation cleanup, then proceed with Dashboard Calibration Tab v0.1, since reliable input calibration and response curves are likely more important than further scene-specific audio tuning right now.
+
+### Pre-commit correction — resolution
+The required correction (tracked docs updated) is resolved by this edit: `AUDIT.md` (this entry, including this reviewer sign-off), `PROJECT_STATE.md`, and `IMPLEMENTATION_LOG.md` all carry this pass's entry/summary, and `ROADMAP.md` carries a "Lava Lamp upgraded to v0.2" note. All four were, in fact, already updated in the original review package's working tree at the time of review — the package's `git/status_short.txt` snapshot was simply captured before those doc edits were finished, the same timing gap previously seen in the Dashboard-Only Launcher Mode pass (Entry 24). Re-verified here rather than assumed.
+
+### Goal
+Targeted scene-improvement pass on `Worlds/World02_LavaLamp/Shaders/lava_lamp.frag` upgrading Lava Lamp from v0.1's "basic blob demo" (perfectly circular blobs on a fixed orbit, flat gradient fill, purple-dominant palette) toward an actual analog liquid-light/lava-lamp/oil-projector feel: organic deformed blobs, merging/separating forms, translucent layered depth, soft internal texture, a warm amber/orange/magenta-dominant palette with occasional cool contrast, slow analog rise/fall/drift motion, and subtle audio reactivity reusing existing audio-driven uniforms. Explicitly a prototype upgrade, not final polish. Stellar Nursery, the dashboard launcher, dashboard-only mode, and audio input selection were all out of scope and are unmodified — confirmed via `git diff` (single-file diff).
+
+### Changes made
+All confined to `layerField()`, `innerTexture()`, `palette()`, and `main()` in `lava_lamp.frag` — no new uniforms, zero `LavaLampScene.cs` diff:
+- Rise/fall + two-frequency drift motion replacing v0.1's fixed circular orbit.
+- Angular "lobe" shape modulation (two frequencies/phases per blob, slow rotation) breaking circular symmetry.
+- A second, slower/dimmer/larger "back" layer composited at partial opacity for depth/parallax.
+- A 3-term sine-sum internal texture (`innerTexture()`) for soft marbling instead of flat gradient fill.
+- Re-tuned IQ cosine palette: warm front layer, cooler back layer, deep warm-red/purple animated background.
+- Audio-reactive edge ripple reusing the existing `uWobbleFreqMul` uniform (Guitar 2 treble energy) — no new audio infrastructure.
+
+### Iteration honesty
+Two real defects caught via a temporary, fully-reverted mock-audio-peak probe (confirmed reverted via `grep`/`git diff` before final build) and fixed before being reported as results:
+1. `uHueShift * 0.6` in the front palette's `t` value caused a full hue flip to blue/violet at simulated peak audio — cut to `0.15` so peak audio nudges toward magenta/red without leaving the warm family.
+2. `innerTexture(wp * 6.0, ...)` produced an obvious dot/grid artifact at higher brightness — reduced to `wp * 1.4` (1-2 visible cycles per blob), reading as soft marbling instead.
+
+### Metrics (v0.1 before vs. v0.2 after, Safe/High)
+Avg luminance: 0.173/0.204 → 0.107/0.118 (intended — darker background per art direction, blobs no longer orbit-guaranteed through center). Warm-pixel estimate: 1.1%/2.2% → 52.3%/56.0% (~25-47x). Cool-accent-pixel estimate: 75.7%/75.3% → 0.0%/0.0% — strong confirmation of the intended palette flip from cool/purple to warm/amber-orange dominant. Full table and computation script in the review zip's `logs/`.
+
+### Motion evidence
+Fresh `--diagnostic motion` runs against the final shader. Safe: T1→T5 mean diff 6.448/255 (38.85% changed), T5→T15 mean diff 11.282/255 (57.35% changed). High: T1→T5 mean diff 7.963/255 (52.36% changed), T5→T15 mean diff 15.442/255 (71.25% changed). Visual review across t1/t5/t15 confirms genuine merging/separating blob behavior, not a static or frantic scene.
+
+### Performance
+`dotnet build`: 0 warnings/errors. LavaLamp Safe/High smoke tests: 75.0/75.1 avg fps. StellarNursery Safe smoke test: 75.1 avg fps (confirms unaffected). 20-run perf-sweep (10×Safe, 10×High): Safe avg-of-avg 75.8 fps (range 1.8), High avg-of-avg 75.5 fps (range 0.3) — tight, single-mode, no bimodal collapse, no variance regression from v0.1. Dashboard-only mode re-verified end-to-end: idle → launch LavaLamp Safe (confirmed via `/status`, 74.99 fps) → quit → zero orphan process.
+
+### Showability decision
+**Showable prototype: yes.** Genuine, verified upgrade over v0.1 — organic lobed blobs that visibly rise, drift, merge, and separate; warm-dominant palette confirmed both visually and quantitatively; soft internal marbling; two-layer depth composite; subtle audio-reactive ripple. Not final art polish.
+
+### Known limitations
+- Cyan/blue contrast is compositionally present (back layer, background gradient sample a cooler palette region) but did not register strongly in the simple per-pixel warm/cool metric at the sampled frame — flagged, not claimed as fully met.
+- No real audio signal available in this environment; audio reactivity verified via a temporary, fully reverted mock-peak probe, not a live guitar signal. Real-audio validation remains P2/P5 scope.
+- `dashboard_after_lavalamp_launch.png` screenshot file not captured (Chrome MCP not connected; a real-desktop screenshot attempt surfaced the user's unrelated personal browser activity and was declined rather than used) — substituted with a functional dashboard-launch verification (`/status` confirming `world:LavaLamp, profile:Safe, fps:~75`) instead.
+- Side-by-side composite image skipped, no image-composition tool available (same as prior passes).
+
+### Recommended next action
+If accepted: a v0.3 pass targeting the cyan/blue-contrast gap specifically, and/or real-guitar audio validation once P2 hardware is available. Both separable, bounded follow-ups.
+
+### Screenshot/package path
+`DiagnosticReports/LavaLampV02_20260711_130253.zip`, containing `REPORT.md`, `screenshots/` (10 of 11 requested — `dashboard_after_lavalamp_launch.png` not captured, see Known limitations), `logs/` (smoke tests, motion reports, perf-sweep, dashboard-only re-verification, metrics + computation script, build log), `source_context/`, `git/`, `audit/`.
