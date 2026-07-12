@@ -62,6 +62,22 @@ namespace CosmicEngine.App.Worlds.World02
             _sBass2   = Lerp(_sBass2,   Calibrate(audio.Bass2, Tuning.BassFloor,   Tuning.BassMax), Smoothing);
             _sMid2    = Lerp(_sMid2,    Calibrate(audio.Mid2,  Tuning.MidFloor,    Tuning.MidMax),  Smoothing);
             _sTreble2 = Lerp(_sTreble2, Calibrate(audio.Treble2, Tuning.TrebleFloor, Tuning.TrebleMax), Smoothing);
+
+            // Calibrated Audio Reactivity Integration v0.1: a modest additive nudge
+            // from the Calibration tab's post-curve outputs, on top of (not instead
+            // of) the existing raw-audio-derived smoothed values above - see
+            // AUDIT.md Entry 27. Input A feeds the blob swell/glow/saturation
+            // drivers (_sBass1/_sLevel1, see Render()'s colorIntensity/glowStrength);
+            // Input B feeds the motion/distortion drivers (_sBass2/_sMid2, see
+            // Render()'s blobSize/distortion). Both terms are 0 (no change from v0.2
+            // behavior) whenever calibration is silent or unused, preserving the
+            // v0.2 art direction exactly.
+            float calibratedA = CalibrationEngine.InputA.CurveOutput;
+            float calibratedB = CalibrationEngine.InputB.CurveOutput;
+            _sBass1  = MathF.Min(_sBass1  + calibratedA * CalibrationEngine.CalibratedBlendWeight, 1f);
+            _sLevel1 = MathF.Min(_sLevel1 + calibratedA * CalibrationEngine.CalibratedBlendWeight, 1f);
+            _sBass2  = MathF.Min(_sBass2  + calibratedB * CalibrationEngine.CalibratedBlendWeight, 1f);
+            _sMid2   = MathF.Min(_sMid2   + calibratedB * CalibrationEngine.CalibratedBlendWeight, 1f);
         }
 
         public void Render()

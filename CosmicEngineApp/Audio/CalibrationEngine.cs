@@ -10,13 +10,24 @@ namespace CosmicEngine.App.Audio
     /// lightweight background timer so meters look live even when polled
     /// infrequently by the dashboard.
     ///
-    /// Self-starting by design (see EnsureStarted): no explicit Start()/Stop()
-    /// wiring was added to CosmicEngine.cs/DashboardHost.cs on purpose, to avoid
-    /// touching those files for a dashboard-only feature and to guarantee bounded
-    /// diagnostic runs (--smoke-test etc., which never call any /calibration/*
-    /// route) are completely unaffected. The backing System.Threading.Timer runs
-    /// its callback on a ThreadPool thread, which does not keep the process alive
-    /// on its own - consistent with every bounded mode's existing
+    /// Self-starting by design (see the static constructor below): no explicit
+    /// Start()/Stop() wiring was added to CosmicEngine.cs/DashboardHost.cs, so no
+    /// scene or launcher file needs to know this class exists to keep it ticking.
+    /// A static constructor (not a lazy EnsureStarted() check, as in the original
+    /// v0.1 design) is required as of Calibrated Audio Reactivity Integration v0.1:
+    /// scenes now read CalibrationEngine.InputA/InputB directly every frame, and a
+    /// scene doing so would never have called SetChannels()/Snapshot() (the only
+    /// two places the old lazy check lived), so the timer could stay parked at
+    /// zero forever. A static constructor is guaranteed by the CLR to run before
+    /// the first access to any static member of this type, so simply referencing
+    /// CalibrationEngine.InputA from a scene's Render() is now sufficient. One
+    /// consequence, accepted and documented rather than hidden: the background
+    /// timer now also starts during bounded --smoke-test/--diagnostic runs (any
+    /// world's Update()/Render() touches CalibrationEngine), not just when the
+    /// dashboard's calibration endpoints are hit. This is inexpensive (cheap
+    /// float-only work at ~30Hz) and harmless - the backing System.Threading.Timer
+    /// runs its callback on a ThreadPool thread, which does not keep the process
+    /// alive on its own, consistent with every bounded mode's existing
     /// Environment.Exit(0)-on-unload guarantee.
     ///
     /// Channel-count honesty: AudioEngine currently opens a single stereo OpenAL
@@ -40,26 +51,26 @@ namespace CosmicEngine.App.Audio
         public static readonly InputCalibration InputA = new InputCalibration();
         public static readonly InputCalibration InputB = new InputCalibration();
 
-        private static Timer? _timer;
-        private static readonly object _startLock = new object();
-        private static bool _started;
+        // Calibrated Audio Reactivity Integration v0.1: shared, modest blend weight
+        // scenes use when adding a calibrated post-curve value on top of their own
+        // existing raw-audio-derived parameters (see StellarNursery.cs/
+        // LavaLampScene.cs). A single source of truth so both scenes stay in sync
+        // and a future tuning pass only needs to change one number. Deliberately
+        // small - this is an additive nudge toward smoother response, not a
+        // replacement of each scene's existing (already-tuned) audio path.
+        public const float CalibratedBlendWeight = 0.3f;
+
+        private static readonly Timer _timer;
         private static long _lastTicks;
 
-        private static void EnsureStarted()
+        static CalibrationEngine()
         {
-            if (_started) return;
-            lock (_startLock)
-            {
-                if (_started) return;
-                _started = true;
-                _lastTicks = DateTime.UtcNow.Ticks;
-                _timer = new Timer(Tick, null, 0, 33); // ~30Hz, cheap float-only work
-            }
+            _lastTicks = DateTime.UtcNow.Ticks;
+            _timer = new Timer(Tick, null, 0, 33); // ~30Hz, cheap float-only work
         }
 
         public static void SetChannels(int a, int b)
         {
-            EnsureStarted();
             ChannelA = ClampChannel(a);
             ChannelB = ClampChannel(b);
         }
@@ -77,24 +88,47 @@ namespace CosmicEngine.App.Audio
             _lastTicks = now;
             if (dt <= 0f || dt > 1f) dt = 1f / 30f; // guard against clock jumps / first tick
 
-            InputA.Update(RawLevelFor(ChannelA), dt);
-            InputB.Update(RawLevelFor(ChannelB), dt);
+            // Test-injection override (see SetTestOverride) takes priority over the
+            // real captured level when set - lets the full real pipeline (gain,
+            // gate, curve, smoothing, peak, and downstream scene blending) be
+            // exercised and proven without a real guitar/interface connected.
+            // Always null in real play; never set by any normal code path.
+            float rawA = InputA.TestOverrideRawLevel ?? RawLevelFor(ChannelA);
+            float rawB = InputB.TestOverrideRawLevel ?? RawLevelFor(ChannelB);
+
+            InputA.Update(rawA, dt);
+            InputB.Update(rawB, dt);
         }
 
-        public static object Snapshot()
+        /// <summary>
+        /// Sets or clears a clearly-labeled test-injection raw level for one or
+        /// both inputs (see InputCalibration.TestOverrideRawLevel). Pass null to
+        /// clear and resume reading real captured audio. Only ever called from an
+        /// explicit dashboard "test pulse" action - never automatically.
+        /// </summary>
+        public static void SetTestOverride(string? input, float? value)
         {
-            EnsureStarted();
-            return new
+            if (string.Equals(input, "Both", StringComparison.OrdinalIgnoreCase))
             {
-                channelCount = ChannelCount,
-                channelNames = ChannelNames,
-                channelA = ChannelA,
-                channelB = ChannelB,
-                audioCapturing = AudioEngine.IsCapturing,
-                inputA = SnapshotOf(InputA),
-                inputB = SnapshotOf(InputB)
-            };
+                InputA.TestOverrideRawLevel = value;
+                InputB.TestOverrideRawLevel = value;
+            }
+            else
+            {
+                ResolveInput(input).TestOverrideRawLevel = value;
+            }
         }
+
+        public static object Snapshot() => new
+        {
+            channelCount = ChannelCount,
+            channelNames = ChannelNames,
+            channelA = ChannelA,
+            channelB = ChannelB,
+            audioCapturing = AudioEngine.IsCapturing,
+            inputA = SnapshotOf(InputA),
+            inputB = SnapshotOf(InputB)
+        };
 
         private static object SnapshotOf(InputCalibration c) => new
         {
@@ -112,7 +146,8 @@ namespace CosmicEngine.App.Audio
             peakLevel = c.PeakLevel,
             peakHoldLevel = c.PeakHoldLevel,
             clipping = c.Clipping,
-            curveOutput = c.CurveOutput
+            curveOutput = c.CurveOutput,
+            testOverrideActive = c.TestOverrideRawLevel.HasValue
         };
 
         public static InputCalibration ResolveInput(string? key) =>

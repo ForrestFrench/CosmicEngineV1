@@ -85,32 +85,58 @@ subtle audio reactivity reusing existing uniforms (see `AUDIT.md` Entry 25). Sti
 art — same "not part of the P1-P6 sequence" status as v0.1 (it's an architecture/second-scene proof, not a
 Stellar Nursery pass), and this does not change the phase order above.
 
-## Note — Dashboard Calibration Tab added (2026-07-11)
+## Note — Dashboard Calibration Tab added and wired into scenes (2026-07-11 / 2026-07-12)
 
 A new Calibration tab (Dashboard Calibration Tab v0.1, see `AUDIT.md` Entry 26) was added to the
 dashboard: input channel selection, DAW-style level meters, per-input draggable response-curve
-editors (eDRUMin-style), and manual gain/gate/smoothing/ceiling controls. Like the second world
-and the Scene Dashboard itself, this is a workflow/infrastructure addition, not a P1-P6 phase — it
-does not change the phase order above. Follow-up work is tracked here rather than as a numbered
+editors (eDRUMin-style), and manual gain/gate/smoothing/ceiling controls. **Status: implemented
+and user-tested for meters/curves** — the user tested it on the Mac mini with a real Clarett
+interface and guitar plugged into Input 1 and confirmed "The meters and the response curves work
+as expected. This is a great outcome," including a live demonstration that the Sensitive preset
+lifts the same raw playing dynamics into a meaningfully higher, more usable output range than
+Linear. Calibrated Audio Reactivity Integration v0.1 (see `AUDIT.md` Entry 27) then wired that
+confirmed-working post-curve output into Stellar Nursery and Lava Lamp's audio reactivity as a
+modest additive blend — **status: implemented in this pass, verified via a labeled test-pulse
+mechanism (no real audio interface connected in this environment)**, real-guitar validation of
+the *scene response* specifically (not just the meters) still pending. Like the second world and
+the Scene Dashboard itself, both passes are workflow/infrastructure additions, not P1-P6 phases —
+neither changes the phase order above. Follow-up work is tracked here rather than as a numbered
 phase, since it's calibration-layer work, not Stellar Nursery visual polish:
 
 ### Dashboard Calibration Tab v0.2
-- Local persistence of calibration presets/state to disk (v0.1 resets to defaults on restart).
+- Local persistence of calibration presets/state to disk (still resets to defaults on restart).
 - Per-interface calibration profiles (e.g. a saved profile for the Clarett practice rig vs. the
   Scarlett live rig), swappable without re-tuning each time.
-- Real per-channel Clarett multi-input validation and any UI fixes that surfaces — v0.1's channel
+- Real per-channel Clarett multi-input validation and any UI fixes that surfaces — the channel
   selectors are channel-count-agnostic but only 2 channels (the current stereo capture limit) have
   actually been exercised.
-- Wire at least one scene's audio reactivity to consume the calibrated post-curve values, if it can
-  be done without visual regressions (v0.1 deliberately left both scenes on their original raw
-  audio path — see `AUDIT.md` Entry 26).
+- Tune `CalibrationEngine.CalibratedBlendWeight` (and per-scene mapping choices) against a real
+  instrument signal — Entry 27's additive blend is a conservative first pass, not yet artistically
+  validated the way the Calibration tab's meters/curves were.
 
 ### Dashboard Calibration Tab v0.3
 - Guided auto-calibration: a "Calibrate Input A" / "Calibrate Both" button, a "play normally for
   10 seconds" capture window, and automatic estimation of noise floor, average level, peak
   reference, suggested gain/gate, and a suggested starting response curve from that sample —
-  with manual fine-tuning available afterward via the existing v0.1 controls. Not implemented in
-  v0.1 or v0.2; documented here as a future item only, per the brief that scoped this pass.
+  with manual fine-tuning available afterward via the existing controls. Not implemented yet;
+  documented here as a future item only.
+
+### Future — real Clarett/Scarlett validation
+Test calibrated *scene* response (not just the meters) with a real guitar/Clarett signal on the
+Mac mini — connect the interface, launch a scene from the dashboard, adjust the response curve
+while playing, and confirm the smoother/more controllable response translates all the way through
+to the visuals. The one piece of validation Entry 27's own (mock/test-based) verification could
+not substitute for.
+
+### Future — true Clarett multi-channel capture investigation
+Investigate real multi-input capture (ASIO/CoreAudio device selection instead of stereo OpenAL)
+so all 8 of the Clarett's physical inputs are actually selectable, not just its first two capture
+channels. A capture-layer change, deliberately out of scope for both the Calibration Tab and
+Integration passes (explicitly ruled out as a "broad audio-engine rewrite").
+
+### Future — calibration persistence/presets
+Same item as Dashboard Calibration Tab v0.2 above — save/restore calibration state across restarts
+and support named per-interface profiles.
 
 ## Note — Scene Dashboard added (2026-07-06)
 

@@ -70,7 +70,18 @@ namespace CosmicEngine.App
                     // Mode reports the real capture state even before any scene
                     // (and therefore any CosmicEngineApp) exists yet.
                     audioCapturing = Audio.AudioEngine.IsCapturing,
-                    seed           = app?.CurrentSeedInfo ?? "-"
+                    seed           = app?.CurrentSeedInfo ?? "-",
+                    // Calibrated Audio Reactivity Integration v0.1: CalibrationEngine
+                    // is a process-wide static too (same reasoning as AudioEngine
+                    // above), so its live post-curve values are meaningful to show
+                    // here even before any scene is running. "raw + calibrated blend"
+                    // is deliberately precise, not "calibrated" alone - scenes add a
+                    // modest calibrated contribution on top of their existing
+                    // raw-audio-derived response, they do not replace it. See
+                    // AUDIT.md Entry 27.
+                    calibratedA      = CalibrationEngine.InputA.CurveOutput,
+                    calibratedB      = CalibrationEngine.InputB.CurveOutput,
+                    sceneAudioSource = "raw + calibrated blend"
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -236,6 +247,27 @@ namespace CosmicEngine.App
                 return;
             }
 
+            // Calibrated Audio Reactivity Integration v0.1: a clearly-labeled test
+            // pulse for proving the full calibration -> scene pipeline works without
+            // a real guitar/interface connected. Sets a temporary raw-level override
+            // (see InputCalibration.TestOverrideRawLevel) that flows through the
+            // exact same gain/gate/curve/smoothing/peak pipeline as real audio, then
+            // (client-side) clears itself after a few seconds. Never invoked
+            // automatically - only ever by an explicit dashboard button click.
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/testinput")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? testInput = doc.RootElement.TryGetProperty("input", out var tiv) ? tiv.GetString() : null;
+                float? value = doc.RootElement.TryGetProperty("value", out var tvv) && tvv.ValueKind != JsonValueKind.Null
+                    ? tvv.GetSingle()
+                    : (float?)null;
+
+                CalibrationEngine.SetTestOverride(testInput, value);
+                Respond(ctx, 200, "{}");
+                return;
+            }
+
             // -------------------------------------------------------------------------
 
             if (ctx.Request.HttpMethod == "POST" && path == "/set")
@@ -369,6 +401,7 @@ namespace CosmicEngine.App
   .clip-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 3px; margin-left: 8px;
                 background: #222; color: #666; vertical-align: middle; }
   .clip-badge.active { background: #ff2244; color: #fff; }
+  .clip-badge.test-badge.active { background: #ffbb33; color: #000; }
   .curve-svg { background: #0a0a10; border: 1px solid #333; border-radius: 4px; display: block; }
   .curve-point { cursor: grab; }
   .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
@@ -456,7 +489,7 @@ namespace CosmicEngine.App
 
 <div class='calib-columns'>
   <div class='calib-card'>
-    <h4>INPUT A METER <span class='clip-badge' id='clipA'>CLIP</span></h4>
+    <h4>INPUT A METER <span class='clip-badge' id='clipA'>CLIP</span> <span class='clip-badge test-badge' id='testA'>TEST</span></h4>
     <div class='meter-track'><div class='meter-zone' style='left:15%;width:70%'></div><div class='meter-fill' id='fillA'></div><div class='meter-peak' id='peakA'></div></div>
     <div class='meter-track meter-sub'><div class='meter-fill' id='fillOutA' style='background:linear-gradient(90deg,#aa66ff,#ff66cc)'></div></div>
     <div class='meter-readout'>
@@ -466,9 +499,10 @@ namespace CosmicEngine.App
       <span>Output: <b id='outA'>0.00</b></span>
     </div>
     <div class='meter-label'>TOP = INPUT LEVEL (SHADED ZONE = TARGET RANGE) &nbsp;|&nbsp; BOTTOM = POST-CURVE OUTPUT</div>
+    <button class='reset-small test-pulse-btn' id='testPulseA' data-input='A' style='color:#ffbb33;border-color:#ffbb33'>SEND TEST PULSE (5s, no real audio required)</button>
   </div>
   <div class='calib-card'>
-    <h4>INPUT B METER <span class='clip-badge' id='clipB'>CLIP</span></h4>
+    <h4>INPUT B METER <span class='clip-badge' id='clipB'>CLIP</span> <span class='clip-badge test-badge' id='testB'>TEST</span></h4>
     <div class='meter-track'><div class='meter-zone' style='left:15%;width:70%'></div><div class='meter-fill' id='fillB'></div><div class='meter-peak' id='peakB'></div></div>
     <div class='meter-track meter-sub'><div class='meter-fill' id='fillOutB' style='background:linear-gradient(90deg,#aa66ff,#ff66cc)'></div></div>
     <div class='meter-readout'>
@@ -478,6 +512,7 @@ namespace CosmicEngine.App
       <span>Output: <b id='outB'>0.00</b></span>
     </div>
     <div class='meter-label'>TOP = INPUT LEVEL (SHADED ZONE = TARGET RANGE) &nbsp;|&nbsp; BOTTOM = POST-CURVE OUTPUT</div>
+    <button class='reset-small test-pulse-btn' id='testPulseB' data-input='B' style='color:#ffbb33;border-color:#ffbb33'>SEND TEST PULSE (5s, no real audio required)</button>
   </div>
 </div>
 
@@ -579,7 +614,10 @@ function refreshStatus() {
       'Profile: <b>' + s.profile + '</b> &nbsp;|&nbsp; ' +
       'FPS: <b>' + s.fps.toFixed(1) + '</b> &nbsp;|&nbsp; ' +
       'Target: <b>' + s.renderWidth + 'x' + s.renderHeight + '</b> &nbsp;|&nbsp; ' +
-      'Audio: <b>' + (s.audioCapturing ? 'capturing' : 'stopped') + '</b>' + seedPart;
+      'Audio: <b>' + (s.audioCapturing ? 'capturing' : 'stopped') + '</b>' + seedPart +
+      '<br>Scene audio source: <b>' + s.sceneAudioSource + '</b> &nbsp;|&nbsp; ' +
+      'Calibrated A: <b>' + s.calibratedA.toFixed(2) + '</b> &nbsp;|&nbsp; ' +
+      'Calibrated B: <b>' + s.calibratedB.toFixed(2) + '</b>';
   }).catch(() => {
     document.getElementById('statusBar').textContent = 'Engine status unavailable (server not reachable).';
   });
@@ -834,6 +872,7 @@ function updateMeter(prefix, data) {
   document.getElementById('peak' + prefix).style.left = Math.min(100, data.peakHoldLevel * 100) + '%';
   document.getElementById('fillOut' + prefix).style.width = Math.min(100, data.curveOutput * 100) + '%';
   document.getElementById('clip' + prefix).classList.toggle('active', data.clipping);
+  document.getElementById('test' + prefix).classList.toggle('active', !!data.testOverrideActive);
 }
 
 const manualLoaded = { A: false, B: false };
@@ -905,10 +944,29 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
   });
 });
 
-document.querySelectorAll('.reset-small').forEach(btn => {
+document.querySelectorAll('.reset-small:not(.test-pulse-btn)').forEach(btn => {
   btn.addEventListener('click', () => {
     fetch('/calibration/reset', { method: 'POST', body: JSON.stringify({ input: btn.dataset.input }) });
     manualLoaded[btn.dataset.input] = false;
+  });
+});
+
+// Calibrated Audio Reactivity Integration v0.1: a clearly-labeled test pulse -
+// injects a synthetic raw level (0.7) that flows through the exact same real
+// gain/gate/curve/smoothing/peak pipeline as a real guitar signal, so the
+// full calibration -> scene response chain can be proven without real audio
+// connected. Auto-clears after 5 seconds so it can never be left stuck on.
+document.querySelectorAll('.test-pulse-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const input = btn.dataset.input;
+    btn.disabled = true;
+    btn.textContent = 'TEST PULSE ACTIVE (5s)...';
+    fetch('/calibration/testinput', { method: 'POST', body: JSON.stringify({ input: input, value: 0.7 }) });
+    setTimeout(() => {
+      fetch('/calibration/testinput', { method: 'POST', body: JSON.stringify({ input: input, value: null }) });
+      btn.disabled = false;
+      btn.textContent = 'SEND TEST PULSE (5s, no real audio required)';
+    }, 5000);
   });
 });
 

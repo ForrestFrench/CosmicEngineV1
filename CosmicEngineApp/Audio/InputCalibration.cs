@@ -35,6 +35,15 @@ namespace CosmicEngine.App.Audio
         public bool Clipping;
         public float CurveOutput;
 
+        // Calibrated Audio Reactivity Integration v0.1: an explicit, clearly-labeled
+        // test-injection value (see CalibrationEngine.SetTestOverride). When set, the
+        // CalibrationEngine tick feeds this value in as the raw input level instead of
+        // reading AudioEngine, so the full real gain/gate/curve/smoothing/peak pipeline
+        // and downstream scene blending can be exercised and proven end-to-end without
+        // a real guitar/interface connected. Never set by any normal code path - only
+        // by an explicit dashboard/test call. Always null in real play.
+        public float? TestOverrideRawLevel;
+
         private float _peakHoldTimer;
 
         private const float ClipThreshold = 0.98f;
@@ -164,6 +173,7 @@ namespace CosmicEngine.App.Audio
             RawLevel = SmoothedLevel = PeakLevel = PeakHoldLevel = CurveOutput = 0f;
             Clipping = false;
             _peakHoldTimer = 0f;
+            TestOverrideRawLevel = null;
         }
 
         private static float Clamp01(float v) => MathF.Max(0f, MathF.Min(1f, v));

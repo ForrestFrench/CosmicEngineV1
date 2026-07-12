@@ -168,6 +168,16 @@ namespace CosmicEngine.App.Worlds.World01
 
             // Guitar 1 - Creator
             float bass1 = Calibrate(_sBass1, BassFloor, BassMax);
+            // Calibrated Audio Reactivity Integration v0.1: a modest additive nudge
+            // from the Calibration tab's Input A post-curve output on top of the
+            // existing raw-FFT-derived bass1 value, not a replacement of it - see
+            // the class doc comment above and AUDIT.md Entry 27 for why. Input A's
+            // curve is shaped by the user (Linear/Sensitive/Compressed/S-Curve or a
+            // custom drag), so this is where a smoother, less on/off response comes
+            // from; bass1 alone is unchanged (this term is 0) when no scene is using
+            // calibration or the calibrated output is silent, preserving the
+            // existing recovered art direction exactly as before this pass.
+            bass1 = MathF.Min(bass1 + CalibrationEngine.InputA.CurveOutput * CalibrationEngine.CalibratedBlendWeight, 1f);
             _shader.SetFloat("uBass1",   bass1);
             _shader.SetFloat("uMid1",    Calibrate(_sMid1,    MidFloor,    MidMax));
             _shader.SetFloat("uTreble1", Calibrate(_sTreble1, TrebleFloor, TrebleMax));
@@ -175,6 +185,13 @@ namespace CosmicEngine.App.Worlds.World01
 
             // Guitar 2 - Sculptor
             float bass2 = Calibrate(_sBass2, BassFloor, BassMax);
+            // Same modest additive treatment for Input B, feeding the density-field
+            // threshold/extinction terms (nebulaDensity()'s g2bass) that already
+            // tolerate bass2's full 0-1 raw swing today (the Entry 16-18 seed pool
+            // was curated against that existing range) - this addition is capped
+            // well inside that already-tested range, not a new risk to seed 777's
+            // known-good structure.
+            bass2 = MathF.Min(bass2 + CalibrationEngine.InputB.CurveOutput * CalibrationEngine.CalibratedBlendWeight, 1f);
             _shader.SetFloat("uBass2",   bass2);
             _shader.SetFloat("uMid2",    Calibrate(_sMid2,    MidFloor,    MidMax));
             _shader.SetFloat("uTreble2", Calibrate(_sTreble2, TrebleFloor, TrebleMax));

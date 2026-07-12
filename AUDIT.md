@@ -1491,3 +1491,41 @@ Scarlett 2-input live setup: fully supported today (matches existing stereo capt
 
 ### Screenshot/package path
 `DiagnosticReports/CalibrationTabV01_20260711_133324.zip` — see the package's own `REPORT.md` for full detail.
+
+---
+
+## Entry 27 — Calibrated Audio Reactivity Integration v0.1
+
+**Date:** 2026-07-12
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User test result
+The user tested Dashboard Calibration Tab v0.1 on the Mac mini with a real Clarett interface and guitar plugged into Input 1, and confirmed: "The meters and the response curves work as expected. This is a great outcome." That session also showed the Sensitive preset lifting the same raw playing dynamics (raw 0.07-0.24) into a meaningfully higher output range (0.23-0.47) than Linear (~0.08-0.20) — concrete proof the response curve works. Nothing downstream consumed it yet, though: scenes still ran on their original raw-FFT path.
+
+### Goal
+Wire `CalibrationEngine`'s post-curve output into scene audio reactivity so the smoother, user-validated response reaches the actual visuals, not just the dashboard.
+
+### Investigation (required before implementation)
+Confirmed via direct code reading: `Engine/CosmicEngine.cs`'s `BuildAudioSignal()` reads only raw `AudioEngine.Guitar1/Guitar2` fields — no calibration involved. Each scene applies its own floor/max `Calibrate()` + smoothing on top of that raw `AudioSignal`. `CalibrationEngine`/`InputCalibration` already compute and expose everything the integration needed (`RawLevel`, `SmoothedLevel`, `CurveOutput`, `Clipping`, channel selection, capture status) but were only ever read by `ControlServer.cs`'s `/calibration/status` endpoint. `ControlServer` and the scenes share the same process/static state directly — no bridge needed. Smallest clean integration point: scenes read `CalibrationEngine.InputA/InputB.CurveOutput` directly in their existing `Update()`/`Render()`. One real gap found and fixed: `CalibrationEngine`'s background timer only started lazily via dashboard endpoint calls — converted to a static constructor (CLR-guaranteed to run before first access to any static member) so a scene's direct read is now sufficient on its own.
+
+### Implementation
+No new state object — `CalibrationEngine`/`InputCalibration` already satisfied the brief's requirements. Added: static-constructor reliability fix; a shared `CalibrationEngine.CalibratedBlendWeight = 0.3f` constant; a `TestOverrideRawLevel` field + `SetTestOverride()`/`POST /calibration/testinput` for clearly-labeled test-pulse injection (flows through the real gain/gate/curve/smoothing/peak pipeline, not a shortcut); `GET /status` gained `calibratedA`/`calibratedB`/`sceneAudioSource` fields, shown in the Scenes tab status bar; Calibration tab gained a "TEST" badge and a "SEND TEST PULSE (5s)" button per input, auto-clearing.
+
+### Scene integration
+`StellarNursery.Render()`: Input A's `CurveOutput` blends additively into `bass1` (energy/heat/brightness, feeds `uBassCombined`); Input B's into `bass2` (density-field structure). `LavaLampScene.Update()`: Input A into `_sBass1`/`_sLevel1` (swell/glow/saturation); Input B into `_sBass2`/`_sMid2` (motion/distortion). Both are capped additive terms (`CurveOutput * 0.3`, clamped to 1.0) on top of each scene's existing, already-tuned raw-audio path — zero diff on either `.frag` shader file, zero effect under silence (`CurveOutput` is 0 at rest, confirmed).
+
+### Test results
+`dotnet build`: 0 warnings/errors. StellarNursery Safe and LavaLamp Safe smoke tests both passed, 75.0 avg fps, no regression. Full `--dashboard-only` integration transcript: idle → StellarNursery launches with seed 777 → baseline `calibratedA=0` → test pulse → `calibratedA≈0.7` in `/status` within ~2s → cleared → switched to LavaLamp → test pulse B → `calibratedB≈0.6` in `/status`, independently of A → cleared → quit → zero orphan process. Live-clicked the Test Pulse button in the in-app browser preview: Input A meter filled to Raw/Smoothed/Output 0.70, TEST badge lit, matching the curl-based evidence exactly.
+
+### Known limitations
+- Real Clarett multi-channel routing and true 8-input capture: still not implemented (unchanged scope from the prior pass).
+- Real guitar test of *scene response* (as opposed to the meters alone) not performed in this pass — verified instead via the labeled test-pulse mechanism, which exercises the identical real pipeline.
+- Calibration values still not persisted to disk.
+- The `CalibratedBlendWeight = 0.3` mapping is a conservative first pass, not yet artistically tuned against real playing.
+- Guided auto-calibration still future work.
+- `CalibrationEngine`'s timer now also runs during bounded smoke-test/diagnostic runs (a direct, necessary, and confirmed-harmless consequence of scenes reading it directly) — an honest documented behavior change, not a regression.
+- No `.png` screenshots could be produced — same environment-wide tooling gap as the two immediately prior passes; substituted with a detailed description of what was directly observed in the interactive browser preview plus a complete curl-based integration transcript.
+
+### Screenshot/package path
+`DiagnosticReports/CalibratedAudioIntegrationV01_20260712_145616.zip` — see the package's own `REPORT.md` for full detail.
