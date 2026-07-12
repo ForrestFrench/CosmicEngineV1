@@ -1450,3 +1450,44 @@ If accepted: a v0.3 pass targeting the cyan/blue-contrast gap specifically, and/
 
 ### Screenshot/package path
 `DiagnosticReports/LavaLampV02_20260711_130253.zip`, containing `REPORT.md`, `screenshots/` (10 of 11 requested — `dashboard_after_lavalamp_launch.png` not captured, see Known limitations), `logs/` (smoke tests, motion reports, perf-sweep, dashboard-only re-verification, metrics + computation script, build log), `source_context/`, `git/`, `audit/`.
+
+---
+
+## Entry 26 — Dashboard Calibration Tab v0.1
+
+**Date:** 2026-07-11
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User problem
+The user reported that visuals often felt "too on/off instead of having a smooth response curve" and wanted a way to see what the engine receives from the audio inputs, select which two of a multi-input interface (the practice Clarett has 8 inputs) drive the visuals, and reshape how raw input loudness maps to visual intensity — conceptually modeled on eDRUMin's velocity-curve editor.
+
+### Calibration tab scope
+New "Calibration" dashboard tab alongside the existing "Scenes / Show" tab (simple client-side tab-bar/tab-panel pattern added to `ControlServer.cs`'s single-page HTML — no new page, no change to existing Scenes tab or "THE DEEPEST SPACE" tuning sliders). New backend: `Audio/InputCalibration.cs` (per-input calibration state, cubic-Bezier response curve, peak/RMS/clip tracking) and `Audio/CalibrationEngine.cs` (selects which 2 channels drive Input A/B, ticks both on a self-starting ~30Hz background timer, exposes a snapshot). Six new `ControlServer.cs` endpoints: `GET /calibration/status`, `POST /calibration/channels|manual|preset|curve|reset`.
+
+### Input selection
+Two channel selectors (Visual Input A / Visual Input B), defaulting to Input 1 (Left) / Input 2 (Right) — matching the current 2-channel stereo OpenAL capture reality (`AudioEngine.cs` was and remains stereo-only; no channel-count/device-name discovery was added, honestly reported as `channelCount: 2`). Same-channel selection shows a warning, not a hard block. Built channel-count-agnostic so real Clarett 8-channel capture (a separate, out-of-scope capture-layer change) can be wired in later without a UI rewrite.
+
+### Level meters
+Per-input DAW-style meter: raw level, smoothed level (exponential lerp), peak with ~1.5s hold/decay, clipping badge, a shaded 15%-85% target zone, and a second bar for post-curve output.
+
+### Response curve editor
+Per-input (not shared), cubic-Bezier curve from (0,0) to (1,1) via two draggable control points — same model as CSS `cubic-bezier()` / eDRUMin's two-point editor. Draggable in v0.1 (not deferred to v0.2): pointer-capture drag on both control points, throttled live updates to the server during drag, four presets (Linear/Sensitive/Compressed/S-Curve), and a live dot showing the current input's position on the curve. Curve math implemented identically in C# (authoritative) and JS (drawing/dot, no extra round-trip).
+
+### Clarett practice vs. Scarlett live distinction
+Scarlett 2-input live setup: fully supported today (matches existing stereo capture exactly). Clarett 8-input practice setup: channel selection UI/model is ready and channel-count-agnostic, but true multi-channel capture (beyond stereo) is not implemented — explicitly out of scope as a "broad audio-engine rewrite," documented as a v0.2/v0.3 follow-up.
+
+### Build/test results
+`dotnet build`: 0 warnings/errors. StellarNursery Safe and LavaLamp Safe smoke tests both passed cleanly (75.0/75.1 avg fps in the required bounded runs). `--dashboard-only` re-verified end-to-end: idle start (no auto-launch) → Calibration tab renders correctly (confirmed via browser preview + full page-text/accessibility-tree capture) → all six calibration endpoints exercised successfully (preset, manual, curve, channel-swap, reset, all confirmed via before/after status reads) → Stellar Nursery launches with seed 777 → switched to Lava Lamp → both confirmed via `/status` → clean quit → zero orphan process. Zero diff on `StellarNursery.cs`/`stellar_nursery.frag`, `LavaLampScene.cs`, `AudioEngine.cs`, or `AudioSignal.cs` — scenes are completely unaffected by this pass.
+
+### Known limitations
+- Real Clarett 8-channel input not tested (no such interface connected in this environment).
+- Per-channel audio extraction beyond the existing 2-channel stereo capture is not implemented.
+- Calibration values are not persisted to disk — reset to defaults on restart.
+- Scenes do not yet consume calibrated post-curve values (deliberate — wiring scenes to calibrated values risks changing their audio-reactive visual behavior, which this pass's own constraints explicitly forbid).
+- Auto-calibration not implemented — documented as a v0.3 roadmap item.
+- No `.png` screenshot files could be produced — every available screenshot pathway (in-app browser preview with no save option, Claude-in-Chrome extension not connected, real-desktop capture either unreachable or correctly declined as a privacy risk) hit a real constraint in this environment. Substituted with a full page-text/accessibility-tree capture of the rendered Calibration tab, a complete endpoint-by-endpoint verification transcript, and scene-launch `/status` evidence — see the package's `REPORT.md`/`screenshots/README_SCREENSHOTS_LIMITATION.md` for full detail.
+- No real audio signal was available to exercise meters/curves against a live guitar — mechanics verified via direct endpoint calls with real posted values instead.
+
+### Screenshot/package path
+`DiagnosticReports/CalibrationTabV01_20260711_133324.zip` — see the package's own `REPORT.md` for full detail.

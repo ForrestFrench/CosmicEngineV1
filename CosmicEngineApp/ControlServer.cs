@@ -1,3 +1,4 @@
+using CosmicEngine.App.Audio;
 using CosmicEngine.App.Engine;
 using System;
 using System.Net;
@@ -135,6 +136,106 @@ namespace CosmicEngine.App
                 return;
             }
 
+            // Dashboard Calibration Tab v0.1 -----------------------------------------
+            // Deliberately separate from the Scene Dashboard and "THE DEEPEST SPACE"
+            // Tuning.cs sliders above - this answers "how loud is this input, and how
+            // do we map it to a normalized 0-1 visual-control value", not "how should
+            // a scene react to that value". See Audio/InputCalibration.cs and
+            // Audio/CalibrationEngine.cs for the model itself.
+
+            if (path == "/calibration/status")
+            {
+                Respond(ctx, 200, JsonSerializer.Serialize(CalibrationEngine.Snapshot()), "application/json");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/channels")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                int a = doc.RootElement.TryGetProperty("a", out var av) ? av.GetInt32() : CalibrationEngine.ChannelA;
+                int b = doc.RootElement.TryGetProperty("b", out var bv) ? bv.GetInt32() : CalibrationEngine.ChannelB;
+                CalibrationEngine.SetChannels(a, b);
+                Respond(ctx, 200, "{}");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/manual")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                var input = CalibrationEngine.ResolveInput(
+                    doc.RootElement.TryGetProperty("input", out var iv) ? iv.GetString() : null);
+                if (doc.RootElement.TryGetProperty("field", out var fv) &&
+                    doc.RootElement.TryGetProperty("value", out var vv))
+                {
+                    float val = vv.GetSingle();
+                    switch (fv.GetString())
+                    {
+                        case "gain":          input.Gain = val; break;
+                        case "gateThreshold": input.GateThreshold = val; break;
+                        case "smoothing":     input.Smoothing = val; break;
+                        case "outputCeiling": input.OutputCeiling = val; break;
+                    }
+                }
+                Respond(ctx, 200, "{}");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/preset")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? presetInput = doc.RootElement.TryGetProperty("input", out var piv) ? piv.GetString() : null;
+                string preset = doc.RootElement.TryGetProperty("preset", out var pv) ? pv.GetString() ?? "Linear" : "Linear";
+
+                if (string.Equals(presetInput, "Both", StringComparison.OrdinalIgnoreCase))
+                {
+                    CalibrationEngine.InputA.ApplyPreset(preset);
+                    CalibrationEngine.InputB.ApplyPreset(preset);
+                }
+                else
+                {
+                    CalibrationEngine.ResolveInput(presetInput).ApplyPreset(preset);
+                }
+                Respond(ctx, 200, "{}");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/curve")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                var input = CalibrationEngine.ResolveInput(
+                    doc.RootElement.TryGetProperty("input", out var iv) ? iv.GetString() : null);
+                float p1x = doc.RootElement.TryGetProperty("p1x", out var a1) ? a1.GetSingle() : input.CurveP1X;
+                float p1y = doc.RootElement.TryGetProperty("p1y", out var a2) ? a2.GetSingle() : input.CurveP1Y;
+                float p2x = doc.RootElement.TryGetProperty("p2x", out var a3) ? a3.GetSingle() : input.CurveP2X;
+                float p2y = doc.RootElement.TryGetProperty("p2y", out var a4) ? a4.GetSingle() : input.CurveP2Y;
+                input.SetCustomCurve(p1x, p1y, p2x, p2y);
+                Respond(ctx, 200, "{}");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/reset")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? resetInput = doc.RootElement.TryGetProperty("input", out var riv) ? riv.GetString() : null;
+
+                if (string.Equals(resetInput, "Both", StringComparison.OrdinalIgnoreCase))
+                {
+                    CalibrationEngine.InputA.ResetDefaults();
+                    CalibrationEngine.InputB.ResetDefaults();
+                }
+                else
+                {
+                    CalibrationEngine.ResolveInput(resetInput).ResetDefaults();
+                }
+                Respond(ctx, 200, "{}");
+                return;
+            }
+
             // -------------------------------------------------------------------------
 
             if (ctx.Request.HttpMethod == "POST" && path == "/set")
@@ -234,12 +335,70 @@ namespace CosmicEngine.App
   .quit-btn { margin-top: 20px; background: #2a0d0d; color: #ff5555; border: 1px solid #ff5555;
               padding: 8px 20px; cursor: pointer; font-family: monospace; letter-spacing: 1px; border-radius: 3px; }
   .quit-btn:hover { background: #ff5555; color: #000; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #222; }
+  .tab-btn { background: none; border: none; color: #666; padding: 10px 18px; font-family: monospace;
+             font-size: 14px; letter-spacing: 1px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab-btn.active { color: #ff2266; border-bottom: 2px solid #ff2266; }
+  .tab-btn:hover { color: #22ddff; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Dashboard Calibration Tab v0.1 */
+  .calib-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 700px) { .calib-columns { grid-template-columns: 1fr; } }
+  .calib-card { background: #0d0d14; border: 1px solid #333; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
+  .calib-card h4 { margin: 0 0 10px 0; color: #22ddff; font-size: 15px; }
+  .chan-select { background: #1a1a22; color: #ccc; border: 1px solid #444; padding: 6px 10px;
+                 font-family: monospace; font-size: 13px; border-radius: 3px; }
+  .warn-text { color: #ffbb33; font-size: 12px; margin-top: 8px; }
+  .limit-text { color: #666; font-size: 11px; margin-top: 10px; line-height: 1.6; }
+  .meter-track { position: relative; background: #1a1a22; border: 1px solid #333; height: 26px;
+                 border-radius: 3px; overflow: hidden; margin: 6px 0; }
+  .meter-zone { position: absolute; top: 0; bottom: 0; background: rgba(80,220,120,0.14); }
+  .meter-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0%;
+                background: linear-gradient(90deg,#2299ff,#22ddaa); transition: width 0.08s linear; }
+  .meter-fill.hot { background: linear-gradient(90deg,#ffaa22,#ff8833); }
+  .meter-fill.clip { background: #ff2244; }
+  .meter-peak { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; left: 0; }
+  .meter-sub { height: 12px; }
+  .meter-label { font-size: 10px; color: #666; letter-spacing: 1px; margin-top: 8px; }
+  .meter-readout { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: #999; margin-top: 4px; }
+  .meter-readout b { color: #ccc; }
+  .clip-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 3px; margin-left: 8px;
+                background: #222; color: #666; vertical-align: middle; }
+  .clip-badge.active { background: #ff2244; color: #fff; }
+  .curve-svg { background: #0a0a10; border: 1px solid #333; border-radius: 4px; display: block; }
+  .curve-point { cursor: grab; }
+  .preset-row { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+  .preset-btn { background: #1a1a22; color: #ccc; border: 1px solid #444; padding: 5px 10px; font-size: 11px;
+                cursor: pointer; font-family: monospace; border-radius: 3px; }
+  .preset-btn:hover { border-color: #22ddff; color: #22ddff; }
+  .preset-btn.active-preset { border-color: #ff2266; color: #ff2266; }
+  .manual-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
+  .manual-row label { width: 116px; color: #aaa; }
+  .manual-row input[type=range] { flex: 1; accent-color: #22ddff; }
+  .manual-row .val { width: 46px; text-align: right; color: #22ddff; }
+  .calib-status { font-size: 12px; color: #9fe; line-height: 1.8; background: #0d0d14; border: 1px solid #222;
+                  border-radius: 4px; padding: 12px 16px; margin-bottom: 20px; }
+  .calib-status b { color: #22ddff; }
+  .reset-small { background: #222; color: #ff5555; border: 1px solid #ff5555; padding: 5px 12px; font-size: 11px;
+                 cursor: pointer; font-family: monospace; border-radius: 3px; margin-top: 10px; }
+  .reset-small:hover { background: #ff5555; color: #000; }
 </style>
 </head>
 <body>
 
 <h1>COSMIC ENGINE — SCENE DASHBOARD</h1>
 <p style='color:#666;font-size:12px'>Launch, review, or switch scenes without typing CLI commands.</p>
+
+<div class='tabs'>
+  <button class='tab-btn active' data-tab='scenes'>Scenes / Show</button>
+  <button class='tab-btn' data-tab='calibration'>Calibration</button>
+</div>
+
+<div id='tab-scenes' class='tab-panel active'>
 
 <div class='status-bar' id='statusBar'>Loading engine status…</div>
 
@@ -274,6 +433,93 @@ namespace CosmicEngine.App
 <div class='row'><label>Bass Brightness</label><input type='range' id='BassBrightness' min='0' max='3' step='0.01'><span class='val' id='BassBrightness_v'></span></div>
 
 <button class='reset' onclick='resetDefaults()'>RESET DEFAULTS</button>
+
+</div>
+
+<div id='tab-calibration' class='tab-panel'>
+
+<div class='calib-status' id='calibStatusBar'>Loading calibration status…</div>
+
+<div class='calib-card'>
+  <h4>INPUT ROUTING</h4>
+  <div class='row'>
+    <label>Visual Input A</label>
+    <select class='chan-select' id='chanA'></select>
+  </div>
+  <div class='row'>
+    <label>Visual Input B</label>
+    <select class='chan-select' id='chanB'></select>
+  </div>
+  <div class='warn-text' id='chanWarning' style='display:none'>⚠ Input A and B are set to the same channel — both meters will show identical levels.</div>
+  <p class='limit-text'>Only 2 channels are currently exposed by the audio backend (stereo capture: Input 1 = Left, Input 2 = Right), regardless of how many physical inputs the connected interface has. On an 8-input Clarett, only its first two capture channels are reachable today — see REPORT.md / AUDIT.md for the planned Clarett multi-channel follow-up.</p>
+</div>
+
+<div class='calib-columns'>
+  <div class='calib-card'>
+    <h4>INPUT A METER <span class='clip-badge' id='clipA'>CLIP</span></h4>
+    <div class='meter-track'><div class='meter-zone' style='left:15%;width:70%'></div><div class='meter-fill' id='fillA'></div><div class='meter-peak' id='peakA'></div></div>
+    <div class='meter-track meter-sub'><div class='meter-fill' id='fillOutA' style='background:linear-gradient(90deg,#aa66ff,#ff66cc)'></div></div>
+    <div class='meter-readout'>
+      <span>Raw: <b id='rawA'>0.00</b></span>
+      <span>Smoothed: <b id='smoothA'>0.00</b></span>
+      <span>Peak: <b id='peakValA'>0.00</b></span>
+      <span>Output: <b id='outA'>0.00</b></span>
+    </div>
+    <div class='meter-label'>TOP = INPUT LEVEL (SHADED ZONE = TARGET RANGE) &nbsp;|&nbsp; BOTTOM = POST-CURVE OUTPUT</div>
+  </div>
+  <div class='calib-card'>
+    <h4>INPUT B METER <span class='clip-badge' id='clipB'>CLIP</span></h4>
+    <div class='meter-track'><div class='meter-zone' style='left:15%;width:70%'></div><div class='meter-fill' id='fillB'></div><div class='meter-peak' id='peakB'></div></div>
+    <div class='meter-track meter-sub'><div class='meter-fill' id='fillOutB' style='background:linear-gradient(90deg,#aa66ff,#ff66cc)'></div></div>
+    <div class='meter-readout'>
+      <span>Raw: <b id='rawB'>0.00</b></span>
+      <span>Smoothed: <b id='smoothB'>0.00</b></span>
+      <span>Peak: <b id='peakValB'>0.00</b></span>
+      <span>Output: <b id='outB'>0.00</b></span>
+    </div>
+    <div class='meter-label'>TOP = INPUT LEVEL (SHADED ZONE = TARGET RANGE) &nbsp;|&nbsp; BOTTOM = POST-CURVE OUTPUT</div>
+  </div>
+</div>
+
+<div class='calib-columns'>
+  <div class='calib-card'>
+    <h4>INPUT A RESPONSE CURVE</h4>
+    <svg class='curve-svg' id='curveA' width='260' height='260' viewBox='0 0 260 260'></svg>
+    <div class='preset-row' id='presetRowA'>
+      <button class='preset-btn' data-input='A' data-preset='Linear'>Linear</button>
+      <button class='preset-btn' data-input='A' data-preset='Sensitive'>Sensitive</button>
+      <button class='preset-btn' data-input='A' data-preset='Compressed'>Compressed</button>
+      <button class='preset-btn' data-input='A' data-preset='S-Curve'>S-Curve</button>
+    </div>
+    <h4 style='margin-top:18px'>INPUT A MANUAL CONTROLS</h4>
+    <div class='manual-row'><label>Gain</label><input type='range' id='gainA' min='0' max='4' step='0.01'><span class='val' id='gainA_v'></span></div>
+    <div class='manual-row'><label>Gate Threshold</label><input type='range' id='gateA' min='0' max='0.3' step='0.005'><span class='val' id='gateA_v'></span></div>
+    <div class='manual-row'><label>Smoothing</label><input type='range' id='smoothingA' min='0' max='0.95' step='0.01'><span class='val' id='smoothingA_v'></span></div>
+    <div class='manual-row'><label>Output Ceiling</label><input type='range' id='ceilA' min='0.1' max='1' step='0.01'><span class='val' id='ceilA_v'></span></div>
+    <button class='reset-small' data-input='A'>RESET INPUT A</button>
+  </div>
+
+  <div class='calib-card'>
+    <h4>INPUT B RESPONSE CURVE</h4>
+    <svg class='curve-svg' id='curveB' width='260' height='260' viewBox='0 0 260 260'></svg>
+    <div class='preset-row' id='presetRowB'>
+      <button class='preset-btn' data-input='B' data-preset='Linear'>Linear</button>
+      <button class='preset-btn' data-input='B' data-preset='Sensitive'>Sensitive</button>
+      <button class='preset-btn' data-input='B' data-preset='Compressed'>Compressed</button>
+      <button class='preset-btn' data-input='B' data-preset='S-Curve'>S-Curve</button>
+    </div>
+    <h4 style='margin-top:18px'>INPUT B MANUAL CONTROLS</h4>
+    <div class='manual-row'><label>Gain</label><input type='range' id='gainB' min='0' max='4' step='0.01'><span class='val' id='gainB_v'></span></div>
+    <div class='manual-row'><label>Gate Threshold</label><input type='range' id='gateB' min='0' max='0.3' step='0.005'><span class='val' id='gateB_v'></span></div>
+    <div class='manual-row'><label>Smoothing</label><input type='range' id='smoothingB' min='0' max='0.95' step='0.01'><span class='val' id='smoothingB_v'></span></div>
+    <div class='manual-row'><label>Output Ceiling</label><input type='range' id='ceilB' min='0.1' max='1' step='0.01'><span class='val' id='ceilB_v'></span></div>
+    <button class='reset-small' data-input='B'>RESET INPUT B</button>
+  </div>
+</div>
+
+<p class='limit-text'>Calibration values (gain/gate/smoothing/ceiling/curve) are not yet persisted to disk — they reset to defaults on engine restart. Scenes do not yet consume these post-curve values (Stellar Nursery and Lava Lamp still use their original raw audio path unchanged) — this tab establishes the calibration layer and meters; scene integration is a documented next step. See REPORT.md / ROADMAP.md.</p>
+
+</div>
 
 <script>
 const defaults = {
@@ -399,6 +645,285 @@ fetch('/scenes').then(r => r.json()).then(scenes => {
 
 refreshStatus();
 setInterval(refreshStatus, 2000);
+
+// Tabs -------------------------------------------------------------------
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// Dashboard Calibration Tab v0.1 ------------------------------------------
+// Deliberately separate from the Scene Dashboard/Tuning code above - this
+// polls /calibration/* only, and never touches Tuning.cs or scene state.
+
+const SVG_SIZE = 260, SVG_PAD = 20;
+function toPx(v) { return SVG_PAD + v * (SVG_SIZE - 2 * SVG_PAD); }
+function toUnit(px) { return Math.max(0, Math.min(1, (px - SVG_PAD) / (SVG_SIZE - 2 * SVG_PAD))); }
+
+function bezierComponent(t, p1, p2) {
+  const mt = 1 - t;
+  return 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t;
+}
+function bezierDerivative(t, p1, p2) {
+  const mt = 1 - t;
+  return 3 * mt * mt * p1 + 6 * mt * t * (p2 - p1) + 3 * t * t * (1 - p2);
+}
+function evalCurve(x, p1x, p1y, p2x, p2y) {
+  x = Math.max(0, Math.min(1, x));
+  let t = x;
+  for (let i = 0; i < 6; i++) {
+    const xt = bezierComponent(t, p1x, p2x);
+    const dx = bezierDerivative(t, p1x, p2x);
+    if (Math.abs(dx) < 1e-5) break;
+    t -= (xt - x) / dx;
+    t = Math.max(0, Math.min(1, t));
+  }
+  return bezierComponent(t, p1y, p2y);
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+class CalibCurve {
+  constructor(inputKey, svgId) {
+    this.input = inputKey;
+    this.svg = document.getElementById(svgId);
+    this.p1x = 0.33; this.p1y = 0.33; this.p2x = 0.66; this.p2y = 0.66;
+    this.dotX = 0; this.dotY = 0;
+    this.dragging = null;
+    this.lastSent = 0;
+    this.buildStatic();
+    this.svg.addEventListener('pointermove', e => this.onMove(e));
+    this.svg.addEventListener('pointerup', e => this.onUp(e));
+    this.svg.addEventListener('pointerleave', e => this.onUp(e));
+    this.redraw();
+  }
+
+  line(x1, y1, x2, y2, color, dash) {
+    const l = document.createElementNS(SVG_NS, 'line');
+    l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+    l.setAttribute('stroke', color); l.setAttribute('stroke-width', '1');
+    if (dash) l.setAttribute('stroke-dasharray', dash);
+    return l;
+  }
+
+  point(which) {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('r', 8); c.setAttribute('fill', 'rgba(255,34,102,0.35)');
+    c.setAttribute('stroke', '#ff2266'); c.setAttribute('stroke-width', '1.5');
+    c.classList.add('curve-point');
+    c.addEventListener('pointerdown', e => { this.dragging = which; e.target.setPointerCapture(e.pointerId); });
+    return c;
+  }
+
+  buildStatic() {
+    this.svg.innerHTML = '';
+    for (let i = 1; i < 4; i++) {
+      const p = SVG_PAD + i * (SVG_SIZE - 2 * SVG_PAD) / 4;
+      this.svg.appendChild(this.line(SVG_PAD, p, SVG_SIZE - SVG_PAD, p, '#1a1a22'));
+      this.svg.appendChild(this.line(p, SVG_PAD, p, SVG_SIZE - SVG_PAD, '#1a1a22'));
+    }
+    this.svg.appendChild(this.line(SVG_PAD, SVG_SIZE - SVG_PAD, SVG_SIZE - SVG_PAD, SVG_PAD, '#222', '3,3'));
+    this.svg.appendChild(this.line(SVG_PAD, SVG_SIZE - SVG_PAD, SVG_SIZE - SVG_PAD, SVG_SIZE - SVG_PAD, '#555'));
+    this.svg.appendChild(this.line(SVG_PAD, SVG_PAD, SVG_PAD, SVG_SIZE - SVG_PAD, '#555'));
+
+    const xLabel = document.createElementNS(SVG_NS, 'text');
+    xLabel.setAttribute('x', SVG_SIZE / 2); xLabel.setAttribute('y', SVG_SIZE - 4);
+    xLabel.setAttribute('fill', '#555'); xLabel.setAttribute('font-size', '9');
+    xLabel.setAttribute('text-anchor', 'middle'); xLabel.textContent = 'INPUT STRENGTH →';
+    this.svg.appendChild(xLabel);
+
+    this.path = document.createElementNS(SVG_NS, 'path');
+    this.path.setAttribute('stroke', '#22ddff'); this.path.setAttribute('fill', 'none');
+    this.path.setAttribute('stroke-width', '2');
+    this.svg.appendChild(this.path);
+
+    this.handleLine1 = this.line(0, 0, 0, 0, '#444'); this.svg.appendChild(this.handleLine1);
+    this.handleLine2 = this.line(0, 0, 0, 0, '#444'); this.svg.appendChild(this.handleLine2);
+
+    this.dot = document.createElementNS(SVG_NS, 'circle');
+    this.dot.setAttribute('r', 5); this.dot.setAttribute('fill', '#ffdd33');
+    this.dot.setAttribute('opacity', '0.95');
+    this.svg.appendChild(this.dot);
+
+    this.c1 = this.point('p1'); this.svg.appendChild(this.c1);
+    this.c2 = this.point('p2'); this.svg.appendChild(this.c2);
+  }
+
+  setCurve(p1x, p1y, p2x, p2y, preset) {
+    if (this.dragging) return; // don't fight an active drag with a stale poll value
+    this.p1x = p1x; this.p1y = p1y; this.p2x = p2x; this.p2y = p2y;
+    this.redraw();
+    document.querySelectorAll('#presetRow' + this.input + ' .preset-btn').forEach(b => {
+      b.classList.toggle('active-preset', b.dataset.preset === preset);
+    });
+  }
+
+  setDot(x, y) {
+    this.dotX = x; this.dotY = y;
+    this.dot.setAttribute('cx', toPx(x));
+    this.dot.setAttribute('cy', SVG_SIZE - toPx(y));
+  }
+
+  redraw() {
+    let d = 'M ' + toPx(0) + ' ' + (SVG_SIZE - toPx(0));
+    const N = 24;
+    for (let i = 1; i <= N; i++) {
+      const x = i / N;
+      const y = evalCurve(x, this.p1x, this.p1y, this.p2x, this.p2y);
+      d += ' L ' + toPx(x) + ' ' + (SVG_SIZE - toPx(y));
+    }
+    this.path.setAttribute('d', d);
+    this.c1.setAttribute('cx', toPx(this.p1x)); this.c1.setAttribute('cy', SVG_SIZE - toPx(this.p1y));
+    this.c2.setAttribute('cx', toPx(this.p2x)); this.c2.setAttribute('cy', SVG_SIZE - toPx(this.p2y));
+    this.handleLine1.setAttribute('x1', toPx(0)); this.handleLine1.setAttribute('y1', SVG_SIZE - toPx(0));
+    this.handleLine1.setAttribute('x2', toPx(this.p1x)); this.handleLine1.setAttribute('y2', SVG_SIZE - toPx(this.p1y));
+    this.handleLine2.setAttribute('x1', toPx(1)); this.handleLine2.setAttribute('y1', SVG_SIZE - toPx(1));
+    this.handleLine2.setAttribute('x2', toPx(this.p2x)); this.handleLine2.setAttribute('y2', SVG_SIZE - toPx(this.p2y));
+    this.dot.setAttribute('cx', toPx(this.dotX));
+    this.dot.setAttribute('cy', SVG_SIZE - toPx(this.dotY));
+  }
+
+  onMove(e) {
+    if (!this.dragging) return;
+    const rect = this.svg.getBoundingClientRect();
+    const scaleX = SVG_SIZE / rect.width, scaleY = SVG_SIZE / rect.height;
+    const px = (e.clientX - rect.left) * scaleX;
+    const py = (e.clientY - rect.top) * scaleY;
+    const x = toUnit(px);
+    const y = toUnit(SVG_SIZE - py);
+    if (this.dragging === 'p1') { this.p1x = x; this.p1y = y; } else { this.p2x = x; this.p2y = y; }
+    this.redraw();
+    const now = performance.now();
+    if (now - this.lastSent > 60) { this.lastSent = now; this.send(); }
+  }
+
+  onUp(e) {
+    if (!this.dragging) return;
+    this.dragging = null;
+    this.send();
+  }
+
+  send() {
+    fetch('/calibration/curve', { method: 'POST', body: JSON.stringify({
+      input: this.input, p1x: this.p1x, p1y: this.p1y, p2x: this.p2x, p2y: this.p2y
+    }) });
+  }
+}
+
+const curveA = new CalibCurve('A', 'curveA');
+const curveB = new CalibCurve('B', 'curveB');
+
+function fmt(v) { return (v || 0).toFixed(2); }
+
+function updateMeter(prefix, data) {
+  document.getElementById('raw' + prefix).textContent = fmt(data.rawLevel);
+  document.getElementById('smooth' + prefix).textContent = fmt(data.smoothedLevel);
+  document.getElementById('peakVal' + prefix).textContent = fmt(data.peakLevel);
+  document.getElementById('out' + prefix).textContent = fmt(data.curveOutput);
+
+  const fill = document.getElementById('fill' + prefix);
+  fill.style.width = Math.min(100, data.smoothedLevel * 100) + '%';
+  fill.classList.toggle('clip', data.clipping);
+  fill.classList.toggle('hot', !data.clipping && data.smoothedLevel > 0.85);
+
+  document.getElementById('peak' + prefix).style.left = Math.min(100, data.peakHoldLevel * 100) + '%';
+  document.getElementById('fillOut' + prefix).style.width = Math.min(100, data.curveOutput * 100) + '%';
+  document.getElementById('clip' + prefix).classList.toggle('active', data.clipping);
+}
+
+const manualLoaded = { A: false, B: false };
+const manualFields = [['gain', 'gain'], ['gate', 'gateThreshold'], ['smoothing', 'smoothing'], ['ceil', 'outputCeiling']];
+
+function loadManual(prefix, data) {
+  if (manualLoaded[prefix]) return;
+  manualLoaded[prefix] = true;
+  manualFields.forEach(([id, field]) => {
+    const el = document.getElementById(id + prefix);
+    el.value = data[field];
+    document.getElementById(id + prefix + '_v').textContent = parseFloat(data[field]).toFixed(3);
+  });
+}
+
+let channelsLoaded = false;
+
+function refreshCalibration() {
+  fetch('/calibration/status').then(r => r.json()).then(s => {
+    const bar = document.getElementById('calibStatusBar');
+    bar.innerHTML =
+      'Audio device: <b>not exposed by backend (OpenAL capture, no device-name API used)</b> &nbsp;|&nbsp; ' +
+      'Capture: <b>' + (s.audioCapturing ? 'capturing' : 'stopped') + '</b> &nbsp;|&nbsp; ' +
+      'Channels available: <b>' + s.channelCount + '</b> &nbsp;|&nbsp; ' +
+      'Input A: <b>' + s.channelNames[s.channelA] + '</b> &nbsp;|&nbsp; ' +
+      'Input B: <b>' + s.channelNames[s.channelB] + '</b>';
+
+    updateMeter('A', s.inputA);
+    updateMeter('B', s.inputB);
+    loadManual('A', s.inputA);
+    loadManual('B', s.inputB);
+
+    curveA.setCurve(s.inputA.curveP1X, s.inputA.curveP1Y, s.inputA.curveP2X, s.inputA.curveP2Y, s.inputA.preset);
+    curveB.setCurve(s.inputB.curveP1X, s.inputB.curveP1Y, s.inputB.curveP2X, s.inputB.curveP2Y, s.inputB.preset);
+    curveA.setDot(s.inputA.smoothedLevel, s.inputA.curveOutput);
+    curveB.setDot(s.inputB.smoothedLevel, s.inputB.curveOutput);
+
+    if (!channelsLoaded) {
+      channelsLoaded = true;
+      const chanASel = document.getElementById('chanA');
+      const chanBSel = document.getElementById('chanB');
+      s.channelNames.forEach((name, idx) => {
+        const optA = document.createElement('option'); optA.value = idx; optA.textContent = name;
+        chanASel.appendChild(optA);
+        const optB = document.createElement('option'); optB.value = idx; optB.textContent = name;
+        chanBSel.appendChild(optB);
+      });
+      chanASel.value = s.channelA;
+      chanBSel.value = s.channelB;
+    }
+    document.getElementById('chanWarning').style.display = (s.channelA === s.channelB) ? 'block' : 'none';
+  }).catch(() => {
+    document.getElementById('calibStatusBar').textContent = 'Calibration status unavailable (server not reachable).';
+  });
+}
+
+function sendChannels() {
+  const a = parseInt(document.getElementById('chanA').value);
+  const b = parseInt(document.getElementById('chanB').value);
+  fetch('/calibration/channels', { method: 'POST', body: JSON.stringify({ a: a, b: b }) });
+  document.getElementById('chanWarning').style.display = (a === b) ? 'block' : 'none';
+}
+document.getElementById('chanA').addEventListener('change', sendChannels);
+document.getElementById('chanB').addEventListener('change', sendChannels);
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    fetch('/calibration/preset', { method: 'POST', body: JSON.stringify({ input: btn.dataset.input, preset: btn.dataset.preset }) });
+  });
+});
+
+document.querySelectorAll('.reset-small').forEach(btn => {
+  btn.addEventListener('click', () => {
+    fetch('/calibration/reset', { method: 'POST', body: JSON.stringify({ input: btn.dataset.input }) });
+    manualLoaded[btn.dataset.input] = false;
+  });
+});
+
+['A', 'B'].forEach(prefix => {
+  manualFields.forEach(([id, field]) => {
+    const el = document.getElementById(id + prefix);
+    el.addEventListener('input', () => {
+      document.getElementById(id + prefix + '_v').textContent = parseFloat(el.value).toFixed(3);
+      fetch('/calibration/manual', { method: 'POST', body: JSON.stringify({ input: prefix, field: field, value: parseFloat(el.value) }) });
+    });
+  });
+});
+
+refreshCalibration();
+setInterval(refreshCalibration, 150);
 </script>
 </body>
 </html>";
