@@ -1529,3 +1529,43 @@ No new state object — `CalibrationEngine`/`InputCalibration` already satisfied
 
 ### Screenshot/package path
 `DiagnosticReports/CalibratedAudioIntegrationV01_20260712_145616.zip` — see the package's own `REPORT.md` for full detail.
+
+---
+
+## Entry 28 — Calibration Presets v0.1
+
+**Date:** 2026-07-12
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User request
+The user confirmed the Calibration tab's meters and response curves "work great," and asked to save named presets capturing the full calibration setup (routing + both inputs' manual controls and response curves) so different instruments/rigs (Clarett practice guitar, Clarett bass, Scarlett live, quiet clean guitar, hot fuzz guitar) don't require manually rebuilding curves and gain/gate/smoothing every time.
+
+### Preset scope
+A preset is a whole-setup snapshot, not per-input: both channel assignments and both inputs' full calibration together, since a real rig switch usually changes both at once.
+
+### Saved fields
+Metadata (name, createdAt/updatedAt, notes, targetInterface hint), routing (ChannelA/ChannelB), and per-input Gain/GateThreshold/Smoothing/OutputCeiling/CurveP1-2 X-Y/CurvePreset for both Input A and B. `AudioDeviceName` and `ChannelCountAtSave` are captured for future use/honest warnings; no device-name API exists yet so the former is always null.
+
+### Storage location
+`CosmicEngineApp/Config/calibration-presets.json`, relative to the working directory — matching every other relative path convention already used in this codebase (`Shaders/`, `DiagnosticReports/`). Not tracked in git (added to `.gitignore`) — local per-user/per-machine runtime data, not source. Versioned envelope (`{"version":1,"presets":[...]}`) for future migration. Four built-in presets (Linear Default, Sensitive, Compressed, S-Curve) are seeded only on first run when the file doesn't exist yet — an existing file, even an empty one, is never touched by default-seeding, so user presets can never be silently overwritten.
+
+### Dashboard behavior
+New "PRESETS" card at the top of the Calibration tab: dropdown, name field, target-interface selector, Save/Save As New/Load Selected/Delete Selected buttons, an inline status message, and an amber "UNSAVED" badge tracking drift from the last saved/loaded state this session. New endpoints: `GET /calibration/presets`, `POST /calibration/presets/save|saveas|load|delete`. Loading a preset mutates the live `CalibrationEngine.InputA/InputB` objects directly — the same singletons the background tick timer and both scenes already read every frame — so changes reach a running scene without restart.
+
+### Validation/safety
+Every numeric field is clamped to the same ranges the dashboard's own sliders enforce on load. Channel routing is validated against the live `CalibrationEngine.ChannelCount`: if a preset's saved channels are out of range (the "saved a Clarett preset, now on a Scarlett" case), routing is left completely unchanged (safer than guessing) and a specific warning is returned and shown. A corrupt preset file is never silently discarded — it's moved aside to a timestamped `.corrupt-<timestamp>` copy and the app starts fresh with the built-in defaults, confirmed via a deliberately-corrupted-file test that produced zero crash.
+
+### Test results
+`dotnet build`: 0 warnings/errors. StellarNursery Safe and LavaLamp Safe smoke tests both passed, no regression. Full preset lifecycle verified end-to-end via curl: first-run default seeding, manual change, Save As New, further change, Load (exact value restoration confirmed), Clarett-channel-fallback warning (routing preserved, warning shown), Delete, invalid-name safety (no crash), both scenes still launch (seed 777 preserved for Stellar Nursery), calibrated values still reported, clean quit, zero orphan process. Also live-clicked "Load Selected" in the interactive browser preview and observed the correct confirmation message and auto-filled name field.
+
+### Known limitations
+- True Clarett 8-input capture still not implemented — presets are designed for it, the capture-layer change itself remains out of scope.
+- Real audio not tested — no interface connected in this environment; the pipeline itself was verified with real posted/persisted values.
+- No cloud sync, no guided auto-calibration, no per-song/setlist preset assignment yet.
+- `Notes` field exists in the schema with no UI control in v0.1.
+- Dashboard slider/curve UI reflects a loaded preset within one ~150ms poll cycle, not the same instant as the click — imperceptible in practice, documented precisely.
+- No `.png` screenshots produced — same environment-wide tooling gap as the three prior passes; substituted with a complete curl-based lifecycle transcript and a description of what was directly observed in the interactive browser preview.
+
+### Screenshot/package path
+`DiagnosticReports/CalibrationPresetsV01_20260712_153115.zip` — see the package's own `REPORT.md` for full detail.

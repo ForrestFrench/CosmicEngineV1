@@ -8,3 +8,8 @@ obj/
 CosmicMachine_Backup/
 DiagnosticReports/
 .DS_Store
+
+# Calibration Presets v0.1: local, per-machine/per-user calibration presets
+# (Audio/CalibrationPresetStore.cs) - runtime user data, not source. Built-in
+# defaults are seeded automatically on first run if this file doesn't exist.
+CosmicEngineApp/Config/calibration-presets.json

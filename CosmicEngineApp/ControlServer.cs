@@ -268,6 +268,91 @@ namespace CosmicEngine.App
                 return;
             }
 
+            // Calibration Presets v0.1: save/load/delete named full-setup snapshots
+            // (routing + both inputs' manual controls + curves) to a local JSON
+            // file (Audio/CalibrationPresetStore.cs). See that file's doc comment
+            // for the storage-location rationale and corrupt-file handling.
+
+            if (path == "/calibration/presets")
+            {
+                var summaries = CalibrationPresetStore.List().ConvertAll(p => new
+                {
+                    name = p.Name,
+                    updatedAt = p.UpdatedAt,
+                    targetInterface = p.TargetInterface
+                });
+                Respond(ctx, 200, JsonSerializer.Serialize(summaries), "application/json");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/presets/save")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? name = doc.RootElement.TryGetProperty("name", out var nv) ? nv.GetString() : null;
+                string notes = doc.RootElement.TryGetProperty("notes", out var ntv) ? (ntv.GetString() ?? "") : "";
+                string target = doc.RootElement.TryGetProperty("targetInterface", out var tgv) ? (tgv.GetString() ?? "Generic") : "Generic";
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Respond(ctx, 200, JsonSerializer.Serialize(new { ok = false, error = "Preset name is required." }), "application/json");
+                    return;
+                }
+                var preset = CalibrationPreset.CaptureCurrent(name.Trim(), notes, target);
+                CalibrationPresetStore.Upsert(preset);
+                Respond(ctx, 200, JsonSerializer.Serialize(new { ok = true }), "application/json");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/presets/saveas")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? name = doc.RootElement.TryGetProperty("name", out var nv) ? nv.GetString() : null;
+                string notes = doc.RootElement.TryGetProperty("notes", out var ntv) ? (ntv.GetString() ?? "") : "";
+                string target = doc.RootElement.TryGetProperty("targetInterface", out var tgv) ? (tgv.GetString() ?? "Generic") : "Generic";
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    Respond(ctx, 200, JsonSerializer.Serialize(new { ok = false, error = "Preset name is required." }), "application/json");
+                    return;
+                }
+                var preset = CalibrationPreset.CaptureCurrent(name.Trim(), notes, target);
+                bool created = CalibrationPresetStore.SaveAsNew(preset);
+                Respond(ctx, 200, JsonSerializer.Serialize(created
+                    ? new { ok = true, error = "" }
+                    : new { ok = false, error = $"A preset named '{name.Trim()}' already exists. Choose a different name or use Save to update it." }), "application/json");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/presets/load")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? name = doc.RootElement.TryGetProperty("name", out var nv) ? nv.GetString() : null;
+
+                var preset = string.IsNullOrWhiteSpace(name) ? null : CalibrationPresetStore.Get(name);
+                if (preset == null)
+                {
+                    Respond(ctx, 200, JsonSerializer.Serialize(new { ok = false, error = $"Preset '{name}' not found." }), "application/json");
+                    return;
+                }
+                string warning = preset.ApplyTo();
+                Respond(ctx, 200, JsonSerializer.Serialize(new { ok = true, warning, loadedName = preset.Name }), "application/json");
+                return;
+            }
+
+            if (ctx.Request.HttpMethod == "POST" && path == "/calibration/presets/delete")
+            {
+                using var reader = new System.IO.StreamReader(ctx.Request.InputStream);
+                var doc = JsonDocument.Parse(reader.ReadToEnd());
+                string? name = doc.RootElement.TryGetProperty("name", out var nv) ? nv.GetString() : null;
+
+                bool deleted = !string.IsNullOrWhiteSpace(name) && CalibrationPresetStore.Delete(name);
+                Respond(ctx, 200, JsonSerializer.Serialize(new { ok = deleted }), "application/json");
+                return;
+            }
+
             // -------------------------------------------------------------------------
 
             if (ctx.Request.HttpMethod == "POST" && path == "/set")
@@ -472,6 +557,34 @@ namespace CosmicEngine.App
 <div id='tab-calibration' class='tab-panel'>
 
 <div class='calib-status' id='calibStatusBar'>Loading calibration status…</div>
+
+<div class='calib-card'>
+  <h4>PRESETS <span id='presetDirtyBadge' class='clip-badge test-badge'>UNSAVED</span></h4>
+  <div class='row'>
+    <label>Saved presets</label>
+    <select class='chan-select' id='presetDropdown' style='flex:1'></select>
+  </div>
+  <div class='row'>
+    <label>Name</label>
+    <input type='text' id='presetNameField' class='chan-select' style='flex:1' placeholder='e.g. Clarett Practice Guitar'>
+  </div>
+  <div class='row'>
+    <label>Target interface</label>
+    <select class='chan-select' id='presetTargetField'>
+      <option value='Generic'>Generic</option>
+      <option value='Clarett'>Clarett</option>
+      <option value='Scarlett'>Scarlett</option>
+    </select>
+  </div>
+  <div class='preset-row'>
+    <button class='preset-btn preset-mgmt-btn' id='presetSaveBtn'>SAVE</button>
+    <button class='preset-btn preset-mgmt-btn' id='presetSaveAsBtn'>SAVE AS NEW</button>
+    <button class='preset-btn preset-mgmt-btn' id='presetLoadBtn'>LOAD SELECTED</button>
+    <button class='preset-btn preset-mgmt-btn' id='presetDeleteBtn' style='color:#ff5555;border-color:#ff5555'>DELETE SELECTED</button>
+  </div>
+  <div class='warn-text' id='presetMessage' style='display:none'></div>
+  <p class='limit-text'>Presets save routing (Input A/B channel), gain/gate/smoothing/output ceiling, and the response curve for both inputs, to a local file (<code>Config/calibration-presets.json</code>) - never uploaded anywhere. Loading a preset applies immediately, including to any scene currently running. A preset saved for a Clarett's channels 3/4 will safely leave routing unchanged (with a warning) if loaded while only 2 channels are available - see REPORT.md / AUDIT.md.</p>
+</div>
 
 <div class='calib-card'>
   <h4>INPUT ROUTING</h4>
@@ -924,6 +1037,13 @@ function refreshCalibration() {
       chanBSel.value = s.channelB;
     }
     document.getElementById('chanWarning').style.display = (s.channelA === s.channelB) ? 'block' : 'none';
+
+    const snapshot = captureBaselineSnapshot(s);
+    if (pendingBaselineMark) {
+      presetBaseline = snapshot;
+      pendingBaselineMark = false;
+    }
+    document.getElementById('presetDirtyBadge').classList.toggle('active', presetBaseline !== null && snapshot !== presetBaseline);
   }).catch(() => {
     document.getElementById('calibStatusBar').textContent = 'Calibration status unavailable (server not reachable).';
   });
@@ -938,7 +1058,7 @@ function sendChannels() {
 document.getElementById('chanA').addEventListener('change', sendChannels);
 document.getElementById('chanB').addEventListener('change', sendChannels);
 
-document.querySelectorAll('.preset-btn').forEach(btn => {
+document.querySelectorAll('.preset-btn:not(.preset-mgmt-btn)').forEach(btn => {
   btn.addEventListener('click', () => {
     fetch('/calibration/preset', { method: 'POST', body: JSON.stringify({ input: btn.dataset.input, preset: btn.dataset.preset }) });
   });
@@ -980,6 +1100,113 @@ document.querySelectorAll('.test-pulse-btn').forEach(btn => {
   });
 });
 
+// Calibration Presets v0.1 -------------------------------------------------
+// A preset is a full-setup snapshot (routing + both inputs' manual controls
+// and curves) saved by name to Config/calibration-presets.json. The Unsaved
+// Changes badge below is purely a UI convenience - it compares the live
+// calibration state against whatever was last saved/loaded THIS session, it
+// never blocks or gates any action.
+
+let presetBaseline = null;
+let pendingBaselineMark = false;
+
+function captureBaselineSnapshot(s) {
+  const pick = inp => [inp.gain, inp.gateThreshold, inp.smoothing, inp.outputCeiling,
+    inp.curveP1X, inp.curveP1Y, inp.curveP2X, inp.curveP2Y];
+  return JSON.stringify({ a: s.channelA, b: s.channelB, ia: pick(s.inputA), ib: pick(s.inputB) });
+}
+
+function showPresetMessage(msg, isWarning) {
+  const el = document.getElementById('presetMessage');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.color = isWarning ? '#ffbb33' : '#22ddaa';
+}
+
+function refreshPresets(selectName) {
+  fetch('/calibration/presets').then(r => r.json()).then(list => {
+    const sel = document.getElementById('presetDropdown');
+    const keep = selectName || sel.value;
+    sel.innerHTML = '';
+    if (list.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = ''; opt.textContent = '(no presets saved yet)';
+      sel.appendChild(opt);
+    }
+    list.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.name + (p.targetInterface && p.targetInterface !== 'Generic' ? ' [' + p.targetInterface + ']' : '');
+      sel.appendChild(opt);
+    });
+    if (keep && list.some(p => p.name === keep)) sel.value = keep;
+  });
+}
+
+document.getElementById('presetDropdown').addEventListener('change', () => {
+  document.getElementById('presetNameField').value = document.getElementById('presetDropdown').value;
+});
+
+document.getElementById('presetSaveBtn').addEventListener('click', () => {
+  const name = document.getElementById('presetNameField').value.trim();
+  if (!name) { showPresetMessage('Enter a preset name first.', true); return; }
+  const target = document.getElementById('presetTargetField').value;
+  fetch('/calibration/presets/save', { method: 'POST', body: JSON.stringify({ name: name, targetInterface: target }) })
+    .then(r => r.json()).then(res => {
+      if (res.ok) {
+        showPresetMessage('Saved ' + JSON.stringify(name) + '.', false);
+        refreshPresets(name);
+        pendingBaselineMark = true;
+      } else {
+        showPresetMessage(res.error || 'Save failed.', true);
+      }
+    });
+});
+
+document.getElementById('presetSaveAsBtn').addEventListener('click', () => {
+  const name = document.getElementById('presetNameField').value.trim();
+  if (!name) { showPresetMessage('Enter a preset name first.', true); return; }
+  const target = document.getElementById('presetTargetField').value;
+  fetch('/calibration/presets/saveas', { method: 'POST', body: JSON.stringify({ name: name, targetInterface: target }) })
+    .then(r => r.json()).then(res => {
+      if (res.ok) {
+        showPresetMessage('Saved as new preset ' + JSON.stringify(name) + '.', false);
+        refreshPresets(name);
+        pendingBaselineMark = true;
+      } else {
+        showPresetMessage(res.error || 'Save As failed.', true);
+      }
+    });
+});
+
+document.getElementById('presetLoadBtn').addEventListener('click', () => {
+  const name = document.getElementById('presetDropdown').value;
+  if (!name) { showPresetMessage('Select a preset to load first.', true); return; }
+  fetch('/calibration/presets/load', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(r => r.json()).then(res => {
+      if (res.ok) {
+        showPresetMessage(res.warning ? res.warning : 'Loaded ' + JSON.stringify(res.loadedName) + '.', !!res.warning);
+        document.getElementById('presetNameField').value = res.loadedName;
+        manualLoaded.A = false; manualLoaded.B = false; // force sliders to re-sync from server on next poll
+        pendingBaselineMark = true; // baseline captured from the NEXT status poll, once fresh values land
+      } else {
+        showPresetMessage(res.error || 'Load failed.', true);
+      }
+    });
+});
+
+document.getElementById('presetDeleteBtn').addEventListener('click', () => {
+  const name = document.getElementById('presetDropdown').value;
+  if (!name) { showPresetMessage('Select a preset to delete first.', true); return; }
+  if (!confirm('Delete preset ' + JSON.stringify(name) + '? This cannot be undone.')) return;
+  fetch('/calibration/presets/delete', { method: 'POST', body: JSON.stringify({ name: name }) })
+    .then(r => r.json()).then(res => {
+      showPresetMessage(res.ok ? 'Deleted ' + JSON.stringify(name) + '.' : 'Delete failed.', !res.ok);
+      refreshPresets();
+    });
+});
+
+refreshPresets();
 refreshCalibration();
 setInterval(refreshCalibration, 150);
 </script>
