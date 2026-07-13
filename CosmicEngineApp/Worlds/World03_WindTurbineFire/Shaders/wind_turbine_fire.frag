@@ -69,30 +69,24 @@ out vec4 fragColor;
 // baseline, absent at rest), heat distortion, background-turbine embedding/
 // opacity, and composite order are all unchanged from Phase 1.2/Phase 2.
 //
-// Phase 3 (turbine/geometry de-stiffening, this pass): fire/smoke/embers/
-// distortion above are untouched - this pass is scoped entirely to
-// turbineSDF() (renamed turbineMask(), see its own comment block) and its
-// four call sites. Goal: make the turbines read as less mechanically rigid
-// without disturbing anything already accepted. (1) Blade motion blur - a
-// cheap single-pass analytic stand-in (this architecture has no render-to-
-// texture history buffer for true accumulation): the blade mask is sampled
-// at 3 angles spread around the current rotor angle and averaged, with the
-// spread driven by an estimated angular speed (derived from uWindDrive,
-// already an existing uniform - no new uniform added). (2) Tower flex - the
-// tower is now a 3-segment tapered-capsule chain instead of one straight
-// segment; at high uWindDrive the upper segments pick up a small, height-
-// increasing horizontal offset plus a slow per-turbine sway, returning fully
-// upright as wind drops. (3) Nacelle detail - tried in this pass (a secondary
-// tail-stub capsule plus a top-lit/underside-shaded tint on the two
-// foreground nacelles) but removed same-day per user feedback ("looks
-// cheap" / wanted plain all-black turbines) - see AUDIT.md Entry 39 addendum.
-// The nacelle is back to a single plain capsule, flat black like the rest of
-// the turbine, same as pre-Phase-3. (4)/(5) Parallax + haze grading - the farther
-// background turbine (BG2) was nudged smaller/higher/hazier relative to the
-// nearer one (BG1) so the two-band depth separation reads more clearly; no
-// third turbine/band was added (stays shader-only, no new rotor-angle
-// uniform). Every one of these is verified mathematically neutral at rest/
-// low wind (see turbineMask()'s own comments) - zero behavior change to the
+// Phase 3 (turbine/geometry de-stiffening): fire/smoke/embers/distortion
+// above are untouched - scoped entirely to turbineMask() (see its own
+// comment) and its four call sites. (1) Blade motion blur - a cheap single-
+// pass analytic stand-in (no render-to-texture history buffer for true
+// accumulation): the blade mask is sampled at 3 angles around the current
+// rotor angle and averaged, spread driven by an estimated angular speed
+// (from uWindDrive, no new uniform). (2) Tower flex - the tower is a
+// 3-segment tapered-capsule chain that picks up a small height-increasing
+// horizontal offset plus a slow per-turbine sway at high uWindDrive,
+// returning fully upright as wind drops. (3) Nacelle stays a single plain
+// capsule, flat black like the rest of the turbine, unchanged from pre-
+// Phase-3 - a tail-stub/tint variant was tried and removed per user
+// feedback; see AUDIT.md Entry 39 for that history. (4)/(5) Parallax + haze
+// grading - the farther background turbine (BG2) is nudged smaller/higher/
+// hazier than the nearer one (BG1) for a clearer two-band depth separation;
+// no third turbine/band added (stays shader-only, no new rotor-angle
+// uniform). All of the above is verified mathematically neutral at rest/low
+// wind (see turbineMask()'s own comments) - zero behavior change to the
 // already-accepted look at idle.
 
 uniform float uTime;
@@ -192,16 +186,13 @@ const float ROTOR_WIND_GAIN_EST  = 1.10; // mirrors RotorWindGain
 // everything else about the turbine) is completely unchanged.
 const float EMBED_DEPTH = 0.15;
 
-// Phase 3: returns a thresholded mask (float), not a raw signed distance -
-// renamed from turbineSDF() to turbineMask() because blade motion-blur needs
-// to average *thresholded* masks from 3 angle samples, not a raw min-distance
+// Returns a thresholded mask (float), not a raw signed distance - named
+// turbineMask() (not turbineSDF()) because blade motion-blur needs to
+// average *thresholded* masks from 3 angle samples, not a raw min-distance
 // across samples (a distance union would just widen the solid blade shape,
 // not soften/thin it toward the tips the way real motion blur does) - so
 // this function does its own smoothstep-and-composite internally using the
-// `edge` the caller used to apply itself. (Phase 3 briefly added a second
-// return component, a nacelle rim-light tint - removed same-day per user
-// feedback ("looks cheap"); see AUDIT.md Entry 39 addendum. Back to a plain
-// float, matching the pre-Phase-3 shape of this function.)
+// `edge` the caller would otherwise apply itself.
 //
 // Verified mathematically neutral at rest: smoothstep(edge,0,x) is monotonic
 // decreasing in x, so max(smoothstep(edge,0,a), smoothstep(edge,0,b)) ==
@@ -245,10 +236,8 @@ float turbineMask(vec2 p, float hubX, float baseY, float scale, float rotorAngle
     dTower = min(dTower, dBuried);
 
     // --- Nacelle -------------------------------------------------------------
-    // Single plain capsule, flat black like the rest of the turbine - a
-    // secondary tail-stub bump and a top-lit/underside-shaded tint were tried
-    // in Phase 3 and removed same-day per user feedback ("looks cheap"); see
-    // AUDIT.md Entry 39 addendum.
+    // Single plain capsule, flat black like the rest of the turbine (see
+    // AUDIT.md Entry 39 for the removed tail-stub/tint variant).
     vec2  nacelleA = hubFlexed - vec2(0.045 * scale, 0.0);
     vec2  nacelleB = hubFlexed + vec2(0.020 * scale, 0.0);
     float dNacelle = sdCapsule(p, nacelleA, nacelleB, 0.020 * scale);
@@ -631,16 +620,12 @@ void main() {
     // the fuller sky/smoke pWarped, so the shimmer stays visible without the
     // turbines bending/wobbling independently part-by-part.
     //
-    // Phase 3 parallax/haze grading: BG2 (the farther of the two background
-    // turbines - smaller scale, sits higher) was previously only weakly
-    // separated from BG1 (scale 0.34->0.24, haze blend 0.18->0.22, a narrow
-    // gap). Widened on both axes so the two-band depth separation actually
-    // reads: BG2 nudged smaller (0.24->0.19) and higher (+0.015->+0.026), and
-    // its haze blend raised further (0.22->0.32, still well under the 0.60/
-    // 0.68 that Phase 1.2 fixed as a transparency bug) while BG1's own blend
-    // was nudged down slightly (0.18->0.16) for more contrast between the
-    // two. Speed multipliers (0.82/0.94) passed through unchanged, matching
-    // WindTurbineFireScene.cs's BG1SpeedMul/BG2SpeedMul, for blade-blur only.
+    // BG2 (the farther background turbine) is kept smaller/higher/hazier
+    // than BG1 for a clearer two-band depth separation; haze blends (0.16/
+    // 0.32) stay well under the 0.60/0.68 ceiling Phase 1.2 fixed as a real
+    // transparency bug - don't raise these back toward that range. Speed
+    // multipliers (0.82/0.94) match WindTurbineFireScene.cs's BG1SpeedMul/
+    // BG2SpeedMul, for blade-blur only.
     {
         float m1 = turbineMask(pWarpedTurbine, -0.10, GROUND_Y + 0.01, 0.34, uRotorAngleBG1, 0.007, 0.82);
         vec3  c1 = mix(vec3(0.035, 0.038, 0.055), color, 0.16);
@@ -715,9 +700,8 @@ void main() {
     color = mix(color, groundColor, groundMask);
 
     // --- Foreground turbines (near-black silhouettes) -------------------------
-    // Flat black, no shading variation - a nacelle highlight/tint was tried in
-    // Phase 3 and removed same-day per user feedback ("looks cheap"); see
-    // AUDIT.md Entry 39 addendum. Speed multipliers (1.00/1.18) match
+    // Flat black, no shading variation (see AUDIT.md Entry 39 for the removed
+    // nacelle-tint variant). Speed multipliers (1.00/1.18) match
     // WindTurbineFireScene.cs's FG1SpeedMul/FG2SpeedMul, for blade-blur only.
     vec3 fgColor = vec3(0.014, 0.015, 0.020);
 
