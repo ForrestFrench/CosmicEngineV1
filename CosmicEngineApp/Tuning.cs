@@ -22,5 +22,16 @@ namespace CosmicEngine.App
         // scene was visibly too dark with no audio input. 0.45 keeps plenty of
         // headroom for uBassBrightness to still brighten further with live audio.
         public static float DimLevel       = 0.55f;
+
+        // World03 Wind Turbine Fire (Phase 1.1): how many seconds of sustained
+        // full fire-drive it takes uSceneHeat to reach fully "hot" - lets the
+        // user match the scene's evolution to a song's actual length via the
+        // dashboard slider (WindTurbineFireScene.Update() reads this every
+        // frame, clamped defensively to [30,300] even if something outside the
+        // slider's own clamping sets it out of range). Default 240s (4 min)
+        // matches the original hardcoded Phase 1 value - no behavior change
+        // unless the user moves the slider. Harmless no-op for every other
+        // scene, same as LavaLampScene.BlobCount/WindTurbineFireScene.EmberCount.
+        public static float WindTurbineFireEvolutionSeconds = 240f;
     }
 }

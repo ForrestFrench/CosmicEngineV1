@@ -1,5 +1,6 @@
 using CosmicEngine.App.Worlds.World01;
 using CosmicEngine.App.Worlds.World02;
+using CosmicEngine.App.Worlds.World03;
 using System;
 
 namespace CosmicEngine.App.Engine
@@ -59,8 +60,21 @@ namespace CosmicEngine.App.Engine
             Factory        = camera => new LavaLampScene(camera)
         };
 
+        public static readonly SceneDefinition WindTurbineFire = new()
+        {
+            Id             = "WindTurbineFire",
+            DisplayName    = "Wind Turbine Fire",
+            Description    = "Shader-only industrial-nightmare tableau - wind-turbine silhouettes against smoke and a slow-building ember horizon.",
+            Status         = "Prototype v0.1",
+            DefaultProfile = "Safe",
+            Showable       = true,
+            ThumbnailPath  = null,
+            ShowSeed       = null,
+            Factory        = camera => new WindTurbineFireScene(camera)
+        };
+
         /// <summary>Every registered scene, in display order. First entry is the default.</summary>
-        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp };
+        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire };
 
         public const string DefaultSceneId = "StellarNursery";
 

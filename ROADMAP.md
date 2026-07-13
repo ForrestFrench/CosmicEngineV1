@@ -139,19 +139,56 @@ real playing, alter the curve, reload the preset, and confirm the post-curve out
 to exactly what was saved. The piece of validation neither Entry 27's nor Entry 28's own
 (mock/test-based) verification could substitute for.
 
-### Future — true Clarett multi-channel capture investigation
-Investigate real multi-input capture (ASIO/CoreAudio device selection instead of stereo OpenAL)
-so all 8 of the Clarett's physical inputs are actually selectable, not just its first two capture
-channels. A capture-layer change, deliberately out of scope for the Calibration Tab, Integration,
-and Presets passes (explicitly ruled out as a "broad audio-engine rewrite"). Calibration Presets
-v0.1 already stores channel indices beyond the current 2-channel limit without validation at save
-time, specifically so existing saved presets will start working once this lands, with no
-preset-format migration required.
+### Future — true Clarett multi-channel capture
+**Status: investigated (`AUDIT.md` Entry 29), not yet implemented.** The investigation confirmed,
+directly on real hardware (a physically-connected Focusrite Clarett), that the current OpenAL
+capture backend (Apple's system `OpenAL.framework` on macOS, no bundled OpenAL-soft) hard-rejects
+every multichannel capture format tried (4ch/6ch/8ch all fail to open) — this is a native
+OS/driver-level ceiling, not a fixable parameter. True 8-input Clarett capture therefore requires
+a genuinely new capture backend, not a tweak to the existing one. Recommended path: a **hybrid
+strategy** — keep the existing, already-tested OpenAL stereo path completely untouched for the
+**Scarlett 2-input live mode** (it already works and stays the simple default), and add a new
+multi-channel-capable backend specifically for **Clarett 8-input practice mode** on the Mac mini.
+Between CoreAudio (Mac-only, no new dependency) and PortAudio/miniaudio (cross-platform, new
+native dependency), PortAudio is the moderate-confidence recommendation — pending confirmation of
+the OptiPlex live rig's actual OS, which Entry 29 could not establish and is the single
+highest-value next fact to confirm. A proposed (not implemented) `IAudioCaptureBackend`
+abstraction is documented in Entry 29's `REPORT.md`. Calibration Presets v0.1 already stores
+channel indices beyond the current 2-channel limit without validation at save time, and its
+`ApplyTo()` already handles out-of-range channel references safely with a warning — confirmed
+during Entry 29's investigation — so existing saved presets will start working once a real
+multi-channel backend lands, with no preset-format migration required. **Recommended immediate
+next step: a small, timeboxed "Multi-Channel Audio Backend Spike"** — confirm the OptiPlex's OS,
+then prototype a minimal capture test (PortAudio or CoreAudio, whichever the OS answer points to)
+against the real Clarett, before committing to the full backend/abstraction implementation.
 
 ### Future — per-song/setlist preset assignment
 Tie a calibration preset to a specific song or setlist entry so it loads automatically, rather
 than always being a manual dashboard action. Not scoped or started - noted here as a natural
 follow-up to Calibration Presets v0.1's manual load/save.
+
+## Note — third world added, Wind Turbine Fire Phase 1 v0.1 (2026-07-12)
+
+A third `IWorld` implementation, `World03_WindTurbineFire` (Wind Turbine Fire Phase 1 v0.1, see
+`AUDIT.md` Entry 30), was added alongside this P1-P6 sequence, not as part of it — same status as
+Lava Lamp above: a standalone scene addition (Phase 1 of a separately-approved architect plan), not
+a Stellar Nursery pass, and it does not change the phase order above. Shader-only, fullscreen-quad,
+same architecture family as Lava Lamp — no Blender, no mesh pipeline, no new engine infrastructure.
+A dark, cold-dominant industrial-nightmare tableau (wind-turbine silhouettes against layered smoke,
+a slow-building ember-glow horizon) that only warms as sustained musical energy accumulates.
+**Status: implemented as a v0.1 visual prototype in this pass**, not yet reviewed/committed.
+Explicitly Phase 1 only — flame tongues, heat distortion, camera-consume, and textures are deferred
+to a future phase, tracked here rather than as a numbered P1-P6 item:
+
+### Wind Turbine Fire Phase 2 (future)
+- Flame-tongue geometry at the horizon glow (beyond the current flat glow-band + smoke-underlight
+  trick), heat-distortion/refraction over the glow band, a "camera-consume" effect at peak heat
+  (not yet designed), and real-guitar validation of the full multi-minute `uSceneHeat` timescale
+  (Phase 1's evidence used a temporary, fully-reverted mock-peak/accelerated-rise-rate build — see
+  `AUDIT.md` Entry 30 — since a real 3-5 minute sustained-play ramp doesn't fit this project's
+  bounded-run discipline).
+- Artistic tuning of `EmberCount`/`HeatRisePerSecondAtFullDrive`/`HeatDecayPerSecond` and the
+  glow/smoke color ramps against real playing dynamics, once real audio is available.
 
 ## Note — Scene Dashboard added (2026-07-06)
 

@@ -375,6 +375,13 @@ namespace CosmicEngine.App
                         case "TrebleMax":      Tuning.TrebleMax      = val; break;
                         case "BassBrightness": Tuning.BassBrightness = val; break;
                         case "DimLevel":       Tuning.DimLevel       = val; break;
+                        // World03 Wind Turbine Fire (Phase 1.1): clamp defensively here too,
+                        // on top of WindTurbineFireScene's own per-frame clamp and the
+                        // slider's own min/max - belt and suspenders against any caller
+                        // sending an out-of-range value directly to /set.
+                        case "WindTurbineFireEvolutionSeconds":
+                            Tuning.WindTurbineFireEvolutionSeconds = Math.Clamp(val, 30f, 300f);
+                            break;
                     }
                 }
 
@@ -394,7 +401,8 @@ namespace CosmicEngine.App
                     Tuning.MidMax,
                     Tuning.TrebleMax,
                     Tuning.BassBrightness,
-                    Tuning.DimLevel
+                    Tuning.DimLevel,
+                    Tuning.WindTurbineFireEvolutionSeconds
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -552,6 +560,12 @@ namespace CosmicEngine.App
 
 <button class='reset' onclick='resetDefaults()'>RESET DEFAULTS</button>
 
+<hr class='divider'>
+
+<h3>WIND TURBINE FIRE — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
+<p style='color:#666;font-size:12px'>How long sustained loud playing takes to fully evolve the Wind Turbine Fire scene (World03) from cold/calm to fully hot. Only affects that one scene — set it to match your song length.</p>
+<div class='row'><label>Fire Evolution Time</label><input type='range' id='WindTurbineFireEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='WindTurbineFireEvolutionSeconds_v'></span></div>
+
 </div>
 
 <div id='tab-calibration' class='tab-panel'>
@@ -673,7 +687,8 @@ namespace CosmicEngine.App
 const defaults = {
   Smoothing: 0.40, BassFloor: 0.08, MidFloor: 0.004, TrebleFloor: 0.001,
   BassMax: 35, MidMax: 12, TrebleMax: 0.4,
-  BassBrightness: 1.20, DimLevel: 0.20
+  BassBrightness: 1.20, DimLevel: 0.20,
+  WindTurbineFireEvolutionSeconds: 240
 };
 
 const sliders = document.querySelectorAll('input[type=range]');
@@ -682,12 +697,31 @@ function send(key, val) {
   fetch('/set', { method: 'POST', body: JSON.stringify({ [key]: parseFloat(val) }) });
 }
 
+// World03 Wind Turbine Fire (Phase 1.1): this one slider gets a seconds + mm:ss
+// display instead of the generic sliders' toFixed(3) - registered as an extra
+// listener alongside (not instead of) the generic one below, so it always runs
+// last and overrides the display text with the friendlier format.
+function formatEvolutionSeconds(totalSeconds) {
+  const s = Math.round(parseFloat(totalSeconds));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return s + 's (' + m + ':' + String(rem).padStart(2, '0') + ')';
+}
+const evolutionSlider = document.getElementById('WindTurbineFireEvolutionSeconds');
+
 sliders.forEach(s => {
   s.addEventListener('input', () => {
     document.getElementById(s.id + '_v').textContent = parseFloat(s.value).toFixed(3);
     send(s.id, s.value);
   });
 });
+
+if (evolutionSlider) {
+  evolutionSlider.addEventListener('input', () => {
+    document.getElementById('WindTurbineFireEvolutionSeconds_v').textContent =
+      formatEvolutionSeconds(evolutionSlider.value);
+  });
+}
 
 function resetDefaults() {
   sliders.forEach(s => {
@@ -697,6 +731,10 @@ function resetDefaults() {
       send(s.id, s.value);
     }
   });
+  if (evolutionSlider) {
+    document.getElementById('WindTurbineFireEvolutionSeconds_v').textContent =
+      formatEvolutionSeconds(evolutionSlider.value);
+  }
 }
 
 fetch('/values').then(r => r.json()).then(vals => {
@@ -706,6 +744,10 @@ fetch('/values').then(r => r.json()).then(vals => {
       document.getElementById(s.id + '_v').textContent = parseFloat(s.value).toFixed(3);
     }
   });
+  if (evolutionSlider && vals.WindTurbineFireEvolutionSeconds !== undefined) {
+    document.getElementById('WindTurbineFireEvolutionSeconds_v').textContent =
+      formatEvolutionSeconds(evolutionSlider.value);
+  }
 });
 
 // Scene Dashboard v0.1 --------------------------------------------------

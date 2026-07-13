@@ -453,3 +453,246 @@ Hit the same category of C# compile break twice while writing the dashboard UI's
 Verified the complete feature end-to-end via a single `--dashboard-only` session transcript: first-run default seeding (4 presets) → changed Input A's gain → saved as new preset "Clarett Practice Guitar" targeting "Clarett" → changed gain and curve again (simulating unsaved edits) → loaded the saved preset and confirmed both values returned to exactly what was saved → the channel-fallback warning case described above → deleted a preset and confirmed the list updated → confirmed deleting/loading a nonexistent preset name fails cleanly with no crash → launched Stellar Nursery (seed 777 preserved) → switched to Lava Lamp → confirmed `calibratedA`/`calibratedB`/`sceneAudioSource` still report correctly in `/status`, unaffected by this pass → clean quit, zero orphan process. Also directly clicked "Load Selected" in the interactive in-app browser preview with "Compressed" selected and watched a real, live confirmation message and auto-filled name field appear - the actual click-to-endpoint-to-state loop working, not just curl evidence.
 
 Result: `dotnet build` succeeds (0 warnings/errors). New files: `Audio/CalibrationPreset.cs`, `Audio/CalibrationPresetStore.cs`. Modified: `ControlServer.cs` (new endpoints + Presets card UI), `.gitignore` (exclude the local preset file). Zero diff on any scene/shader file. StellarNursery Safe and LavaLamp Safe smoke tests both pass, no regression. Assembled `DiagnosticReports/CalibrationPresetsV01_20260712_153115.zip` with `REPORT.md`, a complete preset-lifecycle transcript and corrupt-file-recovery log in place of screenshots (same environment-wide screenshot-tooling gap as the three prior passes), source context, git evidence, and a draft `AUDIT.md` Entry 28 with the reviewer sign-off left blank. Not committed, not pushed, per explicit instruction — pending user/ChatGPT review.
+
+---
+
+## 2026-07-12 — Clarett Multi-Channel Capture Investigation v0.1
+
+**Executor:** Claude Code / Sonnet
+
+Direct follow-up to Calibration Presets v0.1: the user's practice rig uses a Clarett interface and wants the Calibration tab to eventually let them pick any two of its physical inputs (their own example: Input A = Clarett Input 3, Input B = Clarett Input 6), while the OptiPlex/Scarlett live rig stays simple at inputs 1/2. Every prior pass in this project has documented the same honest limitation - "only 2 channels are currently exposed" - without ever actually testing *why*, on real hardware, with evidence. This pass exists to close that gap: investigate, don't implement.
+
+Started by re-reading `Audio/AudioEngine.cs` closely rather than assuming: confirmed it opens capture via `ALC.CaptureOpenDevice(null, 44100, ALFormat.Stereo16, 2048)`, a hardcoded stereo request against whatever native OpenAL implementation the OS provides - checked `CosmicEngine.App.csproj` and confirmed no OpenAL-soft or other native redist package is referenced, meaning on macOS this is specifically Apple's own `OpenAL.framework` (present at `/System/Library/Frameworks/OpenAL.framework`, deprecated since macOS 10.15 but still functional). Also confirmed, by re-reading `CalibrationEngine.cs` and `CalibrationPreset.cs` from the prior two passes, that the channel-selection and preset-fallback logic *above* the capture layer is already reasonably channel-count-agnostic - the actual "exactly 2" ceiling lives entirely in this one hardcoded format request, nowhere else.
+
+Rather than guess at OpenAL's multichannel capabilities from general knowledge, built a small standalone throwaway probe project (`.csproj` + `Program.cs` in the scratchpad, referencing the same `OpenTK 4.9.4` version this project uses) and used .NET reflection to enumerate the actual installed `OpenTK.Audio.OpenAL.dll`'s public API surface and `ALFormat` enum values - confirmed the binding *does* expose multichannel capture-format constants up to `Multi71Chn16Ext` (8 channels, matching the AL_EXT_MCFORMATS extension), so nothing in the .NET binding layer itself blocks requesting more than stereo.
+
+Discovered, entirely by chance, that a real Focusrite Clarett interface was physically connected to this Mac mini during this session (identified via `ALC.GetString(AlcGetStringList.CaptureDeviceSpecifier)` as "Clarett 4Pre USB") - turning what could have been a purely theoretical investigation into one backed by real hardware evidence. Used the standalone probe to directly test opening a capture device against this real interface in five formats: Mono16 and Stereo16 both opened successfully (readback confirmed the device name); MultiQuad16Ext (4ch), Multi51Chn16Ext (6ch), and Multi71Chn16Ext (8ch) all failed outright, returning a null device handle immediately. This is a definitive, direct answer to the investigation's central question - the current backend cannot open a multichannel capture stream on this machine with this interface, and the rejection happens at the native OpenAL/OS layer itself, not from any missing parameter or fixable code choice.
+
+Flagged an honest discrepancy rather than quietly noting it in passing: the connected device identified itself as a Clarett **4Pre** (a 4-input model), not necessarily the 8-input unit the user described from memory. The architectural findings apply the same regardless of the exact number, but it's worth the user confirming which physical unit they actually use at practice.
+
+Added the required diagnostic logging directly into the real `AudioEngine.cs` (not just the throwaway probe) so this evidence reproduces on every future run without needing a separate tool: a new `LogCaptureDiagnostics()` method, called once at the top of `Start()`, logs available/default capture devices and runs the same five-format open-then-immediately-close probe (each opened device is closed right away, never started, never used for real capture) - fully wrapped in try/catch so a diagnostics failure can never block the real capture path that follows it. Also added a device-name readback log line right after the real capture device opens. Verified this reproduces identically inside the actual running app via a real smoke test - same "Clarett 4Pre USB" device name, same probe results, real live audio levels moving during capture (`G1 Level:0.190 Bass:25.368` observed in one run, confirming genuine signal, not silence).
+
+Spent the remainder of the pass on the architecture comparison the brief asked for, reasoning through each option's actual tradeoffs rather than restating generic pros/cons: Option A (OpenAL only) is now conclusively ruled out for anything beyond 2 channels, evidence in hand. Option B (CoreAudio) is the technically "correct" native macOS answer but is Mac-only - and this project's own `ROADMAP.md` names a Dell OptiPlex as the actual live-show target, whose OS was never confirmed anywhere in this project's docs; if it isn't macOS, CoreAudio could only ever serve the practice rig, never the live one even if the live rig's interface ever changes. Option C (PortAudio/miniaudio) is genuinely cross-platform and could in principle serve both rigs with one implementation, at the cost of a real new native dependency this project doesn't have today. Landed on recommending the hybrid strategy (Option D) using PortAudio specifically, but deliberately flagged this as moderate-confidence, not a foregone conclusion - the single highest-value next step, explicitly called out as a "spike" recommendation rather than committing to full backend work, is simply confirming what OS the OptiPlex actually runs, since that fact alone should decide between CoreAudio and PortAudio.
+
+Also surfaced a real, incidental finding while reasoning through the future architecture: macOS's Audio MIDI Setup / Focusrite Control routing already lets a user manually choose *which physical pair* of a multi-input interface's channels macOS treats as its 2-channel default input - meaning a user could today, with zero code changes, manually re-route to reach inputs 3+4 as a stereo pair, one pair at a time, entirely through OS-level configuration. Documented this clearly as a real but partial workaround, distinct from true simultaneous multi-channel capture, since it's a genuinely useful thing for the user to know about regardless of what happens with the backend investigation.
+
+Result: `dotnet build` succeeds (0 warnings/errors). Diff confined to exactly one file, purely additive: `Audio/AudioEngine.cs` (94 insertions, 0 deletions - no existing behavior changed, only new diagnostic logging added). Zero diff on any scene, shader, or dashboard UI file, matching the pass's explicit scope. StellarNursery Safe and LavaLamp Safe smoke tests both pass, no regression, diagnostic logging confirmed firing correctly with real device data. Full dashboard-only regression verified via a curl transcript: Calibration tab still honestly reports exactly 2 channels (no faked 8-channel UI), all four built-in presets still intact, both scenes still launch (seed 777 preserved for Stellar Nursery), clean quit, zero orphan process. Assembled `DiagnosticReports/ClarettMultiChannelInvestigation_20260712_155836.zip` with `REPORT.md` (the investigation findings, backend comparison, and architecture recommendation), the standalone probe's own log output, the real app's capture-diagnostics log, source context, git evidence, and a draft `AUDIT.md` Entry 29 with the reviewer sign-off left blank. Not committed, not pushed, per explicit instruction — pending user/ChatGPT review.
+
+## 2026-07-12 — Wind Turbine Fire Phase 1 v0.1 (World03 prototype)
+
+**Executor:** Claude Code / Sonnet
+
+### Ask
+Implement Phase 1 (v0.1 visual prototype only) of an already-approved architect plan for a third
+world, "Wind Turbine / Fire". Explicitly scoped: shader-only, fullscreen-quad, no Blender, no mesh
+pipeline, no new engine infrastructure — the same architecture pattern as Lava Lamp. Explicitly out of
+scope: flame tongues, heat distortion, camera-consume, textures — all deferred to future phases. Creative
+target: a slow-burn industrial-nightmare tableau, cold and desaturated at rest (blue-grey sky, charcoal
+smoke, near-black land/turbines), warming toward an ember-glow horizon only as musical energy
+accumulates, so heat reads as heat-against-cold contrast, not orange-on-orange — with restraint and
+"subtle wrongness" (slightly-too-slow smoke, a hue-shift nudge toward magenta at peaks, never a hue
+flip) rather than chaos. Explicitly flagged as a known weakness to avoid: straight-line/uniform-looking
+embers.
+
+### Implementation
+New `Worlds/World03_WindTurbineFire/WindTurbineFireScene.cs` + `Shaders/wind_turbine_fire.{vert,frag}`,
+structurally modeled on `LavaLampScene.cs`: a relative `ShaderPath()` helper, `Tuning.*`-based smoothed
+audio fields, and the exact Entry-27 calibrated-additive pattern (`CurveOutput *
+CalibrationEngine.CalibratedBlendWeight`, clamped, zero effect under silence) — Input A (Creator) drives
+fire intensity/glow/embers, Input B (Sculptor) drives wind/rotor/turbulence, per this project's
+documented Guitar 1/Guitar 2 convention. Added a single continuous `_sceneHeat` 0-1 float — deliberately
+not a state machine — that integrates fire drive over roughly 240s of sustained loud play and decays at
+a fixed ~0.01/s during quiet passages, so silence visibly relaxes the scene instead of only ratcheting
+upward. Four turbine rotor angles are integrated in C# (not the shader), each with a distinct phase
+offset and speed multiplier so no two turbines are ever synchronized; `public static int EmberCount`
+mirrors `LavaLampScene.BlobCount` as the profile-scaled knob. The shader builds the scene back-to-front:
+cold sky gradient, a 2-3 octave FBM smoke layer with a turbulent domain-warp (not a mechanical scroll),
+a flicker-driven horizon glow band (3 summed incommensurate sines, deep-red → orange → white-orange with
+intensity, a gentle magenta nudge at heat peaks) that visibly underlights the smoke above it, a 1D-FBM
+ground/ridge silhouette, 2 hazed/atmospheric-perspective background turbines plus 2 foreground turbines
+(all built from a shared tapered-capsule tower/nacelle/three-blade SDF function), a fixed-loop
+(`MAX_EMBERS=40`, runtime-capped by `uEmberCount`) ember layer where each hash-seeded ember follows a
+base wind-drift plus three incommensurate sine perturbations (explicitly to avoid the flagged
+straight-line-ember failure mode), and a final grade/vignette pass with a readability guard so the frame
+stays dark/silhouette-dominant even at full heat. `Engine/SceneRegistry.cs` gained one `WindTurbineFire`
+entry; `Engine/CosmicEngine.cs` gained one profile-knob line (`WindTurbineFireScene.EmberCount = ...`)
+at both existing `LavaLampScene.BlobCount` sites, exactly as instructed.
+
+### Mid-pass defects found and fixed (before being reported as results)
+1. Shader compile failure: a custom `float noise2(vec2 p)` collided with GLSL's own built-in
+   `noise2(vec2)` (which returns `vec2`) — `"Return type in redeclared function 'noise2' differs from
+   previous declaration"`. Renamed the custom function to `vnoise2`.
+2. Inverted vertical orientation: the first real screenshot showed turbines hanging upside-down from a
+   solid black wedge at the top of frame, with the ground silhouette rendering at the top instead of the
+   bottom. Root cause: the codebase's standard `uv.y = 1.0 - uv.y` flip (copied from `lava_lamp.frag`'s
+   established pattern) makes `p.y` negative at the top of the screen and positive at the bottom — every
+   constant in this scene (`GROUND_Y`, tower height, sky/ember Y ranges) assumed the opposite. Fixed with
+   one `p.y = -p.y;` immediately after aspect correction, rather than rederiving every constant in the
+   file.
+
+### Heat-progression evidence (temporary debug override, fully reverted)
+A real ~3-5 minute sustained-loud-play ramp is not compatible with this project's bounded-run
+discipline, so heat-progression evidence was produced with a temporary, clearly-marked
+(`TEMPMOCKHEATCAPTURE`) edit to `WindTurbineFireScene.cs`: `HeatRisePerSecondAtFullDrive` set from
+`1/240` to `1/12`, and `fireDrive` force-set to `1.0f` at both of its use sites (mock peak, same
+precedent as Lava Lamp v0.2's mock-audio-peak probe, Entry 25). A `--diagnostic motion` run against this
+build produced clear cold → warming → hot captures at t1/t5/t15. All three edits were then fully
+reverted — confirmed via `grep -c TEMPMOCKHEATCAPTURE WindTurbineFireScene.cs` returning `0` — before any
+of the deliverable evidence (smoke tests, real-audio motion diagnostic, low-heat reference capture) was
+captured.
+
+### Cold-dominance metric
+Reused this project's existing warm/cool-pixel methodology unchanged from Lava Lamp v0.2 (`r > g+15 and
+r > b+25 and lum > 0.08` = warm; `AUDIT.md` Entry 25), computing `cold_dominant_pct = 100 -
+warm_pixel_pct`: the real idle/low-heat capture is 0.00% warm → **100.00% cold-dominant**. Even the
+forced-worst-case mock-hot capture (heat forced to ~1.0, fireDrive forced to 1.0 throughout) stays
+**81.98% cold-dominant** — quantitative confirmation that the readability guard holds and the frame never
+washes out fully warm, well beyond anything reachable by real calibrated test pulses alone (capped around
+a ~0.3 contribution by `CalibrationEngine.CalibratedBlendWeight`).
+
+### Result
+`dotnet build`: 0 warnings/errors. `--world WindTurbineFire --profile Safe/High --smoke-test`: 75.1/75.0
+avg fps, clean exit — matches `--world StellarNursery --profile Safe --seed 777 --smoke-test` (75.0 avg
+fps) and `--world LavaLamp --profile Safe --smoke-test` (75.0 avg fps) captured in the same session, no
+regression. `--diagnostic motion` under real (silent) audio confirms genuine motion (rotor rotation,
+ember drift) — T1→T5 5.61% pixels changed, T5→T15 5.88% — visually modest in absolute terms given the
+deliberately dark/restrained palette, but confirmed as real motion by direct screenshot inspection, not
+claimed from the percentage alone. Full `--dashboard-only` transcript: idle start with no auto-launch →
+`/scenes` correctly lists the new scene → launched as the *first* scene from a fresh dashboard-only start
+(not just an in-process switch) → test pulse on Input A raised `calibratedA` 0→0.8, cleared → test pulse
+on Input B raised `calibratedB` 0→0.6 independently, cleared → live switch to LavaLamp confirmed via
+`/status` → clean quit → zero orphan process (`pgrep`/`lsof` both clean). `git status`/`git diff` confirm
+zero changes to `World01_StellarNursery/`, `World02_LavaLamp/`, `Audio/*`, `Rendering/*`, `Camera.cs`,
+`DashboardHost.cs`, `ControlServer.cs`, or any launch script — the diff is confined to the new
+`Worlds/World03_WindTurbineFire/` files plus the two instructed lines each in `Engine/SceneRegistry.cs`
+and `Engine/CosmicEngine.cs`. Assembled
+`DiagnosticReports/WindTurbineFireV01_20260712_164500/` with `REPORT.md`, screenshots (low-heat/idle
+reference, real-audio t1/t5/t15, mock-heat-progression t1/t5/t15), logs (build, 4 smoke tests, 2 motion
+reports, visual diagnostic, dashboard-only transcript, cold-dominance metrics script + output), source
+context, and git evidence. Not committed, not pushed, per explicit instruction — pending user/ChatGPT
+review, `AUDIT.md` Entry 30's reviewer sign-off left blank.
+
+## 2026-07-12 — Wind Turbine Fire Phase 1.1 + 1.2 (World03 follow-up)
+
+**Executor:** Claude Code / Sonnet
+
+### Ask
+The user reviewed a Phase 1 screenshot of World03 and approved it as "a good start," sending four
+follow-up requests across two messages during the same session: (1) turbine towers weren't visually
+embedded in the ground, (2) a dashboard slider (30-300s) to control the scene's evolution timeline so
+it can be matched to a song's length, (3) embers should be moved from the foreground to the
+background, grouped with the horizon glow, and gated to only appear when the fire signal builds, and
+(4) background turbines read as transparent when the glow behind them is bright. Bundled into one
+pass per the user's own explicit instruction, since all four are small fixes to the same single new
+file, not broad infrastructure changes.
+
+### Fix 1 — turbine ground embedding
+Read `wind_turbine_fire.frag` to confirm root cause: the ground/ridge silhouette's noisy 1D FBM
+heightline (`ridgeY`) sits strictly below `GROUND_Y` at every x position, by a margin that varies with
+the noise (as little as ~0.009, as much as ~0.065 depending on which turbine). Each tower's tapered
+base capsule ended exactly at its own `baseY`, always above that line, so the capsule's own rounded
+cap was always visible in the gap — exactly matching the "rounded edges... not embedded" and
+"floating" feedback. Fixed with a separate, constant-radius (`0.028 * scale`) capsule extending
+straight down from each tower's existing base point by a fixed `EMBED_DEPTH = 0.15` (an absolute,
+not scale-multiplied, constant — chosen to comfortably exceed the worst-case gap across every
+turbine's `baseY` plus its base radius plus margin), unioned with the unchanged tapered tower. Since
+this only adds geometry *below* the existing base point, the visible tower's taper/proportions above
+ground needed zero changes. Verified two ways: visually (zoomed crops on all 4 turbine bases showing
+a clean join, no gap or rounded cap) and quantitatively (a small Python script read the raw PPM pixel
+data and scanned a luminance profile down each turbine's exact screen-x column — computed from its
+world-space hub position via the same aspect/uv math the shader itself uses — confirming the
+luminance transitions smoothly from tower/sky tone directly into ground tone with no jump back up to
+a brighter "gap" value at any of the 4 positions).
+
+### Fix 2 — evolution-time dashboard slider
+Followed CLAUDE.md's own documented pattern for adding a new tunable exactly: `Tuning.cs` gained
+`WindTurbineFireEvolutionSeconds` (default 240, matching Phase 1's original hardcoded rise-rate
+constant so existing behavior is unchanged unless the user actually moves the slider);
+`WindTurbineFireScene.cs`'s `HeatRisePerSecondAtFullDrive` changed from a `const` to a computed
+property reading `Tuning.WindTurbineFireEvolutionSeconds` every frame through `Math.Clamp(...,
+30, 300)` (defensive — independent of whatever clamping the slider or `/set` endpoint itself does);
+`ControlServer.cs` gained a `/set` case (server-side clamped too), a `/values` field, and a new HTML
+range slider (min=30/max=300/step=1) placed in its own sub-section with a divider and explanatory
+text rather than folded into the existing "THE DEEPEST SPACE" Stellar-Nursery-themed sliders, so it
+reads unambiguously as scene-specific. Gave it a dedicated small JS formatter (seconds plus mm:ss,
+e.g. "180s (3:00)") registered as an extra `input`-event listener on top of the generic slider-sync
+logic, rather than fighting the generic `toFixed(3)` display.
+
+To prove the slider actually changes runtime behavior (not just a config value nobody reads), since
+`_sceneHeat` isn't exposed anywhere externally, added a temporary (`TEMPSLIDERTEST`-tagged, fully
+reverted afterward) per-second console log of `_sceneHeat` plus a temporary forced `fireDrive = 1.0f`
+mock peak, then ran two separate fresh `--dashboard-only` sessions: one at the default 240s setting,
+one after `POST /set {"WindTurbineFireEvolutionSeconds": 30}` (confirmed applied via `GET /values`
+before launching). At t=10s elapsed: heat was 0.0419 at the default setting and 0.3353 at the 30s
+setting — an 8.00x ratio, exactly matching the expected 240/30 = 8x speedup, a clean and unambiguous
+confirmation. Both sessions were quit cleanly and confirmed zero orphan process afterward. The temp
+log and mock peak were then fully removed, confirmed via `grep -c TEMPSLIDERTEST` returning 0.
+
+### Fix 3 — embers repositioned to the background, gated by signal
+Rewrote the ember loop in `wind_turbine_fire.frag`: vertical range changed from
+`mix(GROUND_Y + 0.03, 0.55, cyc)` (nearly the full frame height — a genuinely foreground-scale
+effect) to `mix(GROUND_Y - 0.02, GROUND_Y + 0.20, cyc)`, a narrow band matching the background
+turbines' and horizon glow's own screen region; apparent size roughly halved for a "distant" read;
+the always-on `baseline = 0.15` term (which the user's feedback specifically objected to — "I only
+want to see them when the input signal causes the fire to lighten up") removed entirely, with
+brightness now `fade * emberGate` where `emberGate = smoothstep(0.05, 0.40, fireIntensity)` reuses
+the exact same variable that already drives the horizon glow band's own color and brightness, so
+embers and the glow visibly light up together as one effect rather than two independently-visible
+layers; and the whole block moved from very late in the shader (after the foreground turbines) to
+right after the horizon glow band, before the background turbines/smoke/ground/foreground turbines
+are composited, so every closer or co-depth element correctly occludes embers drifting behind it. The
+existing turbulent, hash-seeded multi-sine drift-path math was left completely untouched, per the
+user's own instruction not to redesign the motion, only reposition/rescale/re-gate it.
+
+### Fix 4 — background turbine opacity
+Read the background-turbine compositing code and confirmed a real bug, not just insufficient haze:
+`c1 = mix(darkSilhouetteColor, color, 0.60)` (0.68 for the second turbine) means the turbine's own
+fill color was 60-68% whatever was *already* in `color` at that pixel — including the horizon glow,
+which by that point in the shader had already been added. At high heat, that meant the glow showed
+almost straight through the silhouette, exactly matching "you can see through the towers." Cut both
+factors to 0.18/0.22 (chosen by eye against a forced-high-heat capture) — solid enough to read as a
+real silhouette at any heat level, while keeping a small remaining blend so the atmospheric-
+perspective/haze treatment established elsewhere in the scene isn't lost entirely.
+
+### Mid-pass defect found and fixed (before being reported as a result)
+The first Phase 1.2 build (with the ember reposition/regate applied but before the draw-order swap
+with the background turbines) produced a high-heat capture showing a small ember glint appearing to
+sit *in front of* one background turbine's silhouette — because embers were still being composited
+(additively, `color += emberAccum`) *after* the background-turbine block at that point, an ember
+whose position happened to coincide with a turbine pixel would show through rather than being
+occluded. Caught via direct zoomed-crop inspection before being reported as a passing result, not
+asserted. Fixed by swapping the order so the ember block runs before the background-turbine block;
+re-verified with a fresh high-heat capture and zoomed crop confirming the glint no longer appears.
+
+### Verification approach for both Phase 1.2 fixes together
+Used the same temporary-override-then-revert pattern established in Phase 1 (and Lava Lamp v0.2
+before it): forced `fireDrive = 1.0f` at both its use sites plus temporarily set
+`Tuning.WindTurbineFireEvolutionSeconds = 12f` in `Load()` for a fast ramp, ran `--diagnostic motion`
+(16s bounded, captures at t1/t5/t15) twice — once to catch the draw-order bug, once after fixing it —
+producing full-frame and zoomed-crop screenshots showing: embers fully absent at rest (confirming the
+gating), embers clustered tightly at the horizon at high heat (confirming the reposition), and both
+background turbines reading as solid dark silhouettes against a bright glow with no ember artifact
+(confirming both remaining fixes together). All three temporary edits (`TEMPPHASE12CAPTURE`-tagged)
+were then removed, confirmed via `grep -c` returning 0, and the build/tests below were re-run against
+the fully-reverted, real code.
+
+### Result
+`dotnet build`: 0 warnings/errors throughout, including the final state after all temporary
+overrides were reverted. `--world WindTurbineFire --profile Safe/High --smoke-test`: 75.0/75.0 avg
+fps. `--world StellarNursery --profile Safe --seed 777 --smoke-test` (75.0) and `--world LavaLamp
+--profile Safe --smoke-test` (75.1) both re-verified unaffected. `--diagnostic motion` under real
+silent audio: T1→T5 mean diff 0.435/255 (5.02% pixels changed), T5→T15 0.444/255 (5.33%) — confirms
+rotor rotation and smoke drift are still genuinely present; the percentage is slightly lower than
+Phase 1's 5.6-5.9% because embers no longer contribute any motion or brightness at rest, which is the
+intended, expected effect of Fix 3, not a regression. `git status`/`git diff` confirm the diff is
+confined to `Worlds/World03_WindTurbineFire/WindTurbineFireScene.cs`,
+`Worlds/World03_WindTurbineFire/Shaders/wind_turbine_fire.frag`, `Tuning.cs`, and `ControlServer.cs`
+— zero changes to `World01_StellarNursery/`, `World02_LavaLamp/`, `Audio/*`, `Rendering/*`,
+`Camera.cs`, `DashboardHost.cs`. `pgrep`/`lsof` checked clean after every bounded run and after both
+dashboard-only slider-comparison sessions — zero orphaned process at any point in this pass. Assembled
+`DiagnosticReports/WindTurbineFireV01_1_20260712_192800/` with `REPORT.md`, before/after screenshots
+for all four fixes (including zoomed crops proving both the embedding join and the background-turbine
+opacity), logs (build, 6 smoke tests, 3 motion reports, 1 visual diagnostic report, the
+evolution-slider quantitative comparison plus raw dashboard-only session logs), source context, and
+git evidence. Not committed, not pushed, per explicit instruction — pending user/ChatGPT review,
+`AUDIT.md` Entry 31's reviewer sign-off left blank.

@@ -37,6 +37,16 @@ namespace CosmicEngine.App.Audio
             if (_device == ALCaptureDevice.Null)
                 throw new Exception("AudioEngine: could not open capture device. Check interface permissions.");
 
+            try
+            {
+                string opened = ALC.GetString(new ALDevice(_device.Handle), AlcGetString.CaptureDeviceSpecifier);
+                Console.WriteLine($"[AudioEngine] Capture opened: device=\"{opened}\", format=Stereo16, sampleRate={SampleRate}, bufferSize={BufferSize} frames.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AudioEngine] Capture opened (device name readback failed, non-fatal: {ex.Message}).");
+            }
+
             ALC.CaptureStart(_device);
 
             _running = true;

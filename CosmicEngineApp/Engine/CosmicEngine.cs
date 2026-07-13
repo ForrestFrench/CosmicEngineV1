@@ -2,6 +2,7 @@ using CosmicEngine.App.Audio;
 using CosmicEngine.App.Rendering;
 using CosmicEngine.App.Worlds.World01;
 using CosmicEngine.App.Worlds.World02;
+using CosmicEngine.App.Worlds.World03;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
@@ -347,6 +348,11 @@ namespace CosmicEngine.App.Engine
             // when StellarNursery is the active world - only LavaLampScene reads it).
             LavaLampScene.BlobCount = _profile.Name == "High" ? 8 : 6;
 
+            // Wind Turbine Fire Phase 1 v0.1: profile-aware ember count (harmless
+            // no-op unless WindTurbineFire is the active world), same pattern as
+            // LavaLampScene.BlobCount above.
+            WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 24 : 12;
+
             // Dashboard Show Seed Support: only fills in when the user didn't already
             // ask for a specific seed via CLI --seed - explicit intent always wins.
             if (!_explicitSeedProvided)
@@ -520,6 +526,7 @@ namespace CosmicEngine.App.Engine
                 _renderTarget?.Dispose();
                 _renderTarget = new RenderTarget(_renderWidth, _renderHeight);
                 LavaLampScene.BlobCount = _profile.Name == "High" ? 8 : 6;
+                WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 24 : 12;
             }
 
             if (worldChanged)
