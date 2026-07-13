@@ -896,3 +896,66 @@ side-by-side, t1/t5/t15 motion frames, StellarNursery/LavaLamp regression refere
 metric script + output), source context, and git evidence, zipped as
 `WindTurbineFireDesignFix01_20260712_211410.zip`. Not committed, not pushed, per explicit instruction -
 pending user/ChatGPT review, `AUDIT.md` Entry 33's reviewer sign-off left blank.
+
+---
+
+## Entry 35 - Startup Failure Root Cause: macOS Gatekeeper/Developer Mode, Not a Code Bug
+
+User reported the Desktop shortcut could no longer start the dashboard. Reproduced cleanly (bounded,
+zero orphan processes each time): `dotnet run -- --smoke-test`/`--dashboard-only`, and the built apphost
+run directly, all die via SIGKILL in well under 1 second with zero stdout/stderr. `log show` pinpointed
+the kernel's own message: `(AppleSystemPolicy) ASP: Security policy would not allow process` for the
+built `CosmicEngine.App` binary - the OS kills it before any Cosmic Engine code executes, which is why
+the log is empty. `DevToolsSecurity -status` showed Developer Mode disabled; `spctl -a -vv` rejected the
+binary; re-signing didn't change the verdict (ruling out a stale signature); a structurally identical
+apphost built on the internal disk ran fine, isolating the cause to Developer Mode being off combined
+with this project living on an external USB drive. Not a regression in `AudioEngine.cs` or anything Wind
+Turbine Fire touched - the process never reaches `Main`. Only change: `run-show.sh` now detects this
+exact failure signature (empty log + Gatekeeper-rejected binary) and prints the diagnosis and fix
+(`sudo DevToolsSecurity -enable`) instead of an unexplained timeout. No `.cs` files changed. See
+`AUDIT.md` Entry 35 for full detail; `AUDIT.md` Entry 35's reviewer sign-off left blank.
+
+---
+
+## Entry 36 - Startup Failure Follow-Up: Real Cause Is AMFI Ad-Hoc-Signature Rejection
+
+User enabled Developer Mode per Entry 35 and still hit the same failure. Follow-up investigation (done
+live by the orchestrating session, no separate agent) disproved the initial "external volume" theory - a
+fresh build on the internal disk was rejected identically - and pinpointed the real, specific cause via
+`log show --predicate 'eventMessage contains "AMFI"'`: `AMFI: '.../CosmicEngine.App' is adhoc signed` /
+`amfid: not valid: Error Domain=AppleMobileFileIntegrityError Code=-423`. `amfid` was found running
+continuously since the very first post-update boot, before Developer Mode was re-enabled this session -
+strongly suggesting the exemption hadn't been picked up by the running kernel/amfid state without a
+reboot. `run-show.sh` was updated again (both external and internal copies, kept byte-identical) to state
+the AMFI finding and recommend a reboot as the most likely real fix, with internal-disk migration and
+`sudo spctl --master-disable` kept only as secondary fallbacks. A full verified copy of the project was
+created at `/Users/admin/CosmicEngine` (internal disk) during this investigation and kept as a second
+option. No `.cs` files changed. See `AUDIT.md` Entry 36 for full detail; reviewer sign-off left blank.
+
+---
+
+## Entry 37 - Mac AMFI Apphost Workaround Pass
+
+Rather than requiring the user to reboot (Entry 36) or change any machine-wide security setting, this
+pass found and verified a development-workflow fix that avoids the rejected apphost binary entirely.
+Confirmed the failure once more, bounded (`dotnet run -- --smoke-test` still exit 137/zero output, `log
+show` still shows the same `ASP: Security policy would not allow process` denial), then tested launching
+the built `.dll` directly through the trusted `dotnet` host instead of `dotnet run`/the apphost -
+`dotnet bin/Debug/net8.0/CosmicEngine.App.dll --smoke-test` succeeded immediately (exit 0, full normal
+stdout, ~75 fps), since `dotnet` itself is a Microsoft-signed/notarized executable, never the locally
+ad-hoc-signed apphost. Extended this to StellarNursery Safe (seed 777), LavaLamp Safe, WindTurbineFire
+Safe (valid `--world` test value only, its source untouched), a High-profile run, and a full
+`--dashboard-only` cycle (idle -> `/scenes` -> live `POST /launch` -> live `POST /quit`), all clean with
+zero orphan process checked via `ps`/`lsof` before and after every single run. Also tested and adopted
+`<UseAppHost>false</UseAppHost>` in `CosmicEngine.App.csproj` - stops generating the ad-hoc-signed apphost
+at all, and as a verified side effect `dotnet run` itself started working again too. `run-show.sh` and
+`Run Cosmic Engine.command` (the latter unchanged, since it only `exec`s the former) now build once
+(`dotnet build`, logged) then launch `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --dashboard-only`
+directly - re-verified end-to-end via a full launcher run (build -> dashboard up -> scene launched live
+from the dashboard -> quit -> clean "Cosmic Engine has exited." -> zero orphan). Both the external-drive
+and internal-disk copies updated identically and confirmed byte-identical via `diff` on every changed
+file (`CosmicEngine.App.csproj`, `run-show.sh`, `CLAUDE.md`, `AUDIT.md`, `PROJECT_STATE.md`,
+`IMPLEMENTATION_LOG.md`). No machine-wide security setting was touched - Gatekeeper was not disabled,
+PACE Eden/`licenseDaemon` was not stopped, Startup Security Utility/Recovery Mode was not touched, no
+`sudo` was run. No `.cs`/`.frag`/`.vert` file changed - infrastructure/launcher/build-config only. See
+`AUDIT.md` Entry 37 for full detail; reviewer sign-off left blank.

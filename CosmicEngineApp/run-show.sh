@@ -114,12 +114,42 @@ if curl -s -m 2 "$DASHBOARD_URL/status" >/dev/null 2>&1; then
   exit 0
 fi
 
-# --- Launch -------------------------------------------------------------
+# --- Build, then launch via the DLL directly (not `dotnet run`, not the ---
+# generated apphost) -----------------------------------------------------
+# AUDIT.md Entry 37 (Mac AMFI Apphost Workaround Pass): the locally-built
+# apphost binary (bin/Debug/net8.0/CosmicEngine.App) is ad-hoc-signed, and
+# on macOS Tahoe 26.5.2 that gets killed by AMFI/Gatekeeper at exec() time
+# before any Cosmic Engine code runs (see Entries 35/36 for the original
+# investigation) - `dotnet run` was hitting this because it execs that same
+# apphost under the hood. The fix used here is two-pronged: (1) the .csproj
+# now sets <UseAppHost>false</UseAppHost>, so no ad-hoc-signed apphost is
+# generated at all, and (2) this script builds once, then launches the
+# built .dll directly through the `dotnet` command itself - `dotnet` is
+# Apple-notarized/Microsoft-signed, not a local ad-hoc build, so it is never
+# subject to the same AMFI rejection. Keep launching this way (`dotnet
+# <path-to-dll>`, not the bare apphost path) even if UseAppHost is ever
+# reverted, since it's the part that actually avoids the rejected binary.
 mkdir -p "$SCRIPT_DIR/DiagnosticReports" 2>/dev/null
 LOG_FILE="$SCRIPT_DIR/DiagnosticReports/launcher_last_run.log"
+BUILD_LOG="$SCRIPT_DIR/DiagnosticReports/launcher_build_last_run.log"
+APP_DLL="$SCRIPT_DIR/bin/Debug/net8.0/CosmicEngine.App.dll"
+
+echo "Building Cosmic Engine..."
+if ! dotnet build > "$BUILD_LOG" 2>&1; then
+  fail "The build failed. Last output (full log: $BUILD_LOG):
+----------------------------------------
+$(tail -n 40 "$BUILD_LOG" 2>/dev/null)
+----------------------------------------"
+fi
+
+if [ ! -f "$APP_DLL" ]; then
+  fail "Build reported success but the expected output was not found:
+  $APP_DLL
+This is unexpected - check $BUILD_LOG for details."
+fi
 
 echo "Starting Cosmic Engine dashboard (no visual yet - pick a scene once it's open)..."
-dotnet run -- --dashboard-only > "$LOG_FILE" 2>&1 &
+dotnet "$APP_DLL" --dashboard-only > "$LOG_FILE" 2>&1 &
 ENGINE_PID=$!
 
 echo "Waiting for the dashboard to start..."
@@ -159,6 +189,70 @@ else
   echo "----------------------------------------"
   tail -n 40 "$LOG_FILE" 2>/dev/null
   echo "----------------------------------------"
+
+  # AUDIT.md Entry 35/36: an empty log here (zero bytes, not even a build
+  # error) used to mean macOS AMFI/Gatekeeper killed the locally-built,
+  # ad-hoc-signed apphost binary at launch, before any Cosmic Engine code
+  # ran - not a Cosmic Engine bug, and nothing our own code could have
+  # caught or logged. Entry 37 (Mac AMFI Apphost Workaround Pass) removed
+  # that failure mode from this launcher's own launch path: this script now
+  # runs `dotnet <path-to-dll>` directly (see "Build, then launch" above),
+  # not the rejected apphost, and the .csproj sets <UseAppHost>false</UseAppHost>
+  # so that ad-hoc-signed binary isn't even generated anymore. If you're
+  # reading this block because the dashboard still didn't come up, the AMFI
+  # rejection is very unlikely to be the cause anymore - check the build log
+  # and the (likely non-empty, since `dotnet` itself is a trusted/notarized
+  # host and should print real Cosmic Engine startup output or a real error)
+  # $LOG_FILE first. The AMFI-specific checks below are kept only as a
+  # fallback in case something in a future change re-introduces a local
+  # apphost dependency (e.g. UseAppHost is reverted, or a different launch
+  # path calls the apphost directly).
+  BUILT_APP="$SCRIPT_DIR/bin/Debug/net8.0/CosmicEngine.App"
+  if [ ! -s "$LOG_FILE" ] && [ -f "$BUILT_APP" ] && command -v spctl >/dev/null 2>&1; then
+    if ! spctl -a "$BUILT_APP" >/dev/null 2>&1; then
+      DEV_MODE_ON=0
+      if command -v DevToolsSecurity >/dev/null 2>&1 && DevToolsSecurity -status 2>/dev/null | grep -qi "enabled"; then
+        DEV_MODE_ON=1
+      fi
+      echo ""
+      echo "Likely cause: macOS blocked a locally-built app binary from running at"
+      echo "all (confirmed via 'spctl' - Gatekeeper rejects it, and it is not"
+      echo "notarized/properly signed). That's why the log above is empty: the"
+      echo "process was killed before any Cosmic Engine code executed, so there was"
+      echo "nothing for it to print. This is not an audio-device or Cosmic Engine bug."
+      echo "Note: this script no longer launches that binary itself (it launches the"
+      echo ".dll via the trusted 'dotnet' host instead) - seeing this means something"
+      echo "unexpected is still invoking it, or an old apphost binary is stale in bin/."
+      echo ""
+      if [ "$DEV_MODE_ON" -eq 0 ]; then
+        echo "Fix: enable Developer Mode (lets locally-built apps run), then REBOOT"
+        echo "your Mac (not just re-run this script) and try again:"
+        echo "  sudo DevToolsSecurity -enable"
+      else
+        echo "Developer Mode is already enabled, but macOS is still blocking this app."
+        echo "Most likely fix: REBOOT your Mac, then try again - the code-signing"
+        echo "daemon (amfid) may not have picked up Developer Mode being (re-)enabled"
+        echo "without a restart, especially right after a macOS update."
+        echo ""
+        echo "If a reboot doesn't fix it, two more options:"
+        echo "  1) Run this project from your internal disk instead of an external"
+        echo "     drive (didn't resolve it in our own testing, but worth trying on"
+        echo "     your exact setup)."
+        echo "  2) Fully disable Gatekeeper (bigger tradeoff - allows ANY unsigned app"
+        echo "     to run, not just this one; only do this if you understand and"
+        echo "     accept that):"
+        echo "       sudo spctl --master-disable"
+        echo ""
+        echo "Run whichever you choose yourself - this script won't do it for you."
+      fi
+      echo ""
+    fi
+  fi
+
+  # If the log genuinely has content but the dashboard still never came up,
+  # that's a real Cosmic Engine startup problem (e.g. no audio capture
+  # device), not AMFI/Gatekeeper - the tail above already shows it.
+
   read -r -p "Press Enter to close this window..." _ 2>/dev/null
   exit 1
 fi

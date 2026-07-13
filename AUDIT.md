@@ -2083,3 +2083,340 @@ confirmation of zero diff on `WindTurbineFireScene.cs`), `audit/` — zipped as
 `WindTurbineFireDesignFix01_20260712_211410.zip`.
 
 **Not committed, not pushed** — left uncommitted in the working tree pending review, same as Phase 1/2.
+
+## Entry 35 — Startup Failure Root Cause: macOS Gatekeeper/Developer Mode, Not a Code Bug (v0.1)
+
+**Date:** 2026-07-13
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Reported symptom
+User's Desktop shortcut ("Run Cosmic Engine.command" → `run-show.sh` → `dotnet run -- --dashboard-only`)
+stopped bringing up the dashboard. A prior investigation in the main session found `run-show.sh` timing
+out after 30s with `DiagnosticReports/launcher_last_run.log` completely empty (0 bytes), and `dotnet run
+-- --dashboard-only`/`--smoke-test` run directly also producing zero output, with `--smoke-test` once
+returning exit code 137. That investigation was inconclusive and flagged two leads: a recent `AudioEngine.cs`
+logging slim-down (Wind Turbine Fire pre-commit cleanup, prior session) as a possible regression, and the
+machine's current default audio input being "Hue Sync Audio" (a virtual 4-channel device, not a real
+Focusrite Clarett) as a possible environmental cause.
+
+### Investigation
+Reproduced cleanly and repeatedly, bounded, with zero orphan processes left after every attempt (`ps aux`/
+`lsof -i :8080` checked before and after each run):
+- `dotnet run -- --smoke-test`: exits with code 137 (SIGKILL) in well under 1 second, zero stdout/stderr
+  output. Confirmed this is real engine behavior, not a sandbox artifact of the main session's flawed
+  attempt — reproduced identically both via `dotnet run` and by executing the built apphost binary
+  directly (`bin/Debug/net8.0/CosmicEngine.App --smoke-test` → `Killed: 9`, exit 137).
+- `dotnet run -- --dashboard-only`: identical zero-output, near-instant-kill behavior.
+- `./run-show.sh`: correctly detects the dead process almost immediately (its wait loop breaks as soon as
+  `kill -0 "$ENGINE_PID"` fails, not just on the 30s timeout) and reports failure — but had no way to say
+  *why*, because `launcher_last_run.log` genuinely has nothing in it.
+- `macOS unified log` (`log show --predicate 'eventMessage contains "dotnet"'`) pinpointed the cause
+  exactly, timestamp-matched to every kill: `kernel: (AppleSystemPolicy) ASP: Security policy would not
+  allow process: <pid>, /Volumes/External Hard Drive FCF/CosmicEngine/CosmicEngineApp/bin/Debug/net8.0/
+  CosmicEngine.App`. The kernel refuses to let the binary's entry point run at all — this is *why* there
+  is zero output: no Cosmic Engine code (not `Program.cs`, not `AudioEngine.Start()`, nothing) ever
+  executes.
+- `spctl -a -vv` on the built apphost: `rejected`. `codesign -dvvv`: `flags=0x2(adhoc)` (a normal,
+  unmodified .NET SDK-generated ad-hoc signature — re-signing with `codesign --sign - --force` did not
+  change the `rejected` verdict, ruling out a stale/corrupt signature specific to this build).
+- `DevToolsSecurity -status`: **"Developer mode is currently disabled."** — this is the actual switch.
+  macOS requires Developer Mode to be enabled to run locally-built, non-notarized (ad-hoc-signed) binaries
+  without per-launch Gatekeeper approval; with it off, the kernel kills such binaries outright at `exec()`
+  time, before any user code runs — exactly matching the observed zero-output, sub-1-second SIGKILL.
+- Isolated the "which binaries are affected" variable: built a trivial `dotnet new console` app on the
+  **internal** disk (structurally identical apphost — same size, same `Mach-O thin (x86_64)`, same
+  `flags=0x2(adhoc)` signature) and ran it directly. It ran fine (`Hello, World!`, exit 0) despite `spctl`
+  also reporting it `rejected` — Gatekeeper's static rejection alone isn't fatal to direct execution; what
+  differs is that this project lives on `/Volumes/External Hard Drive FCF` (an external USB HFS+ volume,
+  mounted `noowners`), and Developer Mode being off appears to specifically block locally-built code
+  execution from this external/removable volume while the same kind of binary on the internal disk was
+  allowed through. (`dotnet --info` also shows this SDK installation itself is the `osx-x64` build running
+  under Rosetta 2 on this arm64 Mac — noted for completeness, but the internal-vs-external-volume A/B test
+  is the variable that actually explains the difference, not architecture/Rosetta by itself, since the
+  control binary was equally `x86_64`/Rosetta and ran fine.)
+
+### Root cause
+**Environmental, not a code bug.** macOS Gatekeeper is killing the locally-built `CosmicEngine.App`
+process at the kernel level before any of its code executes, because Developer Mode is disabled on this
+Mac and the project lives on an external drive. This has nothing to do with `Audio/AudioEngine.cs`
+(read in full — `Start()` still throws a clear, correctly-placed exception with a descriptive message if
+`ALC.CaptureOpenDevice` returns null, and still prints a `[AudioEngine] Capture opened: ...` diagnostic
+line on success; neither path is defective, and neither ever gets the chance to run here) and nothing to
+do with the Wind Turbine Fire shader/scene passes (`SceneRegistry.cs`/`CosmicEngine.cs` static
+initialization was checked and contains nothing that could plausibly interact with this — moot anyway,
+since the process is killed before `Main` starts, let alone any static scene registry construction). The
+"Hue Sync Audio" default-input-device situation flagged as a possible lead in the prior session is real
+but is not what is currently blocking startup — the process never gets far enough to reach `AudioEngine.
+Start()` at all, so a real capture-device problem cannot even manifest yet. **No source file needed a
+code fix, and none was made to any `.cs` file.**
+
+### What changed
+`CosmicEngineApp/run-show.sh` only (bash launcher script, no C# touched): when the dashboard fails to
+come up and `launcher_last_run.log` is empty, the script now runs `spctl -a` against the built apphost; if
+Gatekeeper rejects it, it prints a specific, actionable message identifying the likely cause (Developer
+Mode disabled) and the fix (`sudo DevToolsSecurity -enable`), instead of just showing an empty log with no
+explanation. This is a diagnostic-message-only change — it does not touch `AudioEngine.cs`, any world/
+scene file, or any other engine code, and does not attempt to modify the machine's security settings
+itself (that requires `sudo` and is a user action, not something this pass performs).
+
+### Verification
+- `dotnet build`: 0 warnings, 0 errors (unchanged; this was never a compile issue).
+- `dotnet run -- --smoke-test` and `dotnet run -- --dashboard-only`: both re-confirmed to fail the same
+  way (near-instant SIGKILL, zero output) — expected, since Developer Mode is still disabled on this
+  machine; this pass does not (and per the operating rules governing system-setting changes, should not)
+  toggle that itself.
+- `./run-show.sh`: run bounded end-to-end. It now fails with the new diagnostic block visible, e.g.:
+  "Likely cause: macOS blocked the locally-built app from running at all (confirmed via 'spctl' -
+  Gatekeeper rejects it, and this build is not notarized) ... Fix: enable Developer Mode ... `sudo
+  DevToolsSecurity -enable`" — confirming the launcher path now surfaces a clear, actionable message
+  instead of a silent/unexplained timeout.
+- Zero orphan processes and port 8080 free confirmed via `ps aux`/`lsof -i :8080` after every single run in
+  this investigation, including the final `run-show.sh` verification.
+
+### What the user needs to do
+Run `sudo DevToolsSecurity -enable` in Terminal (requires the account's admin password) to re-enable
+Developer Mode, then retry the Desktop shortcut. This is expected to fully resolve the reported symptom
+with no code changes required. Separately, and unrelated to this specific failure: the current default
+audio input device is "Hue Sync Audio" (a virtual device from the Philips Hue Sync app), not a real
+Focusrite Clarett — once Developer Mode is fixed and the app can actually start, connecting/selecting a
+real capture interface will still be needed for audio-reactive behavior to work, and `AudioEngine.Start()`
+will now throw its existing clear error message if that's not the case (verified by reading the code, not
+newly reproduced this pass, since the process could not get that far under the Gatekeeper block).
+
+### Known limitations
+- Could not verify a fully successful `--dashboard-only` startup end-to-end on this machine, since fixing
+  Developer Mode requires `sudo`/an admin password this pass is not authorized to enter — the fix is
+  reasoned through and strongly evidenced (kernel log directly names the exact mechanism, `spctl`/
+  `DevToolsSecurity -status` corroborate, and the internal-vs-external-volume A/B test isolates the
+  variable) but not confirmed by a subsequent clean run post-fix. Recommend the user re-run `./run-show.sh`
+  after enabling Developer Mode and confirm the dashboard comes up.
+- Whether the same Developer-Mode-disabled condition would also block a properly notarized/distributed
+  build (as opposed to a locally `dotnet build`-produced one) was not tested — out of scope, since this
+  project is always run via local `dotnet build`/`dotnet run`, never distributed as a signed `.app`.
+
+
+## Entry 36 — Startup Failure Follow-Up: "External Volume" Theory Corrected; Real Cause Is AMFI Ad-Hoc-Signature Rejection, Likely Needs a Reboot (v0.1)
+
+### Context
+The user enabled Developer Mode as directed by Entry 35 and reported the *same* failure. This entry
+covers the live follow-up investigation (same session, no new agent spawned for this part — done
+directly by the orchestrating session).
+
+### First hypothesis (now corrected): "external volume" specifically
+Re-running `./run-show.sh` after Developer Mode was confirmed enabled (`DevToolsSecurity -status` →
+"Developer mode is currently enabled") still failed the same way. `spctl -a` on the built apphost still
+reported `rejected`, and `log show` still showed `kernel: (AppleSystemPolicy) ASP: Security policy would
+not allow process`. A quick isolated test at the time (a trivial `dotnet new console` binary) appeared to
+run fine from the internal disk but not from this project's external drive, which was taken as evidence
+that Gatekeeper was specifically blocking execution from external/removable volumes even with Developer
+Mode on. `run-show.sh` was updated to recommend moving the project to the internal disk (or, as a bigger-
+tradeoff fallback, `sudo spctl --master-disable`), and the entire project (~3.0GB, 2878 files, verified by
+file-count and size match plus `git fsck`) was copied via `rsync -a` to `/Users/admin/CosmicEngine` as a
+non-destructive migration — the external-drive copy was deliberately left untouched as a safety net.
+
+### Correction: the volume was never the deciding factor
+A cleaner, controlled re-test disproved the volume theory: a **fresh** build (`rm -rf bin obj && dotnet
+build`) at the **new internal-disk location** was *still* rejected by `spctl -a -vv` and still SIGKILLed
+(exit 137) with zero output, identically to the external-drive copy. This directly contradicts the
+external-volume theory — the earlier "control test" that seemed to show internal-disk success was not
+actually comparable (likely a difference in how that trivial console app was built/run rather than a real
+location effect).
+
+`log show --predicate 'eventMessage contains "AMFI"'` on the internal-disk failure pinpointed the real,
+specific reason for the first time:
+```
+AMFI: '.../CosmicEngine.App' is adhoc signed.
+amfid: not valid: Error Domain=AppleMobileFileIntegrityError Code=-423
+  "The file is adhoc signed or signed by an unknown certificate chain"
+AMFI: code signature validation failed.
+ASP: Security policy would not allow process
+```
+This is a plain ad-hoc-signature rejection, independent of which disk the binary lives on.
+
+### Why Developer Mode being "enabled" didn't help yet
+`ps -eo pid,lstart,comm | grep amfid` shows `amfid` (the code-signing validation daemon) has been running
+continuously since `Mon Jul 13 02:05:18` — i.e. since the very first boot after last night's macOS Tahoe
+26.5.2 update (`kern.boottime` = `02:03:36`) — which is *before* the user ran `sudo DevToolsSecurity
+-enable` this morning. The strong working theory: `amfid`'s policy state for this session was established
+at that boot, prior to Developer Mode being re-enabled, and the exemption for ad-hoc-signed local builds
+has not been picked up without a subsequent reboot. This is consistent with every other observed fact:
+it worked before the overnight update+reboot, broke immediately after, and re-enabling the setting alone
+(without restarting) hasn't changed the kernel's live enforcement.
+
+### What changed
+`CosmicEngineApp/run-show.sh` only, at both the external-drive original and the new internal-disk copy
+(kept byte-identical via `diff`, confirmed in sync) — no `.cs` file touched, same as Entry 35. The
+diagnostic block was rewritten to: drop the now-disproven "move to internal disk" as the primary
+recommendation, state the real ad-hoc-signature/AMFI finding, and recommend a **reboot** (after Developer
+Mode is enabled) as the most likely real fix, with "try the internal disk anyway" and
+`sudo spctl --master-disable` kept only as secondary fallbacks if a reboot doesn't resolve it.
+
+### New artifact from this investigation
+A full, verified copy of the project now also exists at `/Users/admin/CosmicEngine` (internal disk),
+created as part of testing the (now-corrected) volume theory. It was not deleted, since it's a harmless,
+fully-verified extra copy (matching file count/size, valid `git log`/`git fsck`) and gives the user a
+second option to try if a reboot alone doesn't resolve things. The external-drive original at
+`/Volumes/External Hard Drive FCF/CosmicEngine` remains the authoritative copy — both currently carry the
+same uncommitted Wind Turbine Fire Refinement Pass 2 + `run-show.sh` diagnostic changes.
+
+### Verification
+- Fresh `dotnet build` at both locations: 0 warnings/errors both times (never a compile issue).
+- `spctl -a -vv` and direct execution re-tested at both locations, before and after the clean rebuild:
+  rejected/SIGKILLed identically in all cases pre-reboot.
+- `log show` captured the precise AMFI -423 error and the `amfid` boot-time correlation described above.
+- Zero orphan processes and port 8080 free reconfirmed via `ps aux`/`lsof -i :8080` after every test.
+- **Not yet verified**: whether a reboot actually resolves it — this requires restarting the user's Mac,
+  which is the user's action to take and decide the timing of, not something performed automatically here.
+
+### Known limitations
+- The reboot fix is strongly evidenced (exact AMFI error code, `amfid` start-time-vs-boot correlation) but
+  not yet confirmed by an actual post-reboot clean run — recommend the user reboot, then re-run
+  `./run-show.sh` from either copy and report back.
+- If a reboot does *not* resolve it, the real remaining fallback is `sudo spctl --master-disable` (or
+  keeping Developer Mode on and investigating further) — "move to internal disk" is retained in the
+  script's fallback list mainly for completeness, not because this session's evidence supports it.
+
+### Reviewer note
+Reviewer sign-off intentionally left blank for ChatGPT/user review — not self-signed.
+
+
+## Entry 37 — Mac AMFI Apphost Workaround Pass
+
+**Date:** 2026-07-13
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Problem addressed
+Entries 35/36 root-caused the Desktop shortcut / `run-show.sh` / `dotnet run -- --dashboard-only` /
+`--smoke-test` all failing with zero stdout/stderr and a near-instant SIGKILL (exit 137) to macOS AMFI
+rejecting the locally-built, ad-hoc-signed .NET apphost binary (`bin/Debug/net8.0/CosmicEngine.App`) at
+`exec()` time — the kernel kills the process before any Cosmic Engine code runs, which is why the log is
+always empty. Confirmed exact signature: `kernel: (AppleSystemPolicy) ASP: Security policy would not allow
+process: <pid>, .../CosmicEngine.App`, and (Entry 36) `AMFI: '<path>' is adhoc signed` / `amfid: not valid:
+Error Domain=AppleMobileFileIntegrityError Code=-423`. Entry 36 recommended a reboot as the likely fix but
+could not confirm it (requires the user to actually reboot). This pass's task was to find and verify a
+development-workflow fix — running the managed DLL directly through the trusted `dotnet` host instead of
+the rejected local apphost — as a lower-risk alternative to any machine-wide security-setting change,
+before considering (but not performing) further escalation.
+
+### Investigation
+Reproduced the failure once, bounded, before attempting a fix: `dotnet build` succeeded (0 warnings/
+errors, confirming this was never a compile issue), then `dotnet run -- --smoke-test` exited 137 with 0
+bytes of output in ~3s. `log show --start ... --predicate 'senderImagePath contains "AMFI" OR ... process
+== "kernel"'` around the exact kill timestamp again showed `kernel[0:...] (AppleSystemPolicy) ASP: Security
+policy would not allow process: <pid>, .../bin/Debug/net8.0/CosmicEngine.App` — same signature as Entries
+35/36, confirming the blocker was still present and unchanged going into this pass.
+
+Located the built DLL (`bin/Debug/net8.0/CosmicEngine.App.dll`) and the apphost
+(`bin/Debug/net8.0/CosmicEngine.App`) side by side. Tested direct DLL-host execution:
+`dotnet bin/Debug/net8.0/CosmicEngine.App.dll --smoke-test` — **succeeded immediately**, exit 0, full
+normal stdout (OpenGL renderer info, `[Perf]` lines, seed/world confirmation, clean `[Smoke Test] Complete`
+summary), ~74-75 fps. The `dotnet` executable itself is Microsoft-distributed and not the locally-generated
+ad-hoc-signed binary, so it is never subject to the same AMFI rejection — this confirmed the core hypothesis.
+
+Extended testing (all bounded, `ps aux`/`lsof -i :8080` checked before and after every single run, not just
+at the end):
+- `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --world StellarNursery --profile Safe --seed 777
+  --smoke-test` — pass, avg 75.0 fps, seed 777 confirmed active.
+- `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --world LavaLamp --profile Safe --smoke-test` — pass, avg
+  74.5 fps.
+- `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --world WindTurbineFire --profile Safe --smoke-test` —
+  pass, avg 74.3 fps. (WindTurbineFire exists on this branch as uncommitted work from an unrelated Design
+  Correction Pass 1 follow-up — used here only as a valid `--world` test value; its source files under
+  `Worlds/World03_WindTurbineFire/` were not touched by this pass.)
+- `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --dashboard-only` — dashboard came up correctly
+  (`GET /status` → `running:false`, no visual auto-started), `GET /scenes` listed all three worlds,
+  `POST /launch {"sceneId":"LavaLamp","profile":"Safe"}` started a real scene live (`/status` then showed
+  `running:true`, 75 fps), and `POST /quit` shut it down cleanly — process gone, port 8080 free, confirmed
+  via `ps`/`lsof` immediately after.
+
+### Optional low-risk test: `UseAppHost=false`
+Also tested whether setting `<UseAppHost>false</UseAppHost>` in `CosmicEngine.App.csproj` is a cleaner
+complementary fix. After a clean `rm -rf bin obj && dotnet build`, no apphost binary is generated at all
+(`bin/Debug/net8.0/` no longer contains `CosmicEngine.App`, only the `.dll`/`.pdb`/`.deps.json`/
+`.runtimeconfig.json`). As a direct, verified side effect, **`dotnet run -- --smoke-test` itself started
+working again** (exit 0, full output, ~75 fps) — with no apphost to generate, `dotnet run` executes the DLL
+via the trusted `dotnet` host internally instead of building/execing the ad-hoc-signed apphost. Direct
+DLL-host launch was re-verified working after this change too. This is a genuine improvement (fixes even
+the historically-documented `dotnet run` command, not just the launcher), but the launcher itself was still
+updated to launch the `.dll` explicitly (see below) rather than relying on `dotnet run`, since that's the
+more robust fix — it doesn't depend on `UseAppHost` remaining set to `false` in the future.
+
+### What changed
+- `CosmicEngineApp/CosmicEngine.App.csproj`: added `<UseAppHost>false</UseAppHost>` to the existing
+  `PropertyGroup`. No other `.csproj` change.
+- `CosmicEngineApp/run-show.sh`: the launch step now runs `dotnet build` explicitly first (logged to a new
+  `DiagnosticReports/launcher_build_last_run.log`, with `fail()` surfacing the last 40 lines on a build
+  failure), then launches `dotnet "$SCRIPT_DIR/bin/Debug/net8.0/CosmicEngine.App.dll" --dashboard-only`
+  instead of `dotnet run -- --dashboard-only`. The pre-existing Entry 35/36 AMFI diagnostic block (triggered
+  when the dashboard doesn't come up and the log is empty) was kept, not deleted — it now explains that the
+  launcher itself no longer invokes the rejected apphost, and is retained only as a fallback in case a
+  future change reintroduces an apphost dependency. All other launcher behavior (symlink/alias resolution,
+  dependency checks, duplicate-instance detection, cleanup trap, poll-based dashboard-ready detection,
+  dashboard auto-open, no-visual-until-scene-selection) is unchanged.
+- `CosmicEngineApp/Run Cosmic Engine.command`: **no changes** — it only `cd`s and `exec`s `run-show.sh`, so
+  it picks up the fix automatically.
+- `CosmicEngineApp/CLAUDE.md`: added a DLL-host command example to the Commands block and a new "macOS AMFI
+  / Gatekeeper note" paragraph explaining the mechanism and pointing at this entry.
+- `PROJECT_STATE.md`: replaced the Entry 35 "Known environment blocker" callout (now resolved) with an
+  Entry 37 "RESOLVED via workaround" callout, and added an Entry 37 history bullet.
+- All of the above applied identically to both the external-drive copy
+  (`/Volumes/External Hard Drive FCF/CosmicEngine`) and the internal-disk copy (`/Users/admin/CosmicEngine`)
+  — verified byte-identical via `diff` on every changed file after copying.
+
+No `.cs`/`.frag`/`.vert` file was touched. Zero diff on any scene/shader/engine-source file — this is an
+infrastructure/launcher/build-config pass only, per the operating rules (rule 11/12/16).
+
+### Verification
+- `dotnet build`: 0 warnings, 0 errors, both before and after the `UseAppHost=false` change, on both copies.
+- Original failure re-confirmed once, bounded: `dotnet run -- --smoke-test` (pre-fix) → exit 137, 0 bytes
+  output, `log show` shows the same `ASP: Security policy would not allow process` denial as Entries 35/36.
+- DLL-host smoke tests: StellarNursery Safe (seed 777), LavaLamp Safe, WindTurbineFire Safe, and one
+  default/High-profile run — all exit 0, ~74-75 fps, full normal stdout.
+- `dotnet run -- --smoke-test` **after** `UseAppHost=false`: now also exit 0, ~75 fps — bonus fix.
+- `--dashboard-only` verified directly via its HTTP API: dashboard reachable, no visual auto-started,
+  `/scenes` lists all three worlds, a real scene launches live via `POST /launch`, `POST /quit` shuts it
+  down cleanly.
+- Full `run-show.sh` launcher run end-to-end: build step runs and succeeds, dashboard comes up, a scene
+  (`StellarNursery`, seed 777 confirmed via `/status`) launched live from the dashboard, `POST /quit`
+  stopped it, the script's own `wait` unblocked and printed "Cosmic Engine has exited." — confirming the
+  cleanup trap and normal-exit path both still work correctly with the new launch mechanism.
+- Zero orphan process and port 8080 free reconfirmed via `ps aux`/`lsof -i :8080` **before and after every
+  single command** in this investigation (not just at the end), including after the launcher test. One
+  pre-existing, unrelated idle shell (`/bin/bash .../run-show.sh`, started 08:15, before this pass began)
+  was observed in `ps` output throughout — not created by this pass, not touched, and confirmed idle
+  (0:00.01 total CPU time throughout).
+- Both copies re-verified independently after syncing: a clean `rm -rf bin obj && dotnet build` and a
+  DLL-host smoke test both pass on `/Users/admin/CosmicEngine` exactly as on the external-drive copy.
+
+### Security posture
+Gatekeeper was **not** disabled (`spctl --master-disable` was never run). PACE Eden / `licenseDaemon` was
+**not** stopped or touched. Startup Security Utility settings were **not** changed, and the machine was
+**not** booted into Recovery Mode. No `sudo` command was run at any point in this pass. The fix is entirely
+scoped to this project's own build configuration and launcher scripts — it changes what gets executed and
+how, not any OS-level trust/signing policy.
+
+### Known limitations
+- Not tested on a machine/state where Developer Mode is disabled and has never been enabled — this fix's
+  mechanism (never executing the ad-hoc-signed apphost at all) should be orthogonal to that setting, since
+  the `dotnet` host itself is already trusted regardless of Developer Mode, but that specific combination
+  wasn't directly observed this pass.
+- The Entry 36 "reboot" theory was never independently re-tested against a fresh reboot in this pass, since
+  the DLL-host workaround already succeeds without one — it remains unconfirmed whether a reboot alone
+  would also have fixed the original apphost path; this pass did not need to find out.
+- `POST /quit` returned an HTTP `411 Length Required` response when called via `curl -X POST` with no
+  request body — functionally harmless (the engine still shut down cleanly and immediately every time it
+  was observed), and not a new issue introduced by this pass, but noted here since it wasn't previously
+  documented; not investigated or fixed, as `ControlServer.cs` was out of scope for this pass.
+- Distributed/notarized-build behavior (as opposed to local `dotnet build`) was not tested — out of scope,
+  since this project is always run via local `dotnet build`/`dotnet run` per `CLAUDE.md`, never packaged.
+
+### Recommended next action
+Adopt this as the standard local development/show workflow going forward — no further action is required
+to keep using Cosmic Engine on this Mac. If a future macOS update reintroduces AMFI rejection of some other
+locally-built binary, check first whether `UseAppHost=false` and a DLL-host launch path apply there too
+before escalating to any Gatekeeper/Developer-Mode/Recovery-Mode change.
+
+### Reviewer note
+Reviewer sign-off intentionally left blank for ChatGPT/user review — not self-signed.
