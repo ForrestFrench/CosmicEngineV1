@@ -199,7 +199,7 @@ front fused into the horizon glow band. User reviewed the evidence package and a
 corrections requested — committed. Camera-consume, real-guitar timescale validation, and further
 artistic tuning against real playing dynamics remain outstanding, same as noted above.
 
-### Wind Turbine Fire Refinement Pass 2 (implemented, uncommitted — see `AUDIT.md` Entry 34)
+### Wind Turbine Fire Refinement Pass 2 (accepted, committed `1615b12` — see `AUDIT.md` Entry 34)
 Three small, controlled refinements on top of the accepted Design Correction Pass 1, per explicit user
 request to preserve the current design rather than redesign it: (1) heat-wave distortion reworked so
 distant background turbines get a separate, gentler, lower-frequency, height-tapered warp instead of
@@ -209,11 +209,35 @@ placement/clustering are completely unchanged; (3) the fire front's height cap k
 its gate saturates, and a new separate high-altitude haze layer lets the glow radiate higher into the
 sky at high intensity without more flame geometry. No shared engine file was touched — confined entirely
 to `wind_turbine_fire.frag`. Fire/smoke has now had three dedicated passes (Phase 2, Design Correction
-Pass 1, this Refinement Pass 2); the honest next recommendation is **Wind Turbine Fire Phase 3:
-turbine/geometry improvement** (de-stiffen turbines — motion blur/ghosting on fast blades, subtle tower
-flex at high wind, nacelle detail, better parallax separation, per-turbine haze grading; also where a
-Blender decision gate sits if turbines still fail art review after this), not a fourth fire pass.
-Camera-consume and real-guitar timescale validation remain outstanding, same as noted above.
+Pass 1, this Refinement Pass 2), all now committed. Camera-consume and real-guitar timescale validation
+remain outstanding, same as noted above.
+
+### Wind Turbine Fire "no fire / no audio reaction" investigation (committed `1615b12` — see `AUDIT.md` Entry 38)
+Documentation-only investigation, no source file changed in the final state: root-caused a user report of
+"no fire, no audio reaction" to this machine's macOS default audio input being a virtual device ("Hue Sync
+Audio"), not a real guitar interface — confirmed via live forced-heat evidence that the shader/scene render
+fire correctly when actually driven. Committed together with Refinement Pass 2.
+
+### Wind Turbine Fire Phase 3: turbine/geometry improvement (implemented, uncommitted — see `AUDIT.md` Entry 39)
+The next phase of the originally-approved plan, now that fire/smoke has had three committed passes.
+De-stiffens the turbines without touching fire/embers/smoke/distortion/ground-embedding/background-opacity/
+the evolution slider/audio mapping: (1) blade motion blur — 3 angle samples around the current rotor angle,
+averaged, ramping in with `uWindDrive` (already-existing uniform, none added) above a wind-drive threshold;
+(2) subtle tower flex — the tower is now a 3-segment tapered-capsule chain that picks up a small, height-
+increasing horizontal offset plus a slow per-turbine sway at high wind, returning fully upright at low
+wind; (3) nacelle detail — a secondary capsule (tail/generator-housing stub) plus a subtle top-lit/
+underside-shaded tint local to the nacelle's own footprint, foreground turbines only; (4)/(5) parallax +
+haze grading — the farther background turbine nudged smaller/higher/hazier relative to the nearer one,
+widening a previously narrow depth-separation gap, still comfortably under the transparency-bug ceiling
+Phase 1.2 established. Confined entirely to `wind_turbine_fire.frag` — zero diff on `WindTurbineFireScene.cs`
+or any shared engine file. Verified mathematically neutral at rest by construction, not just visually; no
+measurable fps regression at either profile. Known limitation: the 3-sample blur technique can read as
+several discrete "ghost" blade positions at high wind rather than one perfectly smooth blur — inherent to
+the cheap single-pass approximation this architecture requires (no render-to-texture history buffer for
+true accumulation), not a bug. No Blender/mesh work performed or newly required — that decision remains
+deferred to a future review cycle only if turbines still fail visual review after this shader-only pass.
+Camera-consume and real-guitar timescale validation remain outstanding, same as noted above. **Not
+committed, not pushed — left uncommitted in the working tree pending review.**
 
 ## Note — Scene Dashboard added (2026-07-06)
 

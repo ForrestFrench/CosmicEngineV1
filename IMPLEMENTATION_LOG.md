@@ -1067,3 +1067,120 @@ app - `G1/G2 Level/Bass` stayed at exactly `0.000` for the full observed session
 changed in the final state. User action needed: select the real interface as the default input in
 System Settings -> Sound -> Input, then relaunch. See `AUDIT.md` Entry 38 for full detail; reviewer
 sign-off left blank.
+
+---
+
+## 2026-07-13 — Wind Turbine Fire Phase 3 (turbine/geometry de-stiffening)
+
+**Executor:** Claude Code / Sonnet
+
+### Ask
+Next phase of the originally-approved Fable plan: fire/smoke has now had three dedicated passes (Phase 2,
+Design Correction Pass 1, Refinement Pass 2 - all committed as of `1615b12` in this same session). Phase 3
+is turbine/geometry improvement - de-stiffen the turbines (motion blur/ghosting on fast blades, subtle
+tower flex at high wind, nacelle detail, better parallax separation, per-turbine haze grading) without
+disturbing fire/embers/smoke/distortion/ground-embedding/background-opacity/the evolution slider/audio
+mapping. Explicitly shader-only unless a genuinely new uniform was required (it wasn't - `uWindDrive`
+already existed). Leave uncommitted for review, same pattern as every prior visual pass.
+
+### Implementation
+All changes confined to `Worlds/World03_WindTurbineFire/Shaders/wind_turbine_fire.frag`. Confirmed via
+`git diff --stat` that `WindTurbineFireScene.cs` and every shared engine/other-scene file show zero diff.
+
+`turbineSDF()` was renamed `turbineMask()` and its return type changed from a raw signed distance (`float`)
+to `vec2(mask, nacelleShade)`. This was necessary, not cosmetic: blade motion-blur needs to average
+*thresholded* masks from 3 angle samples, and `smoothstep(edge,0,x)` is monotonic decreasing, so
+`max(smoothstep(edge,0,a), smoothstep(edge,0,b)) == smoothstep(edge,0,min(a,b))` only when both use the
+*same* edge - a raw distance union across angle-shifted samples would just widen the solid blade shape
+(more geometry), not soften/thin it toward the tips the way real motion blur reads. All four call sites
+(2 background, 2 foreground) updated to unpack `.x`/`.y`.
+
+1. **Blade motion blur** - the existing 3-blade loop is now evaluated at 3 angle samples (center,
+   `rotorAngle - blurHalf`, `rotorAngle + blurHalf`) instead of one. `blurHalf` comes from an estimated
+   angular speed: `angSpeed = (ROTOR_BASE_SPEED_EST + uWindDrive * ROTOR_WIND_GAIN_EST) * speedMul` - two
+   new GLSL consts deliberately mirroring `WindTurbineFireScene.cs`'s `BaseRotorSpeed`/`RotorWindGain`
+   (0.35/1.10), since the shader has no access to the C# integrator's actual smoothed value; a new
+   `speedMul` parameter added to `turbineMask()`, passed as a literal at each of the 4 call sites matching
+   that turbine's own `*SpeedMul` C# constant (1.00/1.18/0.82/0.94 for FG1/FG2/BG1/BG2). `blurHalf =
+   clamp(angSpeed * 0.10, 0.0, 0.22) * smoothstep(0.15, 0.60, uWindDrive)` - the trailing smoothstep is
+   what keeps idle/low-wind turbines perfectly crisp (blur ramps in only once wind is meaningfully up).
+   The 3 sampled blade masks are averaged, and combined with the (unblurred) tower/nacelle mask via `max`.
+2. **Tower flex** - `sdTaperedCapsule(towerBase, hub, ...)` (one straight segment) replaced with a
+   3-segment chain: `towerBase -> flexP1 (h=0.42) -> flexP2 (h=0.75) -> hubFlexed (h=1.0)`, each segment's
+   radius taken from the same linear taper the original single capsule used (`mix(r0,r1,h)` at each control
+   point), so at `flexAmt=0` the 3-segment chain is geometrically identical to the old single capsule
+   (verified by construction: shared endpoints, same linear taper, no seam). `flexAmt = 0.050 * scale *
+   flexT * swayWobble`, where `flexT = smoothstep(0.30, 1.0, uWindDrive)` (0 below the threshold - fully
+   upright) and `swayWobble = 0.85 + 0.15*sin(uTime*0.55 + swayPhase)` (a slow, per-turbine-hashed-phase
+   wobble so a windy tower isn't a static bent pose, and the 4 turbines don't sway in lockstep). The buried
+   embedding capsule (Phase 1.1) stays anchored at the unflexed `towerBase`, straight down - completely
+   unaffected. Nacelle and blades are anchored to `hubFlexed`, so they visibly follow the bend.
+3. **Nacelle detail** - a small secondary capsule (`tailA`/`tailB`, a generator-housing/tail stub) is
+   unioned onto the existing nacelle capsule via `min()`. A rim-light/shadow gradient (`shade`) is computed
+   as `clamp((p.y - hubFlexed.y) / (0.020*scale), -1, 1)`, masked to strictly the nacelle's own footprint
+   via `nacelleProximity = smoothstep(edge*3.0, 0.0, dNacelle)` (0 everywhere else). Applied by the caller
+   only on the two foreground turbines (`fgColor + vec3(0.050,0.050,0.055) * max(shade, 0.0)`, positive/lit
+   half only - the negative/shadow half isn't visually distinguishable against an already-near-black
+   `fgColor`, so it was left alone rather than adding unused complexity).
+4. **Parallax + haze grading** - BG2 (farther background turbine) scale `0.24 -> 0.19`, baseY
+   `GROUND_Y+0.015 -> GROUND_Y+0.026` (smaller and higher = reads farther), haze blend `0.22 -> 0.32`. BG1
+   (nearer) haze blend nudged `0.18 -> 0.16` for more contrast against BG2. No third turbine/depth band
+   added - judged the existing two-band system, once its own internal contrast was widened, was sufficient
+   (a third turbine would need a new rotor-angle uniform, outside this pass's "shader-only unless a new
+   uniform is genuinely required" instruction). The 0.32 BG2 blend was checked against the 0.60/0.68 values
+   Phase 1.2 documented as a real transparency bug - stayed well under that ceiling, confirmed visually
+   solid (not see-through) in the evidence screenshots.
+
+### Evidence capture technique
+Same established precedent as every prior pass: a `TEMPPHASE3CAPTURE`-marked
+`WindTurbineFireScene.TempForcedWindDrive` static field (default `-1f`, meaning "no override") was
+temporarily added, overriding the `windDrive` local at the exact `Render()` uniform-upload site when >= 0.
+Set to `0.90f` for capture, then the entire addition (field + one override line) was removed - confirmed
+via `grep -c TEMPPHASE3CAPTURE` returning `0` and a final `git diff -- WindTurbineFireScene.cs` returning
+completely empty (byte-identical to the committed state).
+
+For a true "before" comparison, the last-committed (pre-Phase-3) `.frag` was extracted via `git show
+HEAD:Worlds/World03_WindTurbineFire/Shaders/wind_turbine_fire.frag`, temporarily swapped into place, built,
+and captured via `--diagnostic motion` at the forced wind value. The Phase 3 shader (backed up beforehand)
+was then restored - confirmed byte-identical to the backup via `diff` before rebuilding - and the identical
+capture repeated for "after." A third, un-forced (`TempForcedWindDrive` reset to `-1f`) motion-diagnostic
+run captured real-speed behavior for the "nothing broken at real speed" requirement, using the same rebuild-
+then-run sequence.
+
+Screenshots are genuinely dark (deliberate at-rest cold/dark art direction) - a small Python script
+(`brighten_ppm.py`, gamma-boost + optional crop, no external dependencies since neither ImageMagick nor
+PIL/numpy were available in this environment) was written to produce gamma-boosted, cropped comparison
+images for review, operating directly on the raw `.ppm` captures.
+
+### Verification
+`dotnet build`: 0 warnings, 0 errors (both before capturing and after final reversion). WindTurbineFire
+Safe avg 75.0fps/min 74.9, High avg 75.1fps/min 74.9 - no measurable regression versus the pre-Phase-3
+baseline (~74-75fps documented since Phase 1), despite ~3x the blade SDF evaluations (3 angle samples) plus
+2 extra tower segments and 1 extra nacelle capsule per turbine.
+
+Before/after full-frame brightened comparison (forced wind 0.90): blade motion-blur fans and tower lean
+clearly visible on both foreground turbines in "after," versus crisp static blades and dead-straight towers
+in "before." Nacelle closeup: "before" is a plain thin lozenge, "after" is a visibly bulkier, shaped hub
+silhouette. Background-turbine crop: BG2 (farther) visibly smaller/higher/hazier in "after" than "before."
+Horizon/fire-band crop: visually identical before/after, confirming zero regression to fire/glow rendering
+(untouched this pass).
+
+Motion diagnostic at real (non-forced) audio: T1->T5 mean diff 0.444/255 (4.76% pixels changed), T5->T15
+mean diff 0.485/255 (5.15% pixels changed) - consistent with prior documented baselines (~5-6% typical at
+rest), confirming turbines still visibly rotate correctly and nothing looks broken/glitchy at real speeds;
+crisp blades, upright towers, and the new nacelle silhouette detail all confirmed present and correct at
+idle in the accompanying screenshot.
+
+`git status`/`git diff` confirm the diff is confined to `wind_turbine_fire.frag` only - zero diff on
+`WindTurbineFireScene.cs` and on every shared engine/other-scene file checked. Per the project's own
+scoped-regression-check convention, StellarNursery/LavaLamp smoke tests were not run since no shared file
+was touched. Zero orphan process / port 8080 free confirmed via `pgrep`/`lsof` after every run in this
+session.
+
+Assembled `DiagnosticReports/WindTurbineFirePhase3_20260713_160832/` with `REPORT.md`, 9 brightened
+comparison screenshots plus 3 full raw motion-diagnostic captures (before-forced/after-forced/real-speed,
+each with `T1`/`T5`/`T15` `.ppm`+`.png` and its own `REPORT.md`), logs (build, Safe/High smoke tests),
+source context (final shader), and git evidence (diff of the `.frag`, confirmation of zero diff on
+`WindTurbineFireScene.cs` and every shared file), zipped as `WindTurbineFirePhase3_20260713_160832.zip`.
+Not committed, not pushed, per explicit instruction - pending user/ChatGPT review, `AUDIT.md` Entry 39's
+reviewer sign-off left blank.

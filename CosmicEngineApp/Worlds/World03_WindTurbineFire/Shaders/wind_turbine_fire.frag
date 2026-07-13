@@ -68,6 +68,32 @@ out vec4 fragColor;
 // smoke rather than sitting as a crisp cutout. Ember hard-gating (zero
 // baseline, absent at rest), heat distortion, background-turbine embedding/
 // opacity, and composite order are all unchanged from Phase 1.2/Phase 2.
+//
+// Phase 3 (turbine/geometry de-stiffening, this pass): fire/smoke/embers/
+// distortion above are untouched - this pass is scoped entirely to
+// turbineSDF() (renamed turbineMask(), see its own comment block) and its
+// four call sites. Goal: make the turbines read as less mechanically rigid
+// without disturbing anything already accepted. (1) Blade motion blur - a
+// cheap single-pass analytic stand-in (this architecture has no render-to-
+// texture history buffer for true accumulation): the blade mask is sampled
+// at 3 angles spread around the current rotor angle and averaged, with the
+// spread driven by an estimated angular speed (derived from uWindDrive,
+// already an existing uniform - no new uniform added). (2) Tower flex - the
+// tower is now a 3-segment tapered-capsule chain instead of one straight
+// segment; at high uWindDrive the upper segments pick up a small, height-
+// increasing horizontal offset plus a slow per-turbine sway, returning fully
+// upright as wind drops. (3) Nacelle detail - tried in this pass (a secondary
+// tail-stub capsule plus a top-lit/underside-shaded tint on the two
+// foreground nacelles) but removed same-day per user feedback ("looks
+// cheap" / wanted plain all-black turbines) - see AUDIT.md Entry 39 addendum.
+// The nacelle is back to a single plain capsule, flat black like the rest of
+// the turbine, same as pre-Phase-3. (4)/(5) Parallax + haze grading - the farther
+// background turbine (BG2) was nudged smaller/higher/hazier relative to the
+// nearer one (BG1) so the two-band depth separation reads more clearly; no
+// third turbine/band was added (stays shader-only, no new rotor-angle
+// uniform). Every one of these is verified mathematically neutral at rest/
+// low wind (see turbineMask()'s own comments) - zero behavior change to the
+// already-accepted look at idle.
 
 uniform float uTime;
 uniform float uSceneHeat;        // 0 (cold/calm) .. 1 (fully hot), continuous
@@ -140,11 +166,20 @@ float sdTaperedCapsule(vec2 p, vec2 a, vec2 b, float ra, float rb) {
 // all parts) so the caller can threshold/smoothstep it into a silhouette mask.
 const float TOWER_HEIGHT = 0.50;
 
+// Phase 3: rough angular-speed estimate for blade-blur only, mirroring
+// WindTurbineFireScene.cs's BaseRotorSpeed/RotorWindGain constants - the
+// shader has no access to the C# integrator's actual smoothed speed, so this
+// is a deliberate, documented approximation (same shape, not frame-exact)
+// used purely to decide how much blur to draw, not to move the blades
+// themselves (uRotorAngle* uniforms still own the real angle).
+const float ROTOR_BASE_SPEED_EST = 0.35; // mirrors BaseRotorSpeed
+const float ROTOR_WIND_GAIN_EST  = 1.10; // mirrors RotorWindGain
+
 // Phase 1.1 embedding fix: the ground/ridge silhouette (see main()'s ridgeN/
 // ridgeY) is a noisy 1D FBM heightline whose top edge sits, at every x
 // position, strictly below GROUND_Y - as little as ~0.009 and as much as
 // ~0.05 for a tower rooted at GROUND_Y itself, or up to ~0.065 for a
-// background tower rooted slightly above GROUND_Y (see turbineSDF() call
+// background tower rooted slightly above GROUND_Y (see turbineMask() call
 // sites below). A tower's tapered base capsule previously ended exactly at
 // its own baseY, which is always above that ridge line by that same margin -
 // so the capsule's rounded cap was always visible in the gap, reading as
@@ -157,34 +192,99 @@ const float TOWER_HEIGHT = 0.50;
 // everything else about the turbine) is completely unchanged.
 const float EMBED_DEPTH = 0.15;
 
-float turbineSDF(vec2 p, float hubX, float baseY, float scale, float rotorAngle) {
-    vec2 hub       = vec2(hubX, baseY + TOWER_HEIGHT * scale);
+// Phase 3: returns a thresholded mask (float), not a raw signed distance -
+// renamed from turbineSDF() to turbineMask() because blade motion-blur needs
+// to average *thresholded* masks from 3 angle samples, not a raw min-distance
+// across samples (a distance union would just widen the solid blade shape,
+// not soften/thin it toward the tips the way real motion blur does) - so
+// this function does its own smoothstep-and-composite internally using the
+// `edge` the caller used to apply itself. (Phase 3 briefly added a second
+// return component, a nacelle rim-light tint - removed same-day per user
+// feedback ("looks cheap"); see AUDIT.md Entry 39 addendum. Back to a plain
+// float, matching the pre-Phase-3 shape of this function.)
+//
+// Verified mathematically neutral at rest: smoothstep(edge,0,x) is monotonic
+// decreasing in x, so max(smoothstep(edge,0,a), smoothstep(edge,0,b)) ==
+// smoothstep(edge,0,min(a,b)) whenever both use the same edge - true here
+// whenever blurHalf is 0 (low/no wind), since bladeEdge then equals edge and
+// all 3 angle samples coincide. Tower flex is similarly 0 at low wind, and
+// the 3-segment tower chain is geometrically identical to the old single
+// tapered capsule when unflexed (shared endpoints, same linear taper). So at
+// rest this produces byte-for-byte the same mask as the pre-Phase-3 shader.
+float turbineMask(vec2 p, float hubX, float baseY, float scale, float rotorAngle, float edge, float speedMul) {
+    // --- Tower flex (Phase 3) --------------------------------------------
+    // Small, height-increasing horizontal offset that grows with uWindDrive
+    // and returns to 0 (fully upright) below the flexT threshold. A slow,
+    // per-turbine sway (hashed phase so the 4 turbines don't move in
+    // lockstep) keeps a windy tower from looking like a static bent pose.
+    float swayPhase = hash1(hubX * 17.13 + baseY * 3.7 + 1.0) * 6.2831;
+    float flexT      = smoothstep(0.30, 1.0, uWindDrive);
+    float swayWobble = 0.85 + 0.15 * sin(uTime * 0.55 + swayPhase);
+    float flexAmt     = 0.050 * scale * flexT * swayWobble;
+
     vec2 towerBase = vec2(hubX, baseY);
+    vec2 hub       = vec2(hubX, baseY + TOWER_HEIGHT * scale);
+    // Control points at 0/0.42/0.75/1.0 height fraction, offset increasing
+    // with height (cantilever-style curve, most bend near the hub).
+    vec2 flexP1    = mix(towerBase, hub, 0.42) + vec2(flexAmt * 0.15, 0.0);
+    vec2 flexP2    = mix(towerBase, hub, 0.75) + vec2(flexAmt * 0.55, 0.0);
+    vec2 hubFlexed = hub + vec2(flexAmt, 0.0);
 
-    float dTower = sdTaperedCapsule(p, towerBase, hub, 0.028 * scale, 0.009 * scale);
+    float r0 = 0.028 * scale, r1 = 0.009 * scale;
+    float rMid1 = mix(r0, r1, 0.42), rMid2 = mix(r0, r1, 0.75);
 
-    // Buried extension - constant radius equal to the visible tower's own
-    // base radius (0.028 * scale), unioned (min) with the tapered tower
-    // above so the two meet seamlessly at the shared towerBase point with no
-    // step/seam, and no visible-taper change above ground.
+    float dTower = sdTaperedCapsule(p, towerBase, flexP1, r0, rMid1);
+    dTower = min(dTower, sdTaperedCapsule(p, flexP1, flexP2, rMid1, rMid2));
+    dTower = min(dTower, sdTaperedCapsule(p, flexP2, hubFlexed, rMid2, r1));
+
+    // Buried extension - anchored at the unflexed ground point, straight
+    // down, exactly as before (Phase 1.1 embedding fix); flex only ever
+    // offsets geometry above ground, so embedding is completely unaffected.
     vec2  towerBuriedEnd = vec2(hubX, baseY - EMBED_DEPTH);
     float dBuried  = sdCapsule(p, towerBase, towerBuriedEnd, 0.028 * scale);
     dTower = min(dTower, dBuried);
 
-    vec2  nacelleA = hub - vec2(0.045 * scale, 0.0);
-    vec2  nacelleB = hub + vec2(0.020 * scale, 0.0);
+    // --- Nacelle -------------------------------------------------------------
+    // Single plain capsule, flat black like the rest of the turbine - a
+    // secondary tail-stub bump and a top-lit/underside-shaded tint were tried
+    // in Phase 3 and removed same-day per user feedback ("looks cheap"); see
+    // AUDIT.md Entry 39 addendum.
+    vec2  nacelleA = hubFlexed - vec2(0.045 * scale, 0.0);
+    vec2  nacelleB = hubFlexed + vec2(0.020 * scale, 0.0);
     float dNacelle = sdCapsule(p, nacelleA, nacelleB, 0.020 * scale);
 
-    float dBlades = 1.0e5;
+    // --- Blades, motion-blurred at speed (Phase 3) ------------------------
+    // angSpeed is a rough estimate only (see ROTOR_*_EST comment above);
+    // blurHalf ramps in above a wind-drive threshold so idle/low-wind
+    // turbines stay perfectly crisp (blurHalf clamps to ~0 there).
+    float angSpeed = (ROTOR_BASE_SPEED_EST + uWindDrive * ROTOR_WIND_GAIN_EST) * speedMul;
+    float blurHalf = clamp(angSpeed * 0.10, 0.0, 0.22) * smoothstep(0.15, 0.60, uWindDrive);
+
+    float dBladeC = 1.0e5, dBladeM = 1.0e5, dBladeP = 1.0e5; // center / minus / plus angle samples
     for (int i = 0; i < 3; i++) {
-        float a    = rotorAngle + float(i) * 2.0943951; // 120 degrees
-        vec2  dir  = vec2(cos(a), sin(a));
-        vec2  tip  = hub + dir * (0.34 * scale);
-        float d    = sdTaperedCapsule(p, hub, tip, 0.016 * scale, 0.003 * scale);
-        dBlades    = min(dBlades, d);
+        float baseA = float(i) * 2.0943951; // 120 degrees
+        vec2  dirC  = vec2(cos(rotorAngle + baseA),            sin(rotorAngle + baseA));
+        vec2  dirM  = vec2(cos(rotorAngle - blurHalf + baseA), sin(rotorAngle - blurHalf + baseA));
+        vec2  dirP  = vec2(cos(rotorAngle + blurHalf + baseA), sin(rotorAngle + blurHalf + baseA));
+
+        dBladeC = min(dBladeC, sdTaperedCapsule(p, hubFlexed, hubFlexed + dirC * (0.34 * scale), 0.016 * scale, 0.003 * scale));
+        dBladeM = min(dBladeM, sdTaperedCapsule(p, hubFlexed, hubFlexed + dirM * (0.34 * scale), 0.016 * scale, 0.003 * scale));
+        dBladeP = min(dBladeP, sdTaperedCapsule(p, hubFlexed, hubFlexed + dirP * (0.34 * scale), 0.016 * scale, 0.003 * scale));
     }
 
-    return min(dTower, min(dNacelle, dBlades));
+    // A touch of extra edge softness scaled by blur amount, on top of the
+    // 3-sample averaging itself, so the blurred region reads as soft rather
+    // than 3 overlapping crisp copies.
+    float bladeEdge = edge + blurHalf * 0.02;
+    float mBladeC = smoothstep(bladeEdge, 0.0, dBladeC);
+    float mBladeM = smoothstep(bladeEdge, 0.0, dBladeM);
+    float mBladeP = smoothstep(bladeEdge, 0.0, dBladeP);
+    float mBlade  = (mBladeC + mBladeM + mBladeP) / 3.0;
+
+    float mRigid = smoothstep(edge, 0.0, min(dTower, dNacelle));
+    float mFinal = max(mRigid, mBlade);
+
+    return mFinal;
 }
 
 void main() {
@@ -530,15 +630,24 @@ void main() {
     // (the gentler, lower-frequency, height-tapered warp defined above), not
     // the fuller sky/smoke pWarped, so the shimmer stays visible without the
     // turbines bending/wobbling independently part-by-part.
+    //
+    // Phase 3 parallax/haze grading: BG2 (the farther of the two background
+    // turbines - smaller scale, sits higher) was previously only weakly
+    // separated from BG1 (scale 0.34->0.24, haze blend 0.18->0.22, a narrow
+    // gap). Widened on both axes so the two-band depth separation actually
+    // reads: BG2 nudged smaller (0.24->0.19) and higher (+0.015->+0.026), and
+    // its haze blend raised further (0.22->0.32, still well under the 0.60/
+    // 0.68 that Phase 1.2 fixed as a transparency bug) while BG1's own blend
+    // was nudged down slightly (0.18->0.16) for more contrast between the
+    // two. Speed multipliers (0.82/0.94) passed through unchanged, matching
+    // WindTurbineFireScene.cs's BG1SpeedMul/BG2SpeedMul, for blade-blur only.
     {
-        float d1 = turbineSDF(pWarpedTurbine, -0.10, GROUND_Y + 0.01, 0.34, uRotorAngleBG1);
-        float m1 = smoothstep(0.007, 0.0, d1);
-        vec3  c1 = mix(vec3(0.035, 0.038, 0.055), color, 0.18);
+        float m1 = turbineMask(pWarpedTurbine, -0.10, GROUND_Y + 0.01, 0.34, uRotorAngleBG1, 0.007, 0.82);
+        vec3  c1 = mix(vec3(0.035, 0.038, 0.055), color, 0.16);
         color = mix(color, c1, m1);
 
-        float d2 = turbineSDF(pWarpedTurbine, 0.62, GROUND_Y + 0.015, 0.24, uRotorAngleBG2);
-        float m2 = smoothstep(0.006, 0.0, d2);
-        vec3  c2 = mix(vec3(0.030, 0.033, 0.050), color, 0.22);
+        float m2 = turbineMask(pWarpedTurbine, 0.62, GROUND_Y + 0.026, 0.19, uRotorAngleBG2, 0.006, 0.94);
+        vec3  c2 = mix(vec3(0.030, 0.033, 0.050), color, 0.32);
         color = mix(color, c2, m2);
     }
 
@@ -606,14 +715,16 @@ void main() {
     color = mix(color, groundColor, groundMask);
 
     // --- Foreground turbines (near-black silhouettes) -------------------------
+    // Flat black, no shading variation - a nacelle highlight/tint was tried in
+    // Phase 3 and removed same-day per user feedback ("looks cheap"); see
+    // AUDIT.md Entry 39 addendum. Speed multipliers (1.00/1.18) match
+    // WindTurbineFireScene.cs's FG1SpeedMul/FG2SpeedMul, for blade-blur only.
     vec3 fgColor = vec3(0.014, 0.015, 0.020);
 
-    float dFG1 = turbineSDF(p, -0.34, GROUND_Y, 1.00, uRotorAngleFG1);
-    float mFG1 = smoothstep(0.005, 0.0, dFG1);
+    float mFG1 = turbineMask(p, -0.34, GROUND_Y, 1.00, uRotorAngleFG1, 0.005, 1.00);
     color = mix(color, fgColor, mFG1);
 
-    float dFG2 = turbineSDF(p, 0.30, GROUND_Y, 0.86, uRotorAngleFG2);
-    float mFG2 = smoothstep(0.005, 0.0, dFG2);
+    float mFG2 = turbineMask(p, 0.30, GROUND_Y, 0.86, uRotorAngleFG2, 0.005, 1.18);
     color = mix(color, fgColor, mFG2);
 
     // Embers moved earlier (Phase 1.2, see the block right after the

@@ -2719,3 +2719,179 @@ before this entry was written).
 
 ### Reviewer note
 Reviewer sign-off intentionally left blank for ChatGPT/user review — not self-signed.
+
+## Entry 39 — Wind Turbine Fire Phase 3 (World03 turbine/geometry de-stiffening)
+
+**Date:** 2026-07-13
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+Phase 3 of the originally-approved Fable plan for this scene (Phase 1 prototype, Phase 2 fire/smoke
+improvement — completed across Phase 2, Design Correction Pass 1, and Refinement Pass 2, all now committed
+as `091da2c`/`2a35904`/`1615b12`): de-stiffen the wind turbines so they read as less mechanically rigid/
+toy-like, without disturbing fire, embers, distortion, ground embedding, background-turbine opacity, the
+evolution-time slider, or audio reactivity.
+
+### What was changed
+Scoped entirely to `Worlds/World03_WindTurbineFire/Shaders/wind_turbine_fire.frag` — zero diff on
+`WindTurbineFireScene.cs` and every shared engine/other-scene file (confirmed via `git diff --stat`).
+`turbineSDF()` was renamed `turbineMask()` and now returns `vec2(mask, nacelleShade)` instead of a raw
+signed distance, since blade motion-blur needs to average thresholded masks from multiple angle samples
+rather than union raw distances. All four call sites (2 background, 2 foreground) updated. No new uniform
+added — `uWindDrive` already existed.
+1. **Blade motion blur** — the blade mask is sampled at 3 angles around the current rotor angle and
+   averaged; blur half-angle derived from an estimated angular speed (GLSL consts mirroring
+   `WindTurbineFireScene.cs`'s `BaseRotorSpeed`/`RotorWindGain`/per-turbine `*SpeedMul`, a documented
+   approximation since the shader has no access to the C# integrator directly) times `uWindDrive`, ramping
+   in only above a wind-drive threshold so idle turbines stay crisp.
+2. **Tower flex** — the tower is now a 3-segment tapered-capsule chain instead of one straight segment;
+   above a wind-drive threshold the upper segments pick up a small height-increasing horizontal offset plus
+   a slow per-turbine sway, returning fully upright as wind drops. Nacelle/blades follow the flexed hub.
+3. **Nacelle detail** — a small secondary capsule (tail/generator-housing stub) unioned onto the nacelle,
+   plus a subtle top-lit/underside-shaded tint local to the nacelle's own footprint, applied only on
+   foreground turbines.
+4. **Parallax + haze grading** — BG2 (the farther background turbine) nudged smaller/higher/hazier relative
+   to BG1, widening the previously narrow (0.04) haze-blend gap to 0.16, still well under the 0.60/0.68
+   Phase 1.2 fixed as a real transparency bug. No third depth band/turbine added (stays shader-only).
+
+### Zero-regression-at-rest proof
+`turbineMask()`'s new blade-averaging path is mathematically identical to the old single-sample distance
+at low/no wind (`smoothstep(edge,0,x)` is monotonic decreasing, so `max` of same-edge smoothsteps equals
+`smoothstep` of the min distance — true whenever `blurHalf` is 0), and the 3-segment tower chain is
+geometrically identical to the old single tapered capsule when unflexed (shared endpoints, same linear
+taper) — verified by construction, not just visual inspection.
+
+### Verification
+`dotnet build`: 0 warnings, 0 errors. WindTurbineFire Safe avg 75.0fps/min 74.9, High avg 75.1fps/min 74.9
+— no measurable regression from the pre-Phase-3 baseline. Before/after screenshots at a temporary forced
+`uWindDrive=0.90` (same `TEMPPHASE3CAPTURE`-marked technique as every prior pass, fully reverted — confirmed
+via `grep -c TEMPPHASE3CAPTURE` returning 0 and a final `git diff -- WindTurbineFireScene.cs` returning
+completely empty) clearly show blade motion-blur fans, tower lean, and a visibly bulkier nacelle silhouette
+on both foreground turbines, and a smaller/higher/hazier far background turbine, versus a `git show HEAD:...`
+swapped-in pre-Phase-3 shader used for the "before" side. Motion diagnostic at real (non-forced, near-
+silent) audio: T1→T5 4.76% pixels changed, T5→T15 5.15% — consistent with prior documented baselines,
+confirming turbines still visibly rotate correctly and nothing looks broken/glitchy at real speeds; crisp
+blades and upright towers confirmed at idle. Horizon/fire-band crops from the same forced-wind before/after
+captures are visually identical, confirming zero regression to fire/glow rendering (that code was not
+touched). Zero orphan process / port 8080 free confirmed via `pgrep`/`lsof` after every run.
+
+### Known limitations
+- Blade motion blur is a 3-sample discrete technique (explicitly sanctioned as a cheap single-pass
+  approximation, not true accumulation — this architecture has no render-to-texture history buffer) — at
+  high wind it can read as several distinct "ghost" blade positions fanning out rather than one perfectly
+  smooth blur. An inherent characteristic of the technique, not a bug.
+- The angular-speed estimate used for blur is a documented approximation of the C# integrator's constants,
+  not a live read of it.
+- Tower-flex/nacelle-shade tuning constants are eyeballed against this pass's own forced-wind screenshots,
+  not validated against a real sustained wind/audio session.
+- No Blender/mesh work performed or newly recommended — per this pass's own scope, that decision is
+  deferred to a future review cycle only if turbines still fail visual review after this shader-only pass.
+- Camera-consuming turbines and OptiPlex/show-hardware validation remain out of scope, unchanged from every
+  prior pass on this scene.
+
+### Screenshot/package path
+`DiagnosticReports/WindTurbineFirePhase3_20260713_160832/`, containing `REPORT.md`, `screenshots/`
+(before/after brightened full-frame, nacelle closeup, background-turbine parallax, and horizon-regression-
+check comparisons at forced wind 0.90, a brightened real-speed idle reference, and 3 full raw motion-
+diagnostic captures), `logs/` (build, Safe/High smoke tests), `source_context/` (final shader), `git/`
+(diff of `wind_turbine_fire.frag`, confirmation of zero diff on `WindTurbineFireScene.cs` and every shared
+file), `audit/` — zipped as `WindTurbineFirePhase3_20260713_160832.zip`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending review, same as prior passes.
+
+### Reviewer note
+Reviewer sign-off intentionally left blank for ChatGPT/user review — not self-signed.
+
+### Addendum — Nacelle sliver bugfix (2026-07-13, same day)
+User tested this pass's uncommitted work and reported a bright crescent/sliver artifact near the top of a
+turbine nacelle, right where it meets a blade — reading as disconnected/floating, like a layering glitch.
+Root cause: in `turbineMask()`, the nacelle rim-light tint's own falloff (`nacelleProximity =
+smoothstep(edge * 3.0, 0.0, dNacelle)`) was three times wider than the silhouette's actual antialiased edge
+(`mRigid`/`mFinal` use `edge`, not `edge * 3.0`) — so `shade` stayed near full strength across pixels where
+the caller's own blend weight (`mFinal`) was still only partially opaque, worst exactly where a
+motion-blurred blade added its own partial coverage on top. Fix: one line added inside `turbineMask()`,
+`shade *= smoothstep(0.5, 1.0, mFinal);`, gating the tint by the silhouette's own near-solid region so it
+can only appear where the pixel is already mostly covered by the real rendered mask — ties the tint to
+actual coverage instead of a separately-falling-off proximity term. Zero effect wherever `shade` was already
+0 (rest/idle); only ever pulls it further toward 0.
+
+Reproduced visually first (same `TEMPPHASE3CAPTURE`-marked forced-wind=0.90 technique as this pass's own
+before/after methodology, fully reverted afterward — confirmed via `grep -c TEMPPHASE3CAPTURE` returning 0
+and `git diff -- WindTurbineFireScene.cs` returning empty): brightened T1/T5/T15 crops on both foreground
+turbines (FG1, FG2) show the reported bright wedge extending from the nacelle's top edge along the
+underside of a crossing motion-blurred blade. After the fix, the same crops at the same rotor angles show a
+clean, contained top-lit nacelle silhouette with no fringe. A 12x-amplified before/after pixel diff on both
+turbines shows the change is an isolated crescent shape sitting exactly at the nacelle's top edge — i.e. the
+fix removed precisely the reported artifact and nothing else (max raw diff 18/255, mean 4.85/255 over
+changed pixels — a small, surgical correction). Regression check: fire/embers/smoke/distortion untouched by
+this diff (only the one `shade *=` line changed); real-speed motion diagnostic T1→T5 4.77%/T5→T15 5.21%
+pixels changed, matching this pass's own documented baseline (4.76%/5.15%); forced-wind motion diagnostic
+before/after also consistent (11.57%→11.60%, 8.18%→8.05%), confirming no motion/geometry regression.
+`dotnet build`: 0 warnings/errors. `--profile Safe --smoke-test`: avg 74.4fps/min 72.2 — consistent with
+documented baseline. Zero orphan process / port 8080 free confirmed after every run (a pre-existing
+`--dashboard-only` process was already holding port 8080 at session start and was stopped first, since every
+`dotnet run` — including bounded modes — unconditionally binds `ControlServer` to 8080; user can relaunch
+via `./run-show.sh`). Screenshots/diffs: `DiagnosticReports/WindTurbineFireNacelleBugfix_20260713_162849/`.
+File scope: `wind_turbine_fire.frag` only, folded into this same uncommitted Phase 3 working-tree state.
+Reviewer sign-off left blank, not self-signed, same as the pass above.
+
+### Addendum — Nacelle detail removed per user feedback (2026-07-13, same day)
+User tested this pass's uncommitted work again after the sliver bugfix above and confirmed the artifact
+was gone, but then rejected the nacelle-detail sub-feature entirely on its own merits: "I don't like the
+addition of the nacelle highlight layer. I'd rather just have all black turbines as this looks cheap.
+Let's remove that." Interpreted as a full reversion of Phase 3 item (3) - both the tail-stub geometry bump
+and the top-lit/underside-shaded tint - back to exactly the pre-Phase-3 nacelle: a single plain capsule,
+flat black like the rest of the turbine, no shading variation. Blade motion blur, tower flex, and
+background-turbine parallax/haze grading (Phase 3 items (1), (2), (4)/(5)) were not part of this feedback
+and were left untouched.
+
+**What was removed**, scoped entirely to `turbineMask()` and its call sites in
+`Worlds/World03_WindTurbineFire/Shaders/wind_turbine_fire.frag`:
+1. The tail-stub secondary capsule (`tailA`/`tailB`/`dTail`, previously unioned into `dNacelle` via `min`) -
+   `dNacelle` is back to the single `sdCapsule(p, nacelleA, nacelleB, 0.020 * scale)` it was before Phase 3.
+2. The `nacelleProximity`/`shade` computation entirely.
+3. The `shade *= smoothstep(0.5, 1.0, mFinal);` line added in the same-day sliver bugfix above - no longer
+   needed once `shade` itself is gone.
+4. The additive nacelle-tint lines in `main()`'s foreground-turbine compositing block (`fgColor1`/`fgColor2`
+   built from `fgColor + vec3(...) * max(tFGn.y, 0.0)`) - foreground turbines now composite with plain
+   `fgColor` directly, same as background turbines already did.
+
+**Signature decision:** `turbineMask()` was reverted from `vec2(mask, nacelleShade)` back to a plain
+`float` return (the pre-Phase-3 shape of this function, though the pre-Phase-3 name was `turbineSDF()` -
+kept the current name `turbineMask()` since the function still does its own internal thresholding for
+blade motion-blur averaging, which is unrelated to the nacelle feature and stays). This was the smaller,
+cleaner diff: none of the 4 call sites (2 background, 2 foreground) ever read `.y` for anything other than
+the now-removed tint, so all 4 collapsed from `vec2 tN = turbineMask(...); float mN = tN.x;` to a single
+`float mN = turbineMask(...);` line - fewer lines, no vestigial `.y`, no dead variables. Function doc-
+comment, the nacelle section header, the foreground-compositing comment, and the file's own top-of-file
+Phase 3 summary bullet (3) were all updated to describe current behavior and note the removal, rather than
+still describing a feature that no longer exists.
+
+**Verification:** `dotnet build`: 0 warnings/errors (`logs/build.log`). Reused this scene's established
+`TEMPPHASE3CAPTURE`-marked temporary forced-wind (`uWindDrive = 0.90f`) technique at the `Render()`
+uniform-upload site to get a clean, well-lit nacelle silhouette for screenshots, then fully removed it
+before reporting - confirmed via `grep -c TEMPPHASE3CAPTURE` returning `0` and `git diff --stat -- WindTurbineFireScene.cs`
+returning nothing (byte-identical to the last committed state; `git/WindTurbineFireScene_cs.diff` is 0
+bytes). Brightened, tightly-cropped nacelle screenshots on both foreground turbines
+(`screenshots/after_fg1_nacelle_forcedWind090_tight.png`, `after_fg2_nacelle_forcedWind090_tight.png`)
+show a plain, flat, uniform-color capsule silhouette on both FG1 and FG2 - no tail-stub bump, no lighter-
+top/darker-underside gradient, fully consistent with the rest of the turbine's flat-black treatment.
+Wider brightened crops (`after_fg1_nacelle_forcedWind090.png`/`after_fg2_nacelle_forcedWind090.png`) and a
+full-frame brightened capture at both forced wind (`after_forcedWind090_full_bright.png`) and real,
+near-silent audio-driven speed (`after_realspeed_full_bright.png`) confirm the same for both background
+turbines and that blade motion blur, tower flex/sway, and background-turbine parallax/haze all still look
+correct - none of that code was touched. `--profile Safe --smoke-test`: avg 75.0-75.1fps/min 74.9
+(`logs/smoketest_safe.log`) - consistent with every prior documented baseline on this scene. `--diagnostic
+motion` at real (near-silent) speed: T1->T5 4.78% pixels changed, T5->T15 5.18% (`screenshots/motion_realspeed/REPORT.md`)
+- matches this scene's own documented baseline (4.76-4.78%/5.15-5.21% across Phase 3 and its bugfix pass),
+confirming no motion/geometry regression. A pre-existing `--dashboard-only` process was **not** found
+holding port 8080 at this session's start (checked via `lsof -i :8080` before any run) - no user session
+needed stopping this time. Zero orphan process / port 8080 free confirmed via `lsof`/`pgrep` after every
+run in this pass.
+
+Screenshots/diffs: `DiagnosticReports/WindTurbineFireNacelleRemoval_20260713_164759/`.
+File scope: `wind_turbine_fire.frag` only (temporary capture-only edit to `WindTurbineFireScene.cs` made
+and fully reverted, confirmed empty diff) - folded into this same uncommitted Phase 3 working-tree state.
+Not committed, not pushed, per standing rule. Reviewer sign-off left blank, not self-signed, same as the
+passes above.
