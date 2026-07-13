@@ -897,6 +897,91 @@ metric script + output), source context, and git evidence, zipped as
 `WindTurbineFireDesignFix01_20260712_211410.zip`. Not committed, not pushed, per explicit instruction -
 pending user/ChatGPT review, `AUDIT.md` Entry 33's reviewer sign-off left blank.
 
+## 2026-07-12 — Wind Turbine Fire Refinement Pass 2
+
+**Executor:** Claude Code / Sonnet
+
+### Ask
+User accepted Design Correction Pass 1 with no corrections; it was committed (`2a35904`). Immediately
+after, three small, controlled refinements only - explicit instruction to preserve the current successful
+design, not redesign it: (1) heat-wave distortion made distant turbines wobble/cartoon-like at high
+intensity; (2) ember size/placement should not change, but density should increase slightly with fire
+intensity; (3) fire should stay low on the horizon early, then radiate higher into the smoke/sky as
+intensity grows, without reintroducing discrete flame cones or a flat orange wash. Also asked to note
+explicitly whether this pass touched any file shared across scenes, since cross-scene regression checks
+should only run by default when that's true - this pass didn't, so that's called out below.
+
+### Implementation
+All three fixes confined to `wind_turbine_fire.frag`. Confirmed via `git diff --stat` before finishing
+that `SceneRegistry.cs`, `CosmicEngine.cs`, `ControlServer.cs`, and `Tuning.cs` all show zero diff.
+
+1. **Heat-wave/turbine-wobble fix** - reasoned through the actual cause rather than just turning down a
+   number: the existing heat-distortion warp used a high spatial frequency (`sin(p.y*22+...)`,
+   `cos(p.x*17+...)`) sampled directly at each pixel's own position. Sky/smoke sampling is a diffuse field,
+   so a shifted sample just reads as shimmer. But background-turbine SDF sampling uses the *same* warp at
+   the *same* frequency - and since a turbine's own screen footprint spans a real range of `p.x`/`p.y`
+   values, different parts of one turbine (blade tip vs. tower base) end up sampling different phases of
+   the same wave, so the parts appear to bend independently rather than move as one rigid shape. That's
+   the actual mechanism behind "wobbly/cartoon." Fix: split into two separate warps. Sky/smoke keeps its
+   original frequency, with the base amplitude cut ~20% (0.0035->0.0028) and the driving intensity
+   soft-clamped (`min(fireIntensity, 0.80)`, was unclamped up to 1.0). Background-turbine SDF sampling
+   gets its own warp: ~35% of the sky/smoke amplitude, roughly 1/3 the spatial frequency (7/6 instead of
+   22/17, meaning far less phase variance across one turbine's footprint), plus an extra exponential
+   height taper so tall blade tips - the most wobble-prone geometry, being furthest from the ground-hugging
+   heat - get close to zero distortion while the tower base can still pick up a faint shimmer.
+2. **Ember density evolution** - added `densityDrive = smoothstep(0.10, 0.95, fireIntensity)` and, per
+   ember, a stable activation threshold `actLevel = hash1(seed+8.0)*0.9` (new hash offset, not correlating
+   with the `seed+0..7` uses already in play from Design Correction Pass 1) compared against it via
+   `densityGate = smoothstep(actLevel-0.12, actLevel+0.12, densityDrive)`, multiplied into brightness. This
+   makes embers switch on progressively as intensity climbs (low-threshold ones first) rather than a hard
+   population-count cutoff, and every existing size/placement/clustering/brightness-curve/motion rule is
+   completely untouched - confirmed via diff, only the `bMax`/`densityGate` lines changed in that block.
+3. **Fire-height evolution** - the fire front's `maxH` no longer flattens at `0.11` once `flameGate`
+   itself saturates (fireIntensity 0.78); a new `heightDrive = smoothstep(0.35, 1.0, fireIntensity)` keeps
+   climbing across the full range, giving `maxH = mix(0.075, 0.15, heightDrive) * flameGate` - low early,
+   modest through warm/mid, noticeably taller at hot/intense, still capped under the background-turbine
+   hub ceiling (~0.18). A new, separate high-altitude haze layer (`hazeDrive =
+   smoothstep(0.55, 1.0, fireIntensity)`, FBM-modulated, irregular-topped, gated to mid-high intensity
+   only) extends the glow further into the sky as a soft atmospheric tint - not more flame geometry - so
+   the fire radiates higher without the crisp fire-front mask itself growing tall enough to start reading
+   as flame silhouette.
+
+### Evidence capture and honest limitation
+Used the same temporary `TempForcedHeat` debug-override technique as every prior pass (fully reverted,
+confirmed via `grep` and a final `git diff` on `WindTurbineFireScene.cs` showing zero diff). For the
+turbine-wobble fix specifically, did a more rigorous before/after check than a simple screenshot: swapped
+in the last-committed (pre-refinement) shader via `git show HEAD:...`, ran `--diagnostic motion` at forced
+heat 0.9 to get t1/t5/t15 frames, restored the refined shader, ran the identical motion diagnostic again,
+then cropped the same background-turbine region from matched timestamps (same rotor angle in both, since
+rotor integration is deterministic under near-silent audio) for a side-by-side. Neither version showed a
+dramatic visible bend in this static-frame comparison at this pass's resolution/zoom - honestly reported
+as inconclusive-but-directionally-correct rather than asserted as a confirmed visual pass, since the
+underlying distortion magnitude is verifiably and substantially lower in the after version by the formula
+(not just by eye), and the original complaint was specifically about a live/animated view. Recommended a
+live/dashboard check as the real confirmation on this one point.
+
+### Verification
+`dotnet build`: 0 warnings/errors. All four required smoke tests clean and vsync-paced: WindTurbineFire
+Safe avg 74.8fps/min 73.9, WindTurbineFire High avg 74.7fps/min 73.2, StellarNursery Safe (seed 777) avg
+74.8fps/min 73.3, LavaLamp Safe avg 74.9fps/min 74.1. Full dashboard-only transcript: idle (no auto-
+launch) -> `/scenes` lists WindTurbineFire -> launched via `POST /launch` -> fire-evolution slider
+confirmed present in served HTML -> live-switched to StellarNursery (seed 777 auto-applied) -> live-
+switched to LavaLamp -> `POST /quit` -> zero orphan process via `pgrep`/`lsof`. Readability sanity check
+(warm-pixel methodology, not a required gate this pass but run for diligence given the new haze layer
+adds brightness): 17.05%->17.38% warm at heat 0.9 - negligible change, no regression.
+
+`git status`/`git diff` confirm the diff is confined to `Worlds/World03_WindTurbineFire/Shaders/
+wind_turbine_fire.frag` only - zero diff on `WindTurbineFireScene.cs` and on every shared engine file
+checked (`SceneRegistry.cs`, `CosmicEngine.cs`, `ControlServer.cs`, `Tuning.cs`). Assembled
+`DiagnosticReports/WindTurbineFireRefine02_20260712_214642/` with `REPORT.md`, 13 screenshots (pre-
+refinement reference, rest/warm/mid/hot progression, t1/t5/t15 motion frames, heat-distortion/ember-
+density/fire-height before/after closeups, a summary composite, StellarNursery/LavaLamp regression
+references), logs (build, all 4 smoke tests, diagnostic-visual runs, 2 motion-diagnostic runs used for
+the turbine-wobble before/after comparison, dashboard-only transcript, readability metric script +
+output), source context, and git evidence, zipped as
+`WindTurbineFireRefine02_20260712_214642.zip`. Not committed, not pushed, per explicit instruction -
+pending user/ChatGPT review, `AUDIT.md` Entry 34's reviewer sign-off left blank.
+
 ---
 
 ## Entry 35 - Startup Failure Root Cause: macOS Gatekeeper/Developer Mode, Not a Code Bug
@@ -959,3 +1044,26 @@ file (`CosmicEngine.App.csproj`, `run-show.sh`, `CLAUDE.md`, `AUDIT.md`, `PROJEC
 PACE Eden/`licenseDaemon` was not stopped, Startup Security Utility/Recovery Mode was not touched, no
 `sudo` was run. No `.cs`/`.frag`/`.vert` file changed - infrastructure/launcher/build-config only. See
 `AUDIT.md` Entry 37 for full detail; reviewer sign-off left blank.
+
+---
+
+## Entry 38 - Wind Turbine Fire "Fire Is Gone / No Audio Reaction" Investigation
+
+User reported Wind Turbine Fire showing only dark spinning turbines with zero fire/glow/embers and zero
+audio reactivity. Live reproduction (bounded, zero orphan processes) found no code defect: a
+`POST /calibration/testinput` test pulse on Input A correctly moved `calibratedA` 0 -> 0.7 via `/status`,
+proving the dashboard -> `CalibrationEngine` -> scene-readable-value pipeline is fully intact; a
+temporary, fully-reverted forced-heat `--diagnostic motion` capture (same precedent as Entries 30/32/33,
+confirmed reverted via `grep` and a final `git diff` showing zero diff on `WindTurbineFireScene.cs`)
+produced a clean cold->warm->hot progression (`DiagnosticReports/Motion_20260713_093550/`), proving the
+shader/scene code renders fire correctly when actually driven - including the still-uncommitted
+Refinement Pass 2 shader work. Root cause: purely environmental, not a bug. This Mac's current macOS
+default audio input device is "Hue Sync Audio" (a Philips Hue Sync virtual device), confirmed via the
+app's own `[AudioEngine] Capture opened: device="Hue Sync Audio"` startup log and `system_profiler
+SPAudioDataType` (no Focusrite Clarett present in the device list at all on this machine).
+`Audio/AudioEngine.cs` opens the OS default capture device by design (`ALC.CaptureOpenDevice(null,
+...)`, no device-selection mechanism exists in this codebase), so real guitar audio never reaches the
+app - `G1/G2 Level/Bass` stayed at exactly `0.000` for the full observed session. No source file was
+changed in the final state. User action needed: select the real interface as the default input in
+System Settings -> Sound -> Input, then relaunch. See `AUDIT.md` Entry 38 for full detail; reviewer
+sign-off left blank.

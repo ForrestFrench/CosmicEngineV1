@@ -190,13 +190,30 @@ project's bounded-run discipline). Artistic tuning of `EmberCount`/`HeatRisePerS
 `HeatDecayPerSecond` and the glow/smoke color ramps against real playing dynamics is also still
 outstanding, once real audio is available.
 
-### Wind Turbine Fire Design Correction Pass 1 (implemented, uncommitted — see `AUDIT.md` Entry 33)
+### Wind Turbine Fire Design Correction Pass 1 (accepted by user, committed `2a35904` — see `AUDIT.md` Entry 33)
 A ChatGPT/user screenshot review of Phase 2 flagged embers reading as big/sparse/foreground-feeling and
 flame tongues reading as a row of individually repeated cones rather than one continuous fire front.
 Both corrected: embers reworked (smaller, clustered near the fire line, brightness-power-curved, base-
 weighted); the 5 discrete flame tongues replaced by a single continuous scrolling height-field fire
-front fused into the horizon glow band. Camera-consume, real-guitar timescale validation, and further
+front fused into the horizon glow band. User reviewed the evidence package and accepted it with no
+corrections requested — committed. Camera-consume, real-guitar timescale validation, and further
 artistic tuning against real playing dynamics remain outstanding, same as noted above.
+
+### Wind Turbine Fire Refinement Pass 2 (implemented, uncommitted — see `AUDIT.md` Entry 34)
+Three small, controlled refinements on top of the accepted Design Correction Pass 1, per explicit user
+request to preserve the current design rather than redesign it: (1) heat-wave distortion reworked so
+distant background turbines get a separate, gentler, lower-frequency, height-tapered warp instead of
+the fuller sky/smoke one, addressing user-reported "cartoon wobble" at high intensity; (2) ember density
+now climbs progressively with fire intensity via a new per-ember activation threshold, while size/
+placement/clustering are completely unchanged; (3) the fire front's height cap keeps growing past where
+its gate saturates, and a new separate high-altitude haze layer lets the glow radiate higher into the
+sky at high intensity without more flame geometry. No shared engine file was touched — confined entirely
+to `wind_turbine_fire.frag`. Fire/smoke has now had three dedicated passes (Phase 2, Design Correction
+Pass 1, this Refinement Pass 2); the honest next recommendation is **Wind Turbine Fire Phase 3:
+turbine/geometry improvement** (de-stiffen turbines — motion blur/ghosting on fast blades, subtle tower
+flex at high wind, nacelle detail, better parallax separation, per-turbine haze grading; also where a
+Blender decision gate sits if turbines still fail art review after this), not a fourth fire pass.
+Camera-consume and real-guitar timescale validation remain outstanding, same as noted above.
 
 ## Note — Scene Dashboard added (2026-07-06)
 

@@ -36,7 +36,22 @@ out vec4 fragColor;
 // the fire - never to the fire's own light sources or the solid ground/
 // foreground silhouettes. See each block below for detail.
 //
-// Phase 2.1 corrective pass (this pass): user feedback on Phase 2's screenshot
+// Refinement Pass 2 (this pass, on top of the accepted Phase 2.1 corrective
+// pass below): the user is happy with the current design and asked for three
+// small, controlled refinements only, not a redesign: (1) heat-wave
+// distortion made distant turbines wobble cartoonishly at high intensity -
+// background turbines now sample a separate, gentler, lower-frequency,
+// height-tapered warp instead of the fuller sky/smoke one, and the overall
+// distortion drive is soft-clamped at high intensity; (2) ember size/
+// placement/clustering are explicitly preserved untouched, but density (how
+// many of uEmberCount are actually active) now climbs progressively with
+// fireIntensity via a per-ember soft activation threshold; (3) the fire
+// front's height cap now keeps growing (not flat) past where flameGate
+// itself saturates, and a separate soft, noise-modulated high-altitude haze
+// layer (not more flame geometry) extends the glow further into the sky at
+// high intensity. See each block below for detail.
+//
+// Phase 2.1 corrective pass: user feedback on Phase 2's screenshot
 // flagged two problems - embers reading as big, sparse, close-camera
 // foreground particles instead of small distant sparks belonging to the fire
 // line, and flame tongues reading as a row of individually repeated cones
@@ -209,23 +224,53 @@ void main() {
     glowColor = mix(glowColor, glowWhiteOrange, clamp((fireIntensity - 0.6) * 2.5, 0.0, 1.0));
     glowColor = mix(glowColor, vec3(0.85, 0.22, 0.55), smoothstep(0.80, 1.0, uSceneHeat) * 0.16);
 
-    // --- Heat distortion (Phase 2) ---------------------------------------------
+    // --- Heat distortion (Phase 2, reworked Refinement Pass 2) -----------------
     // A small, capped screen-space UV displacement applied only to the layers
     // behind/near the fire (sky, background turbines, smoke sampling below) -
     // masked to a band near the horizon and scaled by fireIntensity, so it is
     // exactly zero at rest and reads as a subtle heat-shimmer at high heat,
-    // never a whole-frame wobble. The horizon glow band, flame tongues,
-    // embers, ground, and foreground turbines are deliberately left
-    // undistorted (evaluated against the original `p`) so the fire itself and
-    // the solid/near silhouettes stay crisp.
+    // never a whole-frame wobble. The horizon glow band, fire front, embers,
+    // ground, and foreground turbines are deliberately left undistorted
+    // (evaluated against the original `p`) so the fire itself and the
+    // solid/near silhouettes stay crisp.
+    //
+    // Refinement Pass 2: user feedback was that at high intensity distant
+    // turbines got "too wobbly - cartoon-like." Root cause (confirmed by
+    // reasoning about the sampling, not guessed): the same high-frequency
+    // sin/cos offset was being sampled at every point across a turbine's own
+    // thin silhouette, so different parts of the *same* turbine (tip vs.
+    // base) picked up different phases of the wave and appeared to bend
+    // independently rather than shimmer as one rigid shape - a diffuse field
+    // (sky/smoke) doesn't show this because it has no hard edges to bend.
+    // Fix: two separate warps from here on - the original (sky/smoke) keeps
+    // shimmering at close to its prior strength since a shifted noise/gradient
+    // sample there just reads as haze, while a second, much gentler and lower-
+    // frequency warp is used only for background-turbine SDF sampling below,
+    // plus a small extra height taper so blade tips (furthest from the
+    // ground-hugging heat) get the least distortion of all. Overall driving
+    // intensity is also soft-clamped so distortion stops growing well before
+    // the very top of the heat range, instead of scaling linearly to 1.0.
     float distortBandDist = abs(p.y - (GROUND_Y + 0.06));
     float distortMask      = exp(-distortBandDist * distortBandDist * 9.0);
-    float distortAmp       = 0.0035 * fireIntensity * distortMask;
+    float distortDrive      = min(fireIntensity, 0.80); // soft-clamp at high intensity
+    float distortAmp       = 0.0028 * distortDrive * distortMask; // was 0.0035, no clamp
     vec2  distortOffset    = vec2(
         sin(p.y * 22.0 + uTime * 3.1),
         cos(p.x * 17.0 + uTime * 2.4)
     ) * distortAmp;
     vec2  pWarped = p + distortOffset;
+
+    // Background-turbine-only warp: lower spatial frequency (less phase
+    // variance across one turbine's footprint = less independent bending),
+    // ~35% of the sky/smoke amplitude, and an extra taper that fades out with
+    // height above the ground so tall blade tips stay closest to undistorted
+    // while the tower base can still pick up a faint shimmer.
+    float turbineHeightTaper = exp(-max(0.0, p.y - (GROUND_Y + 0.02)) * 5.0);
+    vec2  distortOffsetTurbine = vec2(
+        sin(p.y * 7.0 + uTime * 3.1),
+        cos(p.x * 6.0 + uTime * 2.4)
+    ) * (distortAmp * 0.35 * turbineHeightTaper);
+    vec2  pWarpedTurbine = p + distortOffsetTurbine;
 
     // --- Sky: cold blue-grey near-black gradient ------------------------------
     // skyT: 0 at horizon, 1 at the top of frame. Top stays near-black; horizon
@@ -265,8 +310,14 @@ void main() {
         float drift = uTime * 0.05;
         // maxH capped well under the background-turbine hub height
         // (~GROUND_Y+0.18) so the fire front never overtops the silhouettes
-        // behind it - see Preserve list / risk flags.
-        float maxH  = 0.11 * flameGate;
+        // behind it - see Preserve list / risk flags. Refinement Pass 2: the
+        // fixed 0.11 cap is replaced with a continued growth curve
+        // (heightDrive) that keeps climbing past where flameGate itself
+        // saturates (0.78), so the fire stays low early, rises modestly
+        // through warm/mid, and reaches noticeably higher at hot/intense -
+        // still capped at 0.15, comfortably under the turbine-hub ceiling.
+        float heightDrive = smoothstep(0.35, 1.0, fireIntensity);
+        float maxH  = mix(0.075, 0.15, heightDrive) * flameGate;
 
         // Warp the x sampling coordinate before evaluating the height field -
         // this is what kills the residual per-column regularity a plain
@@ -299,6 +350,32 @@ void main() {
     // same horizon glow, not a layer floating on top of it.
     color += (glowColor * band + frontColor * fm * 0.6) * fireIntensity * 1.15;
 
+    // --- High-altitude smoke-lit haze (Refinement Pass 2) -----------------------
+    // User feedback: fire should stay low on the horizon early, then radiate
+    // higher into the smoke/sky as intensity grows. Rather than just letting
+    // the fire front's own crisp mask (fm above) keep growing indefinitely -
+    // which would eventually start reading as flame geometry reaching too
+    // high - this is a separate, soft, noise-modulated tint applied well
+    // above the fire front's own visible top: "smoke-lit orange haze"
+    // (atmosphere catching the fire's light), not more flame. Zero below
+    // mid-high intensity, irregular via FBM (never a flat wash), mixed only
+    // from the existing sky/glow palette (no new hue). Evaluated against `p`
+    // (undistorted), matching the rest of the fire per the heat-distortion
+    // Preserve list.
+    float hazeDrive = smoothstep(0.55, 1.0, fireIntensity);
+    if (hazeDrive > 0.001) {
+        float hy = p.y - (GROUND_Y + 0.02);
+        float hazeNoise = fbm2(vec2(p.x * 1.8 - uTime * 0.03, hy * 2.4 + 5.5), 2);
+        // Noise-perturbed reach (not a hard cutoff) so the top edge is soft
+        // and uneven rather than a flat orange wash.
+        float hazeTop = mix(0.12, 0.30, hazeDrive) * (0.75 + 0.5 * hazeNoise);
+        float hazeFalloff = smoothstep(0.0, 0.04, hy)
+                           * (1.0 - smoothstep(hazeTop * 0.35, hazeTop, hy));
+        float hazeMask = hazeFalloff * clamp(0.3 + 0.6 * hazeNoise, 0.0, 1.0) * hazeDrive;
+        vec3  hazeColor = mix(skyHorizon, glowColor, 0.55);
+        color += hazeColor * hazeMask * 0.28;
+    }
+
     // --- Embers: fixed-loop analytic particles, grouped with the background
     // horizon glow (Phase 1.2) -------------------------------------------------
     // User feedback: embers previously spanned the full foreground frame
@@ -330,7 +407,18 @@ void main() {
     // distance/cooling cue (shrink + cool toward deep red as an ember rises),
     // E7 a ~20% slower drift. Hard gating (emberGate, zero baseline, absent
     // at rest) and composite position are unchanged from Phase 1.2.
+    //
+    // Refinement Pass 2: ember DENSITY (how many of uEmberCount are actually
+    // active) now climbs with fireIntensity - low/rest close to none, warm
+    // sparse, hot modestly denser, intense noticeably more active - while
+    // every existing size/placement/brightness-curve/clustering rule above
+    // is completely untouched, per explicit user request to preserve the
+    // current look. Implemented as a per-ember soft activation threshold
+    // (densityGate below) rather than shrinking/growing the loop's `i <
+    // uEmberCount` bound directly, so embers switch on progressively with a
+    // soft edge instead of a hard population cutoff.
     float emberGate = smoothstep(0.05, 0.40, fireIntensity);
+    float densityDrive = smoothstep(0.10, 0.95, fireIntensity);
     vec3  emberAccum = vec3(0.0);
     for (int i = 0; i < MAX_EMBERS; i++) {
         if (i >= uEmberCount) break;
@@ -351,6 +439,14 @@ void main() {
         // hash offset (seed+5.0) so this doesn't correlate with the existing
         // seed+0..4 uses above.
         float bMax = pow(hash1(seed + 5.0), 2.8);
+
+        // Refinement Pass 2: per-ember activation level - a stable,
+        // per-ember random threshold (new offset seed+8.0, unrelated to the
+        // seed+0..7 uses already in play) compared against densityDrive
+        // below, so a growing subset of embers "switches on" as the fire
+        // intensifies, low-threshold embers first.
+        float actLevel = hash1(seed + 8.0) * 0.9;
+        float densityGate = smoothstep(actLevel - 0.12, actLevel + 0.12, densityDrive);
 
         // E5: base-weighted vertical bias (pow(cyc,0.75) skews dwell time
         // toward the bottom of the band) and only high-bMax embers reach the
@@ -397,7 +493,7 @@ void main() {
         // so embers fade out well before the top of the band.
         float fade = smoothstep(0.0, 0.15, cyc) * (1.0 - smoothstep(0.55, 0.95, cyc));
 
-        float brightness = fade * emberGate * bMax;
+        float brightness = fade * emberGate * bMax * densityGate;
 
         vec3 emberColor = mix(vec3(0.55, 0.14, 0.05), vec3(1.0, 0.55, 0.16), hash1(seed + 4.0));
         emberColor = mix(emberColor, glowDeepRed, clamp(cyc * 0.6, 0.0, 1.0));
@@ -426,18 +522,21 @@ void main() {
     // blend for atmospheric-perspective/haze feel (fully flat black read too
     // harsh by comparison to the rest of this layer's treatment).
     //
-    // Phase 2: sampled against pWarped (heat distortion), not p, so the
+    // Phase 2: sampled against a heat-distortion warp, not p, so the
     // background turbines' own outline visibly shimmers near the fire at
     // high heat - explicitly called for by the art brief ("distant turbines"
     // are one of the named heat-distortion targets), zero effect at rest
-    // since distortAmp is 0 there.
+    // since distortAmp is 0 there. Refinement Pass 2: uses pWarpedTurbine
+    // (the gentler, lower-frequency, height-tapered warp defined above), not
+    // the fuller sky/smoke pWarped, so the shimmer stays visible without the
+    // turbines bending/wobbling independently part-by-part.
     {
-        float d1 = turbineSDF(pWarped, -0.10, GROUND_Y + 0.01, 0.34, uRotorAngleBG1);
+        float d1 = turbineSDF(pWarpedTurbine, -0.10, GROUND_Y + 0.01, 0.34, uRotorAngleBG1);
         float m1 = smoothstep(0.007, 0.0, d1);
         vec3  c1 = mix(vec3(0.035, 0.038, 0.055), color, 0.18);
         color = mix(color, c1, m1);
 
-        float d2 = turbineSDF(pWarped, 0.62, GROUND_Y + 0.015, 0.24, uRotorAngleBG2);
+        float d2 = turbineSDF(pWarpedTurbine, 0.62, GROUND_Y + 0.015, 0.24, uRotorAngleBG2);
         float m2 = smoothstep(0.006, 0.0, d2);
         vec3  c2 = mix(vec3(0.030, 0.033, 0.050), color, 0.22);
         color = mix(color, c2, m2);

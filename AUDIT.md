@@ -2084,6 +2084,102 @@ confirmation of zero diff on `WindTurbineFireScene.cs`), `audit/` — zipped as
 
 **Not committed, not pushed** — left uncommitted in the working tree pending review, same as Phase 1/2.
 
+## Entry 34 — Wind Turbine Fire Refinement Pass 2 (World03 fire/ember/distortion tuning)
+
+**Date:** 2026-07-12
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User feedback
+User is happy with the current design (Design Correction Pass 1, committed as `2a35904`) and wants it
+preserved — this pass is three small, controlled refinements only, not a redesign. (1) Heat-wave
+distortion made distant turbines wobble/cartoon-like at high intensity. (2) Ember size/placement are good
+and should not change, but density should increase slightly as fire intensity grows. (3) Fire should
+begin low on the horizon and radiate higher into the smoke/sky as intensity grows, without reintroducing
+discrete flame cones or a flat orange wash.
+
+### Goal
+Address all three points with minimal, targeted shader edits, preserving every existing design decision
+from Design Correction Pass 1 (continuous fire front, ember size/placement/clustering, turbine embedding/
+opacity, composite order). No shared engine file was touched — the entire diff is confined to
+`wind_turbine_fire.frag` (confirmed via `git diff --stat` against `SceneRegistry.cs`/`CosmicEngine.cs`/
+`ControlServer.cs`/`Tuning.cs`, all zero). Per the user's own note on scope-appropriate regression
+testing, this means the StellarNursery/LavaLamp checks below were run because explicitly requested for
+this pass, not because a shared file was at risk.
+
+### What was changed
+1. **Heat-wave reduction + distant-turbine protection** — root-caused the "cartoon wobble" to the same
+   high-frequency spatial sin/cos distortion wave being sampled at different points across a single
+   turbine's own thin silhouette (tip vs. base), causing the silhouette to appear to bend independently
+   rather than shimmer rigidly — a diffuse field (sky/smoke) doesn't show this since it has no hard edges.
+   Fix: base distortion amplitude cut ~20% (0.0035→0.0028) with the driving intensity soft-clamped at 0.80
+   (was unclamped, linear to 1.0); background-turbine SDF sampling now uses a separate warp with ~35% of
+   the sky/smoke amplitude, roughly 1/3 the spatial frequency, and an added height taper so blade tips —
+   the most wobble-prone geometry — get the least distortion of all. Sky/smoke shimmer amplitude/frequency
+   is otherwise unchanged, so shimmer stays visible where it reads as atmosphere.
+2. **Ember density evolution** — a new `densityDrive` (climbing 0→1 from mid-low to high fireIntensity)
+   combined with a per-ember stable activation threshold (new hash offset `seed+8.0`) produces a soft
+   per-ember gate, so a growing subset of embers switches on progressively as intensity climbs. Every
+   existing size/placement/clustering/brightness-curve/motion rule is completely untouched — only which
+   embers are currently active changes.
+3. **Fire-height/intensity evolution** — the fire front's height cap no longer flattens once `flameGate`
+   saturates; a continued growth curve keeps it climbing across the full intensity range (still capped
+   under the background-turbine hub ceiling). A new, separate high-altitude haze layer (soft, FBM-
+   modulated, gated to mid-high intensity only) extends the glow further into the sky without the fire
+   front's own crisp mask growing large enough to read as flame geometry reaching too high.
+
+### Verification
+`dotnet build`: 0 warnings, 0 errors. All four required smoke tests clean and vsync-paced this session:
+WindTurbineFire Safe avg 74.8fps/min 73.9, WindTurbineFire High avg 74.7fps/min 73.2, StellarNursery Safe
+(seed 777) avg 74.8fps/min 73.3, LavaLamp Safe avg 74.9fps/min 74.1. Full dashboard-only transcript
+(idle/no-auto-launch → `/scenes` lists WindTurbineFire → launches, fire-evolution slider present →
+StellarNursery launches with seed 777 → LavaLamp launches → clean quit → zero orphan process, `pgrep`/
+`lsof` both clean). Readability sanity check (warm-pixel methodology, not a required gate this pass but
+run for diligence given the new haze layer adds brightness): 17.05%→17.38% warm at heat 0.9, negligible
+change — no readability regression from the taller fire front/haze layer.
+
+### Honest limitation on the distant-turbine-wobble fix
+The fix is well-reasoned (root-caused to a spatial-frequency mismatch between the distortion wave and the
+turbine's own silhouette size) and verifiably reduces distortion magnitude by the numbers (~35% amplitude,
+~1/3 frequency, plus a height taper, versus the sky/smoke warp). A rigorous before/after comparison was
+attempted — temporarily swapping in the committed pre-refinement shader, capturing matched motion-
+diagnostic frames (same rotor angle, same timestamp) with both versions, and cropping the same background-
+turbine region — but at the resolution/zoom this pass's own static screenshots could produce, neither
+version showed a dramatic visible bend, meaning the comparison could not visually confirm a large
+before/after swing even though the underlying math is substantially gentler. The original user complaint
+was about a live/animated view, which a still-frame comparison cannot fully reproduce. Flagged honestly
+rather than asserted as a confirmed visual pass — recommend a live/dashboard check as the real
+confirmation on this specific point.
+
+### Known limitations
+- No true volumetric smoke yet (new haze layer is still a 2D FBM band).
+- No camera-consuming fire, no Blender/Hunyuan3D assets, not final fire art, no OptiPlex/show-hardware
+  validation yet — same as prior passes.
+- Real audio/song-length heat evolution still needs hands-on tuning; all evidence used the same temporary
+  forced-heat capture technique as prior passes (fully reverted, confirmed via `grep` and a final `git
+  diff` on `WindTurbineFireScene.cs` showing zero diff).
+- The distant-turbine-wobble fix specifically (see above) is implemented and reasoned through but not
+  dramatically confirmed by this pass's own static evidence — recommend live verification.
+
+### Recommended next action
+Phase 3 of the originally-approved Fable plan: turbine/geometry improvement (de-stiffen turbines — motion
+blur/ghosting on fast blades, subtle tower flex at high wind, nacelle detail, better parallax separation,
+per-turbine haze grading; also where a Blender decision gate sits if turbines still fail art review after
+this). Fire/smoke has now had three dedicated passes (Phase 2, Design Correction Pass 1, this Refinement
+Pass 2) — turbine/geometry work is the next item, not a fourth fire pass.
+
+### Screenshot/package path
+`DiagnosticReports/WindTurbineFireRefine02_20260712_214642/`, containing `REPORT.md`, `screenshots/`
+(before-pass reference, rest/warm/mid/hot states showing the low→high fire progression, t1/t5/t15 motion
+frames, heat-distortion/ember-density/fire-height before/after closeups, a summary composite,
+StellarNursery/LavaLamp regression references), `logs/` (build, all 4 smoke tests, diagnostic-visual runs,
+2 motion-diagnostic runs used for the before/after turbine-wobble comparison, dashboard-only transcript,
+readability metric script + output), `source_context/`, `git/` (diff of `wind_turbine_fire.frag`,
+confirmation of zero diff on `WindTurbineFireScene.cs` and on every shared engine file), `audit/` — zipped
+as `WindTurbineFireRefine02_20260712_214642.zip`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending review, same as prior passes.
+
 ## Entry 35 — Startup Failure Root Cause: macOS Gatekeeper/Developer Mode, Not a Code Bug (v0.1)
 
 **Date:** 2026-07-13
@@ -2417,6 +2513,209 @@ Adopt this as the standard local development/show workflow going forward — no 
 to keep using Cosmic Engine on this Mac. If a future macOS update reintroduces AMFI rejection of some other
 locally-built binary, check first whether `UseAppHost=false` and a DLL-host launch path apply there too
 before escalating to any Gatekeeper/Developer-Mode/Recovery-Mode change.
+
+### Reviewer note
+Reviewer sign-off intentionally left blank for ChatGPT/user review — not self-signed.
+
+## Entry 38 — Wind Turbine Fire "Fire Is Gone / No Audio Reaction" Investigation: Root Cause Is the macOS Default Input Device, Not a Code Bug (v0.1)
+
+**Date:** 2026-07-13
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Reported symptom
+User: "What happened to the fire in my turbine visual? It's no longer there. it's just turbines spinning
+in the dark. Nothing is happening when I add audio input." Two symptoms reported together: fire/glow/
+embers visually absent, and zero audio reactivity.
+
+### Starting point
+Before this investigation, a static read of the tree found nothing obviously broken: `git diff` on
+`wind_turbine_fire.frag` (the only dirty World03 file — uncommitted Refinement Pass 2, Entry 34) showed
+only the documented distortion/ember-density/fire-height changes, with the core
+`color += (glowColor * band + frontColor * fm * 0.6) * fireIntensity * 1.15;` compositing line untouched;
+`git diff 2a35904 -- WindTurbineFireScene.cs` was completely empty (zero C# changes since the last
+committed, previously-accepted state). This ruled out an obvious diff-level regression and required live
+reproduction instead.
+
+### Investigation (live reproduction, bounded, zero orphan processes at every step)
+1. **Calibration/test-pulse path — confirmed working correctly.** `dotnet build` (0 warnings/errors) →
+   `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --dashboard-only` (background, bounded) → `POST /launch
+   {"sceneId":"WindTurbineFire","profile":"Safe"}` → `/status` confirmed `running:true`, 75fps,
+   `calibratedA:0`/`calibratedB:0` at rest → `POST /calibration/testinput {"input":"A","value":0.7}` →
+   `/calibration/status` showed `inputA.rawLevel:0.7`, `curveOutput:0.69999987`, `testOverrideActive:true`
+   → `/status` immediately showed `calibratedA:0.6999999`. This is the exact same value
+   `WindTurbineFireScene.Update()` reads (`CalibrationEngine.InputA.CurveOutput`), so the full dashboard →
+   `CalibrationEngine` → scene-readable-value pipeline is proven intact and correctly wired — **not** the
+   fault.
+2. **Raw/real audio path — this is where the real signal is missing.** The same session's own stdout
+   (captured to a log file for inspection, not just watched live) showed, on every single frame for the
+   full run duration: `G1 Level:0.000 Bass:0.000 | G2 Level:0.000 Bass:0.000` — the raw
+   `AudioEngine.Guitar1/Guitar2` fields, which `WindTurbineFireScene.Update()` also reads directly
+   (`audio.Bass1`/`Level1`/etc., the `Tuning.cs`-calibrated path, independent of the `CalibrationEngine`
+   additive layer above), never moved off exactly zero — not even fractionally, across the entire capture
+   window. The startup line explains why: `[AudioEngine] Capture opened: device="Hue Sync Audio",
+   format=Stereo16, sampleRate=44100, bufferSize=2048 frames.` `Audio/AudioEngine.cs` line 35 opens the
+   capture device with `ALC.CaptureOpenDevice(null, ...)` — passing `null` means "open whatever CoreAudio
+   currently considers the default input device," by design, with no device-selection mechanism anywhere
+   in this codebase (confirmed by reading the full file — no config, no CLI flag, no dashboard control
+   exists for this). `system_profiler SPAudioDataType` on this machine confirms **"Hue Sync Audio" is
+   currently the default input device** (`Default Input Device: Yes`, 4 input channels, `Transport:
+   Virtual`, manufacturer "Philips Lighting B.V." — the Philips Hue Sync app's virtual audio device, not a
+   guitar interface) — and no Focusrite Clarett (or any other real audio interface) appears anywhere in the
+   `system_profiler` device list on this machine at all, meaning the interface may not even be currently
+   connected/powered/recognized, separate from the default-device-selection problem itself.
+3. **Shader/scene code correctness — confirmed working when actually driven.** To rule out any residual
+   doubt that Refinement Pass 2's uncommitted shader edits (or anything else in the fire-compositing path)
+   silently broke fire rendering even when properly driven, used this project's established temporary-
+   forced-heat capture technique (same precedent as Entries 30/32/33): temporarily edited
+   `WindTurbineFireScene.cs` (marked `TEMPBUGFIXCAPTURE`) to force `Tuning.WindTurbineFireEvolutionSeconds
+   = 12f` in `Load()` and `fireDrive = 1.0f` at both of its two use sites (heat integration in `Update()`,
+   uniform upload in `Render()`), then ran `dotnet bin/Debug/net8.0/CosmicEngine.App.dll --world
+   WindTurbineFire --profile Safe --diagnostic motion` (bounded, self-exiting). Result:
+   `DiagnosticReports/Motion_20260713_093550/T1.png`/`T5.png`/`T15.png` show a clear, correct cold→hot
+   progression — T1 already shows a dim warm horizon glow (fire drive was forced from t=0), T15 shows a
+   markedly richer orange/red horizon band with visible embers near the ground line, exactly matching the
+   documented Refinement Pass 2 design intent. `[Motion Test] T1->T5: ... 23.56% pixels changed`,
+   `T5->T15: ... 30.63% pixels changed` — genuine, smooth animated buildup, not frozen or strobing. This
+   directly demonstrates the shader and C# scene code render fire correctly and respond correctly to
+   `fireDrive`/`uSceneHeat` when those values actually carry a signal — the previously-uncommitted
+   Refinement Pass 2 changes are not the cause of the reported symptom.
+4. **Reversion of the temporary capture edits — confirmed clean.** All three `TEMPBUGFIXCAPTURE`-marked
+   edits were removed immediately after capture. Verified two ways: `grep -c TEMPBUGFIXCAPTURE
+   WindTurbineFireScene.cs` returns `0`, and `git diff -- WindTurbineFireScene.cs` returns **completely
+   empty** (byte-identical to the last committed state, `2a35904`) — a stronger confirmation than a grep
+   alone, since it proves no stray whitespace or incidental change was left behind either. `dotnet build`
+   after reversion: 0 warnings, 0 errors.
+5. **Evolution-time slider / stuck runtime state — ruled out.** `Tuning.WindTurbineFireEvolutionSeconds` is
+   a plain `public static float` with no persistence mechanism (no file write, no environment variable, no
+   static-across-launches store) — confirmed by reading `Tuning.cs` in full. It defaults to `240f` on every
+   fresh process start; nothing in this codebase could leave it "stuck" at an extreme value across restarts.
+6. **Shader compile warnings / uniform-name mismatch — ruled out.** `Rendering/ShaderProgram.cs`'s
+   `SetFloat`/`SetInt` do silently no-op if `GL.GetUniformLocation` returns `< 0` (a real, generic footgun
+   in this codebase, worth knowing about for future debugging), but a direct name-for-name comparison of
+   every `_shader.SetFloat/SetInt(...)` call in `WindTurbineFireScene.cs` against every `uniform` declared
+   in `wind_turbine_fire.frag` (`uTime`, `uSceneHeat`, `uFireDrive`, `uWindDrive`, `uSmokeTurbulence`,
+   `uEmberCount`, `uRotorAngleFG1/FG2/BG1/BG2`) found an exact match on all nine — no typo, no case
+   mismatch, nothing renamed by Refinement Pass 2. `dotnet build`'s own 0-warning/0-error result is a
+   separate, .NET-level signal (not GLSL) and doesn't bear on this, but the direct name comparison does
+   settle it.
+7. **AMFI apphost workaround (Entry 37) interaction — ruled out.** Launched via the exact real path
+   (`dotnet bin/Debug/net8.0/CosmicEngine.App.dll`, matching the current `run-show.sh`/Entry 37 launcher),
+   not `dotnet run` in isolation — behavior was identical to what a `dotnet run` launch would show; nothing
+   about the DLL-host launch path affects shader loading, working directory, or uniform upload timing
+   (confirmed via the same relative-path shader load succeeding, `[WindTurbineFire] Loaded.` printed
+   normally, and all uniforms visibly taking effect in the forced-heat capture above).
+8. **`EmberCount`/profile-apply wiring — ruled out.** `/status` during the WindTurbineFire launch reported
+   `profile:"Safe"`; the forced-heat capture in step 3 visibly shows multiple embers active near the
+   horizon at T15, confirming `Engine/CosmicEngine.cs`'s `WindTurbineFireScene.EmberCount = ...` profile
+   knob is still correctly wired and reaching the shader's `uEmberCount` uniform.
+
+### Root cause
+**Purely environmental/user-side — not a code bug, and no fix was made to any source file.** The macOS
+default audio input device on this Mac is currently **"Hue Sync Audio"** (a 4-channel virtual device
+created by the Philips Hue Sync desktop app for syncing lights to system audio), not a real guitar
+interface. `Audio/AudioEngine.cs` opens the capture device via `ALC.CaptureOpenDevice(null, ...)` — by
+design, `null` means "open the OS's current default input device" — and does so correctly; there is no
+device-selection bug. Since the actual guitar signal never reaches this virtual device, `AudioEngine`
+faithfully captures real audio... of nothing. `Guitar1`/`Guitar2` `Level`/`Bass`/`Mid`/`Treble` stay at
+exactly `0.000` forever, `fireDrive`/`uSceneHeat` never rise, and `fireIntensity` stays at (or extremely
+near) `0` — which, by this scene's own explicit, intentional "cold/dark at rest" art direction (documented
+since Entry 30: "Deliberately cold/desaturated at rest... so heat reads as heat-against-cold contrast"),
+renders as exactly what the user described: turbines spinning (a time-only baseline, unaffected by audio)
+against a dark sky, with no fire, glow, or embers, and literally zero response to real playing — because
+the real playing's audio signal never arrives at the app at all. Separately, `system_profiler
+SPAudioDataType` shows no Focusrite Clarett or any other real audio interface currently present in the
+system's device list on this machine — the interface itself may not currently be connected/powered, which
+is a second, related environmental fact worth the user's attention (this device would need to both be
+connected *and* selected as the default input for real audio reactivity to work with the current,
+device-selection-free `AudioEngine.cs`).
+
+This is the same underlying audio-device fact flagged (as an aside, not yet connected to a live symptom)
+in Entry 35's investigation of a *different* problem (the app failing to start at all) — that investigation
+never got far enough to observe this scene actually running, since the AMFI startup blocker (Entries
+35-37) predated and blocked this. This is the first session in which the app has actually been runnable
+long enough, post-Entry-37 fix, to observe this specific symptom live end-to-end, and it directly confirms
+that flagged device situation is the real, current cause of "no fire, no audio reaction" for Wind Turbine
+Fire specifically (and would equally affect StellarNursery/LavaLamp's own audio reactivity, though neither
+was re-tested this pass since the cause is in the shared, unmodified `AudioEngine.cs`/OS-level device
+selection, not anything World03-specific).
+
+### What changed
+**Nothing, in the final state.** Three temporary, fully-reverted `TEMPBUGFIXCAPTURE`-marked edits to
+`WindTurbineFireScene.cs` were made and removed solely to produce the forced-heat screenshot evidence in
+step 3 above — confirmed via `grep -c TEMPBUGFIXCAPTURE` returning `0` and a final `git diff --
+WindTurbineFireScene.cs` returning completely empty. No change was made to `wind_turbine_fire.frag`,
+`Audio/AudioEngine.cs`, `ControlServer.cs`, `Engine/CosmicEngine.cs`, or any other file. Per this pass's
+own scope constraint (World03 only, plus a narrow carve-out for `ControlServer.cs` calibration endpoints
+or `CosmicEngine.cs`'s profile-apply site if evidence pointed there — it didn't), and because there is no
+actual code defect to fix, `Audio/AudioEngine.cs` was deliberately left untouched even though it's where
+the root cause technically lives — this is expected, documented behavior (open the OS default input
+device), not a bug, and changing device-selection behavior would be a real, separate feature (device
+picker/enumeration) outside this investigation's scope.
+
+### Evidence
+- Dashboard-only session log (captured to file, not just watched): `[AudioEngine] Capture opened:
+  device="Hue Sync Audio", ...` at startup, and `G1 Level:0.000 Bass:0.000 | G2 Level:0.000 Bass:0.000` on
+  every single per-second status line for the full observed duration.
+- `system_profiler SPAudioDataType`: `Hue Sync Audio` entry shows `Default Input Device: Yes`; no Focusrite
+  Clarett or other real interface present in the device list at all.
+- `/calibration/status` and `/status` after a `POST /calibration/testinput {"input":"A","value":0.7}`:
+  `curveOutput:0.69999987` → `calibratedA:0.6999999` — proves the calibration/test-pulse pipeline itself is
+  fully correct and unaffected; isolates the problem specifically to the *raw* capture path (the actual
+  guitar audio), not to any Wind-Turbine-Fire-specific or dashboard-specific code.
+- `DiagnosticReports/Motion_20260713_093550/{T1,T5,T15}.png` (converted from the diagnostic's raw `.ppm`
+  captures via `sips`): visually confirms fire/glow/embers render correctly and build up smoothly across a
+  forced heat ramp — proves the shader/scene code is not the fault.
+- `git diff -- CosmicEngineApp/Worlds/World03_WindTurbineFire/WindTurbineFireScene.cs`: empty, confirming
+  full reversion of all temporary capture instrumentation.
+- `dotnet build`: 0 warnings, 0 errors, both before and after the temporary edits and their reversion.
+- `pgrep -fl CosmicEngine.App` / `lsof -i :8080`: checked clean after every single command in this
+  investigation (the dashboard-only session's `/quit` and the bounded `--diagnostic motion` run's own
+  self-exit), not just at the end.
+
+### What the user needs to do
+1. Open System Settings → Sound → Input, and select the real guitar/audio interface (e.g. the Focusrite
+   Clarett referenced in `CLAUDE.md`) as the input device, instead of "Hue Sync Audio." If the interface
+   doesn't appear in that list at all, it isn't currently connected/powered/recognized by macOS on this
+   Mac — check the physical connection and driver/power state first.
+2. Relaunch Cosmic Engine (`./run-show.sh` or the Desktop shortcut) after changing the input device — since
+   `AudioEngine.Start()` opens the OS default device once at process start with no live re-selection, a
+   device change while the app is already running will not take effect until the next launch.
+3. Once launched with the correct input selected, confirm via the startup log line (`[AudioEngine] Capture
+   opened: device="..."`) that the expected interface name appears, and via the dashboard's `G1
+   Level:`/`G2 Level:` status line (or the Calibration tab's live meters) that playing the guitar visibly
+   moves those numbers off `0.000` — at that point Wind Turbine Fire's fire/glow/embers should respond
+   exactly as shown in the forced-heat evidence above.
+
+### Whether this is code, environmental, or both
+**Purely environmental/user-side.** No code defect was found in `WindTurbineFireScene.cs`,
+`wind_turbine_fire.frag`, `Audio/AudioEngine.cs`, `ControlServer.cs`'s calibration endpoints, or
+`Engine/CosmicEngine.cs`'s profile-apply site — all were read and/or live-exercised and found correct. The
+uncommitted Refinement Pass 2 shader work (Entry 34) is confirmed intact and working correctly via live
+forced-heat evidence and remains uncommitted, unchanged by this pass, pending the same review process as
+before.
+
+### Known limitations
+- Real-hardware guitar audio was not (and could not be) tested in this environment/session — no real
+  guitar signal is available here. This investigation instead used the two evidence paths the assignment
+  specifically called for: the `CalibrationEngine` test-pulse mechanism (proves the calibration pipeline
+  correct) and the temporary forced-heat capture technique (proves the shader/scene code correct) — the
+  actual missing piece (real guitar audio reaching `AudioEngine`) is a device-selection fact about this
+  specific Mac's current OS state, directly observed via `system_profiler` and the app's own startup log,
+  not something this session can fix or simulate further.
+- Whether StellarNursery/LavaLamp are equally affected by the same "Hue Sync Audio is default input" fact
+  was not re-tested this pass (out of the WindTurbineFire-scoped assignment, and the cause is in shared,
+  unmodified `AudioEngine.cs`/OS state, not anything scene-specific) — but by the same reasoning that
+  applies to WindTurbineFire, they almost certainly are, until the user selects the correct input device.
+- This pass did not add any in-app device-selection UI, default-input warning, or startup sanity check
+  (e.g. detecting a suspicious/virtual-sounding device name and surfacing a warning) — that would be a
+  genuine, separate feature addition outside this bugfix investigation's scope, and outside the World03-only
+  file-scope constraint for this pass; flagged here as a candidate follow-up, not performed.
+
+### Screenshot path
+`DiagnosticReports/Motion_20260713_093550/` (`REPORT.md`, `T1.ppm`/`T1.png`, `T5.ppm`/`T5.png`,
+`T15.ppm`/`T15.png` — forced-heat cold→warm→hot progression, temporary instrumentation fully reverted
+before this entry was written).
 
 ### Reviewer note
 Reviewer sign-off intentionally left blank for ChatGPT/user review — not self-signed.
