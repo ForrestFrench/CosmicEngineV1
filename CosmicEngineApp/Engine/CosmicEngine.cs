@@ -350,8 +350,11 @@ namespace CosmicEngine.App.Engine
 
             // Wind Turbine Fire Phase 1 v0.1: profile-aware ember count (harmless
             // no-op unless WindTurbineFire is the active world), same pattern as
-            // LavaLampScene.BlobCount above.
-            WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 24 : 12;
+            // LavaLampScene.BlobCount above. Phase 2.1 corrective (Wind Turbine
+            // Fire Design Correction Pass 1): raised from 12/24 - more, smaller
+            // embers read as distant sparks tied to the fire line rather than a
+            // few big foreground dots; Safe kept <= 32 per house convention.
+            WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 40 : 28;
 
             // Dashboard Show Seed Support: only fills in when the user didn't already
             // ask for a specific seed via CLI --seed - explicit intent always wins.
@@ -526,7 +529,9 @@ namespace CosmicEngine.App.Engine
                 _renderTarget?.Dispose();
                 _renderTarget = new RenderTarget(_renderWidth, _renderHeight);
                 LavaLampScene.BlobCount = _profile.Name == "High" ? 8 : 6;
-                WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 24 : 12;
+                // Phase 2.1 corrective: see the matching comment above (Load()) -
+                // same 28/40 values, mirrored here for dashboard-driven live switches.
+                WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 40 : 28;
             }
 
             if (worldChanged)

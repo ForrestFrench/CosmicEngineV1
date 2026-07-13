@@ -1868,3 +1868,218 @@ t1/t15, 2 background-turbine hot zoomed crops, final low-heat reference), `logs/
 tests, 3 motion reports, 1 visual diagnostic report, evolution-slider before/after comparison + raw
 dashboard-only session logs), `source_context/`, `git/` (status, diff, World01/World02 zero-change
 check, temp-marker-removal confirmation).
+
+---
+
+## Entry 32 — Wind Turbine Fire Phase 2 (fire/smoke improvement)
+
+**Date:** 2026-07-12
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+Phase 2 of the approved Wind Turbine / Fire plan: take the horizon-glow-only fire treatment from
+Phase 1/1.1/1.2 further with real flame tongues, proper smoke underlighting, a masked/capped heat-
+distortion layer, and a fire hue path refined to support the richer flame shapes without breaking the
+"nudge hue, never flip it" rule. Shader-primary scope: all changes confined to
+`wind_turbine_fire.frag`; `WindTurbineFireScene.cs` needed **zero changes** (confirmed via `git diff`
+— no new uniform was required, everything reuses the existing `uSceneHeat`/`uFireDrive` pipeline).
+Turbine geometry/embedding, camera-consume, ash accumulation, Blender/texture work, and audio-
+reactivity mapping were all explicitly out of scope and are unmodified.
+
+### What was built
+1. **Flame tongues** — 5 procedurally-placed, domain-warped-FBM flame shapes masked by an upward-
+   tapering envelope (narrow at the tip, wider at the base), composited in the same background/
+   horizon region as the existing glow band and Phase 1.2 embers (not pulled toward the foreground).
+   Gated by `flameGate = smoothstep(0.35, 0.78, fireIntensity)` — reuses the exact same
+   `fireIntensity` variable that already drives the glow band/embers, per instruction, rather than
+   inventing a new threshold scheme; tongues only emerge once fire drive/heat has visibly built past
+   roughly mid-range, not from a bare ember bed.
+2. **Smoke underlighting** — split the single existing `glowFalloff` term into two: `glowFalloffSoft`
+   (the original broad ambient tint, unchanged falloff rate) and a new, much tighter-radius
+   `glowFalloffHot` term added on top, reading as a distinct hot rim right where smoke meets the fire
+   below rather than one flat gradient.
+3. **Heat distortion** — a small, capped screen-space UV displacement (`pWarped = p + distortOffset`)
+   masked to a band near the horizon (gaussian falloff, same technique as the existing glow band) and
+   scaled by `fireIntensity`, so it is exactly zero at rest. Applied only to the sampling coordinate
+   for the sky gradient, background-turbine SDF evaluation, and smoke noise sampling — never to the
+   glow band, flame tongues, embers, ground, or foreground turbines, which stay crisp. Background
+   turbines were an explicit named target in the plan ("distant turbines"); their outline now visibly
+   shimmers near the fire at high heat.
+4. **Fire hue path refinement** — flame tongues sample further along the *existing* deep-red/orange/
+   white-orange ramp toward their own tip (`mix(glowColor, glowWhiteOrange, heightT * 0.5 * flameGate)`)
+   rather than introducing a new hue — a nudge in where each tongue samples the established ramp, not
+   a new color family or a flip.
+
+### Iteration on the heat-distortion amplitude (self-correction, not a review failure)
+First pass used `distortAmp = 0.016 * fireIntensity * distortMask`. At heat≈0.9 this bent the thin
+background-turbine silhouettes into a dramatic S-curve — closer to "melting" than "shimmer," and a
+real risk of reading as the "seasick wobble" the plan explicitly warned against, given how large a
+fixed UV offset reads on geometry as thin as the background turbines' own SDF radius. Caught via
+direct screenshot inspection before being reported as a result. Reduced in two steps (0.016 → 0.006 →
+0.0035, each re-verified with a fresh capture) until the background turbines showed a genuine but
+restrained shimmer rather than a pronounced bend — see `screenshots/heat_0.9_distortion_zoom.png` for
+the final, accepted result. This was self-caught-and-fixed during implementation, not a failed
+acceptance iteration requiring an options memo.
+
+### Iteration honesty — temporary debug overrides (both fully reverted)
+Two separate, clearly-tagged temporary edits to `WindTurbineFireScene.cs` were used and then fully
+removed, each confirmed via `grep -c` returning 0 and a final `git diff` on that file showing **zero
+diff from the committed version**:
+1. `TEMPPHASE2CAPTURE` — a `TempForcedHeat` constant that, when ≥0, pinned `_sceneHeat`/`fireDrive` to
+   an exact value every frame, used to capture precise before/after screenshots at heat≈0.2/0.5/0.9
+   without waiting for a real ramp (same technique precedent as Phase 1's mock-heat capture).
+2. `TEMPPHASE2MOTIONCHECK` — a forced `fireDrive = 1.0f` plus a temporary
+   `Tuning.WindTurbineFireEvolutionSeconds = 12f` in `Load()`, used for a `--diagnostic motion` run
+   confirming flame tongues/distortion animate smoothly (not strobing) as heat builds.
+"Before" reference screenshots at the same three heat levels were captured by temporarily swapping in
+the last-committed (pre-Phase-2) `wind_turbine_fire.frag` via `git show HEAD:...` while keeping the
+Phase-2-instrumented `.cs` file, then restoring the Phase 2 shader from a local backup afterward —
+confirmed identical to the working Phase 2 file via the final `git diff`.
+
+### Readability gate (hard acceptance criterion) — PASSED on first full attempt
+Reused the exact warm-pixel-percentage methodology from Phase 1/Lava Lamp v0.2
+(`r > g+15 and r > b+25 and lum > 0.08` = warm) on matched before/after captures at heat≈0.9:
+
+| Capture | warm_pixel_pct | cold_dominant_pct |
+|---|---|---|
+| Before Phase 2 (Phase 1.2 shader, heat 0.9) | 17.59% | 82.41% |
+| After Phase 2 (heat 0.9, final tuned distortion) | 17.67% | 82.33% |
+
+The much richer visual (flame tongues, stronger hot-rim smoke, heat shimmer) moved cold-dominance by
+less than 0.1 percentage point — flame tongues are narrow and mostly land in screen regions that were
+already counted as warm from the existing glow band, so the added richness did not measurably erode
+readability. No iteration was required against this gate; it passed on the first fully-tuned attempt.
+
+### Build/test results
+`dotnet build`: 0 warnings, 0 errors (confirmed after full revert of both temporary debug overrides).
+Motion diagnostic at rest (real, silent audio): T1→T5 mean diff 0.435/255 (5.01% pixels changed),
+T5→T15 0.440/255 (5.29%) — matches Phase 1.2's own baseline almost exactly (5.02%/5.33%), confirming
+zero regression to idle-under-silence turbine rotation/smoke drift. Motion diagnostic under a
+temporary forced-heat ramp: T1→T5 23.90% pixels changed, T5→T15 30.85% — a smooth, monotonically
+increasing flame/glow buildup across t1/t5/t15 (visually confirmed, not just asserted from the
+percentage), not a static or strobing texture. Rest-state visual re-check after all edits and reverts
+confirms turbine embedding, background-turbine opacity, and ember-gated-off-at-rest behavior from
+Phase 1.1/1.2 are all still intact, byte-for-byte visually identical to the pre-Phase-2 rest capture.
+
+### FPS — honest limitation, not a confirmed pass
+Every `--smoke-test` run in this session hit the pre-existing, already-documented "VSync suspended for
+a non-frontmost window" environmental anomaly (see `PROJECT_STATE.md` Entry 21) — absolute fps readings
+in the thousands rather than the ~75fps baseline. Confirmed environmental (not Phase-2-specific) by
+reproducing the identical pattern on LavaLamp (5027 avg fps) and StellarNursery (598 avg fps) in the
+same session. Window-focus workarounds (`osascript` activate, `caffeinate -d`) did not resolve it in
+this environment. Frame-time evidence (WindTurbineFire Safe 0.3ms, same cost tier as LavaLamp's 0.2ms,
+both far cheaper than StellarNursery's 1.7ms raymarch) strongly suggests no meaningful regression —
+0.3ms leaves large headroom under a 13.3ms/75fps budget — but this is reported as a reasoned inference
+from frame-time data, **not** a confirmed vsync-paced ~75fps measurement, per this project's own rule
+against unverified performance claims. Full detail: `logs/fps_evidence.md`.
+
+### Known limitations
+- No valid vsync-paced ~75fps smoke-test reading could be obtained this session (environmental, see
+  above) — flagged honestly rather than asserted or rounded away.
+- Flame-tongue and heat-distortion tuning constants are eyeballed against this pass's own screenshots,
+  not validated against real sustained guitar playing.
+- The distortion-amplitude iteration (0.016 → 0.0035) was caught and self-corrected during
+  implementation, but the final value is still a single-pass tuning choice, not further stress-tested
+  across the full heat range beyond the three sampled points (0.2/0.5/0.9).
+- Explicitly out of scope, as instructed: turbine geometry/embedding changes, camera-consuming fire,
+  ash accumulation, Blender/texture work, any change to Input A/B audio-reactivity routing.
+
+### Screenshot/package path
+`DiagnosticReports/WindTurbineFirePhase2_20260712_201200/`, containing `REPORT.md`, `screenshots/`
+(before/after pairs at heat 0.2/0.5/0.9, a distortion zoom crop, mock-heat motion t1/t5/t15, a final
+rest-state regression check), `logs/` (build, fps evidence + honest limitation writeup, 2 motion
+reports, visual diagnostic report, readability metric script + output), `source_context/`, `git/`
+(diff of `wind_turbine_fire.frag`, confirmation of zero diff on `WindTurbineFireScene.cs`, and the
+explicit World01/World02/Audio/Rendering/Camera/ControlServer/Tuning zero-change scope check).
+
+**Not committed, not pushed** — left uncommitted in the working tree pending review, same as Phase 1.
+
+## Entry 33 — Wind Turbine Fire Design Correction Pass 1 (World03 Phase 2.1)
+
+**Date:** 2026-07-12
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User feedback
+ChatGPT and the user reviewed a screenshot of the current (uncommitted Phase 2) WindTurbineFire scene
+and flagged two design problems: embers read as big, sparse, close-camera foreground particles instead
+of small distant sparks belonging to the fire line; flame tongues read as a row of individually repeated
+cones instead of one continuous distant fire front. A separate design-review pass produced a technically
+grounded corrective spec (real line numbers verified against the file before editing) implemented here.
+
+### Goal
+Correct both problems without a broad scene redesign: fix ember scale/distribution/brightness/motion and
+replace the 5 discrete flame tongues with one continuous fire front, fused into the existing horizon glow
+rather than stacked as a separate layer, while preserving every Phase 1.1/1.2/Phase 2 fix (turbine
+embedding, background-turbine opacity, ember hard-gating, heat distortion scope, composite order).
+
+### What was changed
+Scoped to `wind_turbine_fire.frag` plus a 1-line-pattern C# ember-count change (two call sites) in
+`Engine/CosmicEngine.cs`:
+1. **Embers** — smaller (squared-hash size skew), more numerous (Safe 12->28, High 24->40), clustered near
+   4 hash-derived fire-front locations instead of spread uniformly across the full width, a per-ember
+   brightness power curve (`bMax = pow(hash1(seed+5.0), 2.8)`) so most land dim and only a few are
+   near-full brightness, a smaller/lighter halo, a base-weighted vertical bias with a tightened top fade,
+   a distance/cooling cue (shrink + cool toward deep red as an ember rises), and a ~20% slower drift.
+2. **Flame front** — the 5 discrete, evenly-spaced flame tongues are deleted and replaced by a single
+   continuous scrolling height-field fire front (warped-x FBM height function, soft wide-topped mask,
+   scrolling-FBM "licks" texture on the top edge), fused into the existing horizon glow band as one
+   additive term instead of two stacked layers, with distance contrast inverted from Phase 2 (hot near the
+   base, losing contrast into the sky color toward the tip, rather than whitening at each tongue's tip).
+3. **Smoke/haze** — the horizon band itself is now broken up with FBM sharing noise coordinates with the
+   fire front; a second, near-horizon smoke veil (separate FBM band, differently drifting, opacity 0.30)
+   partially occludes the fire front's top edge, reinforcing "fire behind haze" rather than a crisp cutout.
+`flameGate`/`emberGate` thresholds, heat-distortion scope/amplitude, background-turbine opacity blends,
+turbine embedding (`EMBED_DEPTH`), and composite order are all unchanged — confirmed via diff review.
+
+### Readability gate — passed on first attempt
+Reused Phase 2's exact warm-pixel-percentage methodology and script on matched heat~=0.9 captures:
+
+| Capture | warm_pixel_pct | cold_dominant_pct |
+|---|---|---|
+| Before this pass (Phase 2, heat 0.9) | 17.67% | 82.33% |
+| After this pass (heat 0.9) | 17.04% | 82.96% |
+
+Warm-pixel coverage went slightly *down* despite ~2.3x more embers and a continuous (not discrete) fire
+front — smaller/dimmer embers and the distance-hazed fire front more than offset the added coverage. No
+iteration against this gate was required.
+
+### Build/test results
+`dotnet build`: 0 warnings, 0 errors. All four required smoke tests clean and vsync-paced this session
+(~75fps, no repeat of Phase 2's documented "non-frontmost VSync suspended" environmental anomaly):
+WindTurbineFire Safe avg 74.0fps/min 68.0, WindTurbineFire High avg 74.8fps/min 73.7, StellarNursery Safe
+(seed 777) avg 74.8fps/min 73.6, LavaLamp Safe avg 74.9fps/min 74.8. Motion diagnostic at forced heat 0.9
+confirmed genuine animation (T1->T5 25.50% pixels changed, T5->T15 25.83%) — turbines visibly rotate,
+fire front/embers visibly evolve, not a frozen or strobing texture. Dashboard-only end-to-end transcript:
+idle (no auto-launch) -> `/scenes` lists WindTurbineFire -> launched from dashboard -> fire-evolution
+slider confirmed present in the control panel HTML -> live-switched to StellarNursery (seed 777 applied
+automatically) -> live-switched to LavaLamp -> `/quit` -> zero orphan process (`pgrep`/`lsof` both clean).
+
+### Temporary debug instrumentation (fully reverted)
+A `TEMPFIX01CAPTURE`-style temporary override (`WindTurbineFireScene.TempForcedHeat`, same technique
+precedent as Phase 2's `TEMPPHASE2CAPTURE`) was used to pin heat to exact values (0.5, 0.9) for
+deterministic before/after screenshot capture via `--diagnostic visual`/`--diagnostic motion`, then fully
+removed — confirmed via `grep -c TEMPFIX01CAPTURE` returning 0 and a final `git diff` on
+`WindTurbineFireScene.cs` showing **zero diff** from the committed version.
+
+### Known limitations
+- No true volumetric smoke yet (the new smoke veil is still a 2D FBM band, not volumetric).
+- Heat distortion already exists from Phase 2 (`distortAmp=0.0035`) — left untouched, not a limitation of
+  this pass; noted here only because a boilerplate limitations list would otherwise misstate it as absent.
+- No camera-consuming fire, no Blender/Hunyuan3D assets, not final fire art, no OptiPlex/actual
+  show-hardware validation yet — all explicitly out of scope for this pass, same as Phase 1/Phase 2.
+- All new tuning constants (cluster count/spread, brightness power curve, fire-front height/mask weights,
+  smoke veil opacity) are eyeballed against this pass's own screenshots at forced heat levels, not
+  validated against a real sustained guitar-driven heat ramp.
+
+### Screenshot/package path
+`DiagnosticReports/WindTurbineFireDesignFix01_20260712_211410/`, containing `REPORT.md`, `screenshots/`
+(before/after full-frame + warm/hot fire-line + ember/flame-line closeups + before/after side-by-side +
+t1/t5/t15 motion frames + StellarNursery/LavaLamp regression references), `logs/` (build, all 4 smoke
+tests, 4 diagnostic-visual runs, 1 diagnostic-motion run, dashboard-only transcript, readability metric
+script + output), `source_context/`, `git/` (diff of `wind_turbine_fire.frag` and `CosmicEngine.cs`,
+confirmation of zero diff on `WindTurbineFireScene.cs`), `audit/` — zipped as
+`WindTurbineFireDesignFix01_20260712_211410.zip`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending review, same as Phase 1/2.

@@ -180,15 +180,23 @@ a slow-building ember-glow horizon) that only warms as sustained musical energy 
 Explicitly Phase 1 only — flame tongues, heat distortion, camera-consume, and textures are deferred
 to a future phase, tracked here rather than as a numbered P1-P6 item:
 
-### Wind Turbine Fire Phase 2 (future)
-- Flame-tongue geometry at the horizon glow (beyond the current flat glow-band + smoke-underlight
-  trick), heat-distortion/refraction over the glow band, a "camera-consume" effect at peak heat
-  (not yet designed), and real-guitar validation of the full multi-minute `uSceneHeat` timescale
-  (Phase 1's evidence used a temporary, fully-reverted mock-peak/accelerated-rise-rate build — see
-  `AUDIT.md` Entry 30 — since a real 3-5 minute sustained-play ramp doesn't fit this project's
-  bounded-run discipline).
-- Artistic tuning of `EmberCount`/`HeatRisePerSecondAtFullDrive`/`HeatDecayPerSecond` and the
-  glow/smoke color ramps against real playing dynamics, once real audio is available.
+### Wind Turbine Fire Phase 2 (implemented, uncommitted — see `AUDIT.md` Entry 32)
+Flame-tongue geometry at the horizon glow, heat-distortion/refraction over the glow band, and a
+second "hot rim" smoke-underlighting term were implemented in Phase 2. A "camera-consume" effect at
+peak heat remains not yet designed/implemented. Real-guitar validation of the full multi-minute
+`uSceneHeat` timescale is still outstanding (Phase 1/2's evidence both used a temporary, fully-reverted
+mock-peak/accelerated-rise-rate build, since a real 3-5 minute sustained-play ramp doesn't fit this
+project's bounded-run discipline). Artistic tuning of `EmberCount`/`HeatRisePerSecondAtFullDrive`/
+`HeatDecayPerSecond` and the glow/smoke color ramps against real playing dynamics is also still
+outstanding, once real audio is available.
+
+### Wind Turbine Fire Design Correction Pass 1 (implemented, uncommitted — see `AUDIT.md` Entry 33)
+A ChatGPT/user screenshot review of Phase 2 flagged embers reading as big/sparse/foreground-feeling and
+flame tongues reading as a row of individually repeated cones rather than one continuous fire front.
+Both corrected: embers reworked (smaller, clustered near the fire line, brightness-power-curved, base-
+weighted); the 5 discrete flame tongues replaced by a single continuous scrolling height-field fire
+front fused into the horizon glow band. Camera-consume, real-guitar timescale validation, and further
+artistic tuning against real playing dynamics remain outstanding, same as noted above.
 
 ## Note — Scene Dashboard added (2026-07-06)
 
