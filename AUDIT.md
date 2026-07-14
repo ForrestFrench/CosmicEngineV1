@@ -2895,3 +2895,175 @@ File scope: `wind_turbine_fire.frag` only (temporary capture-only edit to `WindT
 and fully reverted, confirmed empty diff) - folded into this same uncommitted Phase 3 working-tree state.
 Not committed, not pushed, per standing rule. Reviewer sign-off left blank, not self-signed, same as the
 passes above.
+
+## Entry 40 — Underwater Phase 1 v0.1 (World04 prototype)
+
+**Date:** 2026-07-13
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+Implement Phase 1 (atmosphere prototype only — no jellyfish, tentacles, silhouettes, or refraction warp;
+all explicitly deferred to a later phase) of an approved architect plan for a fourth world, "Underwater /
+Jellyfish / Caustic Light" (`World04`). Same shader-only, fullscreen-quad architecture family as Lava
+Lamp / Wind Turbine Fire: no mesh pipeline, no new engine infrastructure. Creative target: a dark, cool
+three-zone water column — dim green-teal light entry near the top, desaturated slate-blue midwater,
+near-black blue-violet abyss — lit by slow-swaying analytic god rays, upper-water caustic shimmer, and
+marine-snow particulate that visibly glints as it drifts through the light shafts, never a flat blue wash.
+
+### Files changed
+- `Worlds/World04_Underwater/UnderwaterScene.cs` (new) — `IWorld` implementation, structurally modeled on
+  `WindTurbineFireScene.cs`: relative `ShaderPath()` helper, `Tuning.*`-based smoothed audio fields at
+  smoothing 0.60 (vs. WTF's 0.40, per the brief's explicit "must respond slower/more languidly"
+  direction), the Entry-27 calibrated-additive pattern, a continuous `_bloom` 0-1 accumulator whose
+  rise/decay mechanics are copied mechanically from `_sceneHeat`, and `public static int ParticleCount`
+  mirroring `WindTurbineFireScene.EmberCount`. Guitar 1/Input A ("Creator") drives light through an added
+  asymmetric attack (0.5s)/release (2.6s) envelope before it reaches the shader or feeds bloom
+  accumulation — a deliberate anti-twitchiness design goal specified in the brief, not incidental polish.
+  Guitar 2/Input B ("Sculptor") drives current speed/turbulence, mirroring WTF's `smokeTurbulence` shape.
+- `Worlds/World04_Underwater/Shaders/underwater.vert` (new) — identical to `lava_lamp.vert` (the standard
+  fullscreen-quad passthrough vert used by every scene).
+- `Worlds/World04_Underwater/Shaders/underwater.frag` (new) — three-zone vertical water gradient with
+  low-frequency horizontal noise variation; 4 analytic god rays (angular soft-edged bands, per-ray FBM
+  intensity modulation, slow asymmetric two-frequency sway, exponential depth attenuation dying out
+  before the bottom third); caustic shimmer (two independently scrolling ridged-noise layers multiplied
+  together, masked to the upper third and modulated by local ray intensity); 2 FBM haze/murk layers with
+  domain-warped lateral current drift; a fixed-loop (`MAX_PARTICLES = 64`, runtime-capped by
+  `uParticleCount`) marine-snow particle layer applying the Entry-33 ember lessons directly (squared-hash
+  size skew, `pow(hash,2.8)` brightness skew, 3-incommensurate-sine wander, two implicit depth tiers via
+  a single correlated hash), with each particle's brightness multiplied by the god-ray intensity sampled
+  at its own position so particles glint inside light shafts and nearly vanish elsewhere; a hard-gated
+  bioluminescent-mote shimmer at `uBloom > 0.6` (zero baseline, Phase 2 foreshadowing only); and a final
+  grade/vignette pass with a readability guard (`exposure = 0.92 + 0.08*uBloom`).
+- `Engine/SceneRegistry.cs` — added `Underwater` `SceneDefinition` (Id `Underwater`, DisplayName
+  "Underwater", Status "Prototype v0.1", DefaultProfile "Safe", Showable `true`, `ShowSeed` null),
+  appended to `All`.
+- `Engine/CosmicEngine.cs` — one-line profile knob at both existing `WindTurbineFireScene.EmberCount`
+  sites: `UnderwaterScene.ParticleCount = _profile.Name == "High" ? 56 : 36;`.
+- `Tuning.cs` — added `UnderwaterEvolutionSeconds = 240f`, mirroring `WindTurbineFireEvolutionSeconds`'s
+  comment style.
+- `ControlServer.cs` — added the matching `/set` case (`Math.Clamp(val, 30f, 300f)`), a `/values` field,
+  and an HTML "Bloom Evolution Time" slider (min 30/max 300/step 1) in its own labeled sub-section,
+  reusing the existing `formatEvolutionSeconds()` mm:ss display helper.
+- `CLAUDE.md` — updated the Architecture section's world list. Found it stale while reading it first (as
+  instructed): it still said "Two worlds exist" and never mentioned World03 (Wind Turbine Fire), despite
+  Entries 30-39 already existing for it. Brought it up to date with both the missing World03 line and the
+  new World04 line, since "alongside the other three" (the brief's own phrasing) only makes sense once
+  three worlds are actually listed.
+- `Worlds/World01_StellarNursery/`, `Worlds/World02_LavaLamp/`, `Worlds/World03_WindTurbineFire/`,
+  `Audio/*`, `Rendering/*`, `Camera.cs`, `DashboardHost.cs`, launch scripts, `CosmicEngine.App.csproj` —
+  **zero diff**, confirmed via `git status`/`git diff`.
+
+### Mid-pass defect found and fixed (iteration honesty)
+The first shader draft's rest-state screenshot was far too dim to read as underwater — direct screenshot
+inspection (not just the numeric motion-diagnostic percentages) showed god rays present in the geometry
+but nearly invisible, no caustics or particles registering at normal viewing brightness. Root-caused by
+walking the actual attenuation math, not by guessing: the ray origin sat at `p.y=0.78`, well above the
+visible top of frame (`p.y~0.5`), so `exp(-along*3.0)` had already consumed most of a ray's brightness
+before it ever entered frame. Compounded by marine-snow particle sizes that worked out to well under 2px
+radius at the 1280x720 base render resolution — effectively invisible sub-pixel dots in a static
+screenshot. Fixed by moving the ray origin to `p.y=0.60` (just above the visible top edge), widening the
+ray band and raising ray/caustic/particle brightness multipliers, and roughly tripling particle size.
+Re-verified with a fresh rest-state capture showing clearly visible, independently-swaying god rays with
+small bright particles glinting where they cross a ray's footprint — the capture used as the official
+rest-state evidence below is this corrected one, not the original dim draft. This was one iteration
+against the project's "two real attempts before escalating" governance rule (rule 10/13) — the corrected
+result passed the honest acceptance check (reads underwater, genuinely dark-dominant, particles read as
+suspended matter not dust, not flat blue) on this second attempt, so no options memo was needed.
+
+### Iteration honesty — temporary debug overrides, both fully reverted
+Two separate, clearly-tagged temporary edits were used and then fully removed (not just disabled),
+matching this project's established `TempForcedHeat`/`TEMPPHASE2CAPTURE`-style precedent:
+1. `TEMPMOCKBLOOMCAPTURE` — a `TempForcedBloom` static field plus a one-line override in `Update()`
+   forcing `_bloom`/`_lightEnvelope` to a fixed value, and a one-line `Load()` override set to 0.1/0.5/1.0
+   in turn across three separate builds, used to capture bloom-progression evidence without waiting
+   through a real multi-minute ramp. Confirmed fully reverted via `grep -c TEMPMOCKBLOOMCAPTURE
+   UnderwaterScene.cs` returning 0 and a clean rebuild.
+2. `TEMPEVOSLIDERCHECK` — a forced `lightDriveRaw = 1.0f` plus a per-frame console log of `_bloom` and
+   `Tuning.UnderwaterEvolutionSeconds`, combined with a temporary `Tuning.cs` default change (240→30),
+   used to quantitatively verify the evolution-time slider. Confirmed fully reverted via `grep -c
+   TEMPEVOSLIDERCHECK UnderwaterScene.cs Tuning.cs` returning 0 on both files and a clean rebuild/final
+   smoke test.
+
+### Build result
+`dotnet build`: 0 warnings, 0 errors (confirmed on the final, fully-reverted code).
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `--world Underwater --profile Safe --smoke-test` | avg fps 74.9, min observed 74.6, clean exit |
+| `--world Underwater --profile High --smoke-test` | avg fps 74.9, min observed 74.7, clean exit |
+| `--world StellarNursery --seed 777 --profile Safe --smoke-test` (regression) | avg fps 74.8, clean exit |
+| `--world LavaLamp --profile Safe --smoke-test` (regression) | avg fps 75.1, clean exit |
+| `--world WindTurbineFire --profile Safe --smoke-test` (regression) | avg fps 74.8, clean exit |
+| `--world Underwater --profile Safe --diagnostic motion` (real audio, silence) | T1→T5 mean diff 0.563/255 (7.35% pixels changed), T5→T15 mean diff 0.829/255 (12.59% pixels changed) — confirms genuine motion (ray sway, particle drift, caustic scroll), not frozen |
+| `--world Underwater --profile Safe --diagnostic visual` | rest-state reference frame captured, clearly showing swaying god rays and glinting particles |
+| Dashboard-only end-to-end transcript | fresh `--dashboard-only` start → `/scenes` lists Underwater → launched as first scene from a fresh start → test pulse Input A raised `calibratedA` 0→0.70 → cleared → test pulse Input B raised `calibratedB` 0→0.55 independently → cleared → live switch to LavaLamp confirmed via `/status` → `/quit` → zero orphan process (`pgrep`/`lsof` both clean) |
+
+`pgrep`/`lsof` checked clean after every bounded run and after the dashboard-only session's quit. **One
+pre-existing orphaned `--dashboard-only` process (started before this session, unrelated to this pass) was
+found squatting on port 8080 at the very start of testing and was cleaned up so bounded tests could run** —
+logged here honestly rather than silently worked around.
+
+### Concurrent-edit note
+This pass ran concurrently with a separate session fixing stale Wind Turbine Fire documentation in
+`PROJECT_STATE.md`/`IMPLEMENTATION_LOG.md`/`ROADMAP.md`. Before each edit to those three files, current
+`git diff` was re-checked; the other session's content (commit-status corrections to Entries 33/34/39) was
+found stable/unchanged across every check and was left completely untouched — this pass's World04 content
+was appended alongside it in each file, not merged into or over it. No actual line-level conflict occurred.
+
+### Evolution-slider verification
+Forced `lightDriveRaw=1.0` (`TEMPEVOSLIDERCHECK`, fully reverted after this test), bloom logged every
+frame, compared at t=10.00s: `Tuning.UnderwaterEvolutionSeconds=240` (default) → bloom=0.0396; `=30`
+(slider minimum) → bloom=0.3169. Ratio 0.3169/0.0396 = **8.00x**, exactly matching the expected 240/30 =
+8x speedup (same methodology as Entry 31's WindTurbineFireEvolutionSeconds precedent).
+
+### Warm-pixel/cold-dominance metric
+Computed via the existing `compute_metrics.py` (unchanged from the Wind Turbine Fire evidence packages,
+`r > g+15 and r > b+25 and lum > 0.08` = warm):
+- **Rest-state capture:** 0.00% warm pixels → **100.00% cold-dominant**.
+- **Forced-mock-bloom=1.0 capture (worst case for readability):** 0.00% warm pixels → **100.00%
+  cold-dominant**, confirming the readability guard holds and this scene never reads as warm/orange —
+  unlike Wind Turbine Fire, this is intended to be an all-cool-palette scene throughout.
+
+### Performance
+Mac mini M4 Pro (this machine only — no claim made about any other hardware): Underwater Safe 74.9 avg
+fps / High 74.9 avg fps, closely matching StellarNursery Safe (74.8), LavaLamp Safe (75.1), and
+WindTurbineFire Safe (74.8) captured in the same session — no measurable performance cost from adding this
+scene, and no regression to any existing scene. Single-run readings per command, consistent with this
+project's existing smoke-test evidence pattern for prototype passes (not a `--diagnostic perf-sweep`
+multi-run distribution — flagged as a known limitation below).
+
+### Showability decision
+**Showable prototype: yes**, as a Phase 1 atmosphere prototype. Genuinely cold/dark-dominant at rest and
+at forced full bloom (confirmed quantitatively, 0% warm pixels in both), genuine idle-under-silence
+motion (god-ray sway, particle drift, caustic scroll — nothing gates to black/frozen), particles read as
+glinting suspended matter rather than static lens dust via the ray-intensity-at-position mechanic,
+readability guard holds even at forced worst-case bloom. Not final art polish — see known limitations.
+
+### Known limitations
+- Phase 1 scope only, as instructed: no jellyfish, tentacles, silhouettes, or refraction warp — all
+  explicitly deferred to a future phase.
+- No real-guitar validation of the full multi-minute bloom timescale; bloom-progression evidence uses the
+  temporary, fully-reverted forced-mock technique described above.
+- Single-run smoke-test fps readings, not a `--diagnostic perf-sweep` distribution.
+- All brightness/size/attenuation tuning constants (ray width/falloff, particle size, caustic strength)
+  are a first-pass eyeball tuning against this pass's own screenshots — including one caught-and-fixed
+  under-brightness defect (see above) — not validated against real sustained playing.
+- The marine-snow particle glint uses a cheaper band+attenuation-only ray-intensity sample than the main
+  on-screen ray render (no per-particle FBM modulation), a deliberate cost/quality tradeoff to keep up to
+  64 particles × 4 rays bounded on cost — documented in the shader's own comments.
+- Motion-diagnostic pixel-change percentages (7.35%/12.59%) are healthy but were only checked against this
+  scene's own before/after iteration, not cross-compared numerically against other worlds' baselines.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterV01_20260713_175640/`, containing `REPORT.md`, `screenshots/` (rest-state
+reference, mock-bloom 0.1/0.5/1.0, motion diagnostic T1/T5/T15, a zoomed crop showing a particle glinting
+inside a god ray), `logs/` (build, all smoke test outputs, motion/visual diagnostic reports, the
+dashboard-only transcript, the evolution-slider verification numbers, the warm-pixel metric script +
+output), `source_context/`, `git/` (status, diff, explicit zero-change confirmation for every existing
+world and every file outside the intended extension-point list), zipped as
+`UnderwaterV01_20260713_175640.zip`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending review, same as every other
+scene pass in this project.

@@ -382,6 +382,11 @@ namespace CosmicEngine.App
                         case "WindTurbineFireEvolutionSeconds":
                             Tuning.WindTurbineFireEvolutionSeconds = Math.Clamp(val, 30f, 300f);
                             break;
+                        // World04 Underwater (Phase 1): same defensive clamp pattern
+                        // as WindTurbineFireEvolutionSeconds above.
+                        case "UnderwaterEvolutionSeconds":
+                            Tuning.UnderwaterEvolutionSeconds = Math.Clamp(val, 30f, 300f);
+                            break;
                     }
                 }
 
@@ -402,7 +407,8 @@ namespace CosmicEngine.App
                     Tuning.TrebleMax,
                     Tuning.BassBrightness,
                     Tuning.DimLevel,
-                    Tuning.WindTurbineFireEvolutionSeconds
+                    Tuning.WindTurbineFireEvolutionSeconds,
+                    Tuning.UnderwaterEvolutionSeconds
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -566,6 +572,10 @@ namespace CosmicEngine.App
 <p style='color:#666;font-size:12px'>How long sustained loud playing takes to fully evolve the Wind Turbine Fire scene (World03) from cold/calm to fully hot. Only affects that one scene — set it to match your song length.</p>
 <div class='row'><label>Fire Evolution Time</label><input type='range' id='WindTurbineFireEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='WindTurbineFireEvolutionSeconds_v'></span></div>
 
+<h3>UNDERWATER — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
+<p style='color:#666;font-size:12px'>How long sustained light drive takes to fully bloom the Underwater scene (World04) from calm/dark to fully bloomed. Only affects that one scene — set it to match your song length.</p>
+<div class='row'><label>Bloom Evolution Time</label><input type='range' id='UnderwaterEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='UnderwaterEvolutionSeconds_v'></span></div>
+
 </div>
 
 <div id='tab-calibration' class='tab-panel'>
@@ -688,7 +698,8 @@ const defaults = {
   Smoothing: 0.40, BassFloor: 0.08, MidFloor: 0.004, TrebleFloor: 0.001,
   BassMax: 35, MidMax: 12, TrebleMax: 0.4,
   BassBrightness: 1.20, DimLevel: 0.20,
-  WindTurbineFireEvolutionSeconds: 240
+  WindTurbineFireEvolutionSeconds: 240,
+  UnderwaterEvolutionSeconds: 240
 };
 
 const sliders = document.querySelectorAll('input[type=range]');
@@ -708,6 +719,10 @@ function formatEvolutionSeconds(totalSeconds) {
   return s + 's (' + m + ':' + String(rem).padStart(2, '0') + ')';
 }
 const evolutionSlider = document.getElementById('WindTurbineFireEvolutionSeconds');
+// World04 Underwater (Phase 1): reuses the same formatEvolutionSeconds mm:ss
+// display helper as the Wind Turbine Fire slider above, registered as its
+// own extra listener the same way.
+const underwaterEvolutionSlider = document.getElementById('UnderwaterEvolutionSeconds');
 
 sliders.forEach(s => {
   s.addEventListener('input', () => {
@@ -723,6 +738,13 @@ if (evolutionSlider) {
   });
 }
 
+if (underwaterEvolutionSlider) {
+  underwaterEvolutionSlider.addEventListener('input', () => {
+    document.getElementById('UnderwaterEvolutionSeconds_v').textContent =
+      formatEvolutionSeconds(underwaterEvolutionSlider.value);
+  });
+}
+
 function resetDefaults() {
   sliders.forEach(s => {
     if (defaults[s.id] !== undefined) {
@@ -734,6 +756,10 @@ function resetDefaults() {
   if (evolutionSlider) {
     document.getElementById('WindTurbineFireEvolutionSeconds_v').textContent =
       formatEvolutionSeconds(evolutionSlider.value);
+  }
+  if (underwaterEvolutionSlider) {
+    document.getElementById('UnderwaterEvolutionSeconds_v').textContent =
+      formatEvolutionSeconds(underwaterEvolutionSlider.value);
   }
 }
 
@@ -747,6 +773,10 @@ fetch('/values').then(r => r.json()).then(vals => {
   if (evolutionSlider && vals.WindTurbineFireEvolutionSeconds !== undefined) {
     document.getElementById('WindTurbineFireEvolutionSeconds_v').textContent =
       formatEvolutionSeconds(evolutionSlider.value);
+  }
+  if (underwaterEvolutionSlider && vals.UnderwaterEvolutionSeconds !== undefined) {
+    document.getElementById('UnderwaterEvolutionSeconds_v').textContent =
+      formatEvolutionSeconds(underwaterEvolutionSlider.value);
   }
 });
 

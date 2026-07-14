@@ -33,5 +33,16 @@ namespace CosmicEngine.App
         // unless the user moves the slider. Harmless no-op for every other
         // scene, same as LavaLampScene.BlobCount/WindTurbineFireScene.EmberCount.
         public static float WindTurbineFireEvolutionSeconds = 240f;
+
+        // World04 Underwater (Phase 1): how many seconds of sustained light
+        // drive it takes uBloom to reach fully "bloomed" - lets the user
+        // match the scene's evolution to a song's actual length via the
+        // dashboard slider (UnderwaterScene.Update() reads this every frame,
+        // clamped defensively to [30,300] even if something outside the
+        // slider's own clamping sets it out of range). Default 240s (4 min),
+        // same default as WindTurbineFireEvolutionSeconds. Harmless no-op
+        // for every other scene, same as WindTurbineFireEvolutionSeconds/
+        // WindTurbineFireScene.EmberCount.
+        public static float UnderwaterEvolutionSeconds = 240f;
     }
 }

@@ -1,6 +1,7 @@
 using CosmicEngine.App.Worlds.World01;
 using CosmicEngine.App.Worlds.World02;
 using CosmicEngine.App.Worlds.World03;
+using CosmicEngine.App.Worlds.World04;
 using System;
 
 namespace CosmicEngine.App.Engine
@@ -73,8 +74,21 @@ namespace CosmicEngine.App.Engine
             Factory        = camera => new WindTurbineFireScene(camera)
         };
 
+        public static readonly SceneDefinition Underwater = new()
+        {
+            Id             = "Underwater",
+            DisplayName    = "Underwater",
+            Description    = "Shader-only underwater water column - god rays, caustic shimmer, and marine snow drifting through the light.",
+            Status         = "Prototype v0.1",
+            DefaultProfile = "Safe",
+            Showable       = true,
+            ThumbnailPath  = null,
+            ShowSeed       = null,
+            Factory        = camera => new UnderwaterScene(camera)
+        };
+
         /// <summary>Every registered scene, in display order. First entry is the default.</summary>
-        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire };
+        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire, Underwater };
 
         public const string DefaultSceneId = "StellarNursery";
 

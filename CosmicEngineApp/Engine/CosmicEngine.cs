@@ -3,6 +3,7 @@ using CosmicEngine.App.Rendering;
 using CosmicEngine.App.Worlds.World01;
 using CosmicEngine.App.Worlds.World02;
 using CosmicEngine.App.Worlds.World03;
+using CosmicEngine.App.Worlds.World04;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
@@ -356,6 +357,11 @@ namespace CosmicEngine.App.Engine
             // few big foreground dots; Safe kept <= 32 per house convention.
             WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 40 : 28;
 
+            // Underwater Phase 1 v0.1: profile-aware particle count (harmless
+            // no-op unless Underwater is the active world), same pattern as
+            // WindTurbineFireScene.EmberCount above.
+            UnderwaterScene.ParticleCount = _profile.Name == "High" ? 56 : 36;
+
             // Dashboard Show Seed Support: only fills in when the user didn't already
             // ask for a specific seed via CLI --seed - explicit intent always wins.
             if (!_explicitSeedProvided)
@@ -532,6 +538,9 @@ namespace CosmicEngine.App.Engine
                 // Phase 2.1 corrective: see the matching comment above (Load()) -
                 // same 28/40 values, mirrored here for dashboard-driven live switches.
                 WindTurbineFireScene.EmberCount = _profile.Name == "High" ? 40 : 28;
+                // Underwater Phase 1 v0.1: same pattern, mirrored here for
+                // dashboard-driven live switches.
+                UnderwaterScene.ParticleCount = _profile.Name == "High" ? 56 : 36;
             }
 
             if (worldChanged)

@@ -218,7 +218,7 @@ Documentation-only investigation, no source file changed in the final state: roo
 Audio"), not a real guitar interface — confirmed via live forced-heat evidence that the shader/scene render
 fire correctly when actually driven. Committed together with Refinement Pass 2.
 
-### Wind Turbine Fire Phase 3: turbine/geometry improvement (implemented, uncommitted — see `AUDIT.md` Entry 39)
+### Wind Turbine Fire Phase 3: turbine/geometry improvement (committed `81e58fa` — see `AUDIT.md` Entry 39)
 The next phase of the originally-approved plan, now that fire/smoke has had three committed passes.
 De-stiffens the turbines without touching fire/embers/smoke/distortion/ground-embedding/background-opacity/
 the evolution slider/audio mapping: (1) blade motion blur — 3 angle samples around the current rotor angle,
@@ -226,7 +226,10 @@ averaged, ramping in with `uWindDrive` (already-existing uniform, none added) ab
 (2) subtle tower flex — the tower is now a 3-segment tapered-capsule chain that picks up a small, height-
 increasing horizontal offset plus a slow per-turbine sway at high wind, returning fully upright at low
 wind; (3) nacelle detail — a secondary capsule (tail/generator-housing stub) plus a subtle top-lit/
-underside-shaded tint local to the nacelle's own footprint, foreground turbines only; (4)/(5) parallax +
+underside-shaded tint local to the nacelle's own footprint, foreground turbines only, was also built and
+initially shipped, but a same-day rendering sliver artifact was found and fixed, and the feature was then
+removed entirely per user feedback ("looks cheap") — the nacelle is a plain flat-black capsule, unchanged
+from before this phase; (4)/(5) parallax +
 haze grading — the farther background turbine nudged smaller/higher/hazier relative to the nearer one,
 widening a previously narrow depth-separation gap, still comfortably under the transparency-bug ceiling
 Phase 1.2 established. Confined entirely to `wind_turbine_fire.frag` — zero diff on `WindTurbineFireScene.cs`
@@ -236,8 +239,18 @@ several discrete "ghost" blade positions at high wind rather than one perfectly 
 the cheap single-pass approximation this architecture requires (no render-to-texture history buffer for
 true accumulation), not a bug. No Blender/mesh work performed or newly required — that decision remains
 deferred to a future review cycle only if turbines still fail visual review after this shader-only pass.
-Camera-consume and real-guitar timescale validation remain outstanding, same as noted above. **Not
-committed, not pushed — left uncommitted in the working tree pending review.**
+Camera-consume and real-guitar timescale validation remain outstanding, same as noted above. **Committed
+as `81e58fa`.**
+
+## Note — fourth world added, Underwater Phase 1 v0.1 (2026-07-13)
+
+A fourth `IWorld` implementation, `World04_Underwater` (Underwater Phase 1 v0.1, see `AUDIT.md`), was
+added alongside this P1-P6 sequence and alongside the Wind Turbine Fire (World03) passes above — a
+standalone scene addition (Phase 1 of a separately-approved architect plan), not part of the P1-P6
+sequence. Phase 1 is deliberately an atmosphere-only prototype: a dark, cool three-zone water column,
+analytic god rays, caustic shimmer, drifting haze, and marine-snow particulate. Jellyfish, tentacles,
+silhouettes, and refraction warp are all explicitly deferred to a later phase. Does not change the phase
+order above; Stellar Nursery visual polish is still parked pending P3/P4/P5 as described.
 
 ## Note — Scene Dashboard added (2026-07-06)
 
