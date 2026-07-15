@@ -57,7 +57,34 @@ uniform float uJellyPhase0;
 uniform float uJellyPhase1;
 uniform float uJellyPhase2;
 
+// Phase 1 "Living Water" (fresh architect plan, post Phase 3): C#-integrated
+// jellyfish drift position/depth (UnderwaterScene.cs's JellyDriftState) -
+// position now comes from here instead of being derived purely from hash
+// constants inside renderJelly(), for the identical reason phase already is
+// (the drift rate is current-driven and therefore time-varying). Paired
+// floats, combined into vec2 in renderJelly()'s caller below, rather than a
+// vec2 uniform - ShaderProgram.cs has no SetVector2 and adding one would be
+// an infra change riding inside this shader-art pass (governance rule 12).
+uniform float uJellyPos0X, uJellyPos0Y;
+uniform float uJellyPos1X, uJellyPos1Y;
+uniform float uJellyPos2X, uJellyPos2Y;
+uniform float uJellyDepth0; // 0 (far) .. 1 (near)
+uniform float uJellyDepth1;
+uniform float uJellyDepth2;
+
+// Phase 1 "Living Water": Engine/Camera.cs's already-running Offset,
+// forwarded here (paired floats, same reason as uJellyPos* above) and
+// applied as a per-layer parallax shift in main() - see the parallax
+// comment there for the per-layer multipliers.
+uniform float uCameraOffsetX;
+uniform float uCameraOffsetY;
+
+// Phase 1 "Living Water": profile-scaled plankton bloom-field count - see
+// main()'s plankton section.
+uniform int uPlanktonCount;
+
 const int MAX_PARTICLES = 64;
+const int MAX_PLANKTON  = 140;
 const int RAY_COUNT = 4;
 
 // Jellyfish Tentacle Rescue Pass 1 (round 6, AUDIT.md Entry 41 - see
@@ -319,31 +346,32 @@ float jellyPulse(float phase) {
 }
 
 // Renders one jellyfish directly into `color` (additive/mix in place).
-// `idx` picks this jellyfish's hash-derived placement/size (no C# state
-// needed for that - only phase requires true time integration, see above).
-// `hazeCombined`/`hazeDensity` are the Phase 1 haze values already computed
-// at this pixel in main() - read (not recomputed) so a jellyfish behind
-// heavier haze visibly recedes, per the plan's "reads as embedded in the
-// water column" requirement.
+// `idx` picks this jellyfish's hash-derived bell/tentacle *character* (bell
+// proportions, tentacle count/bend/etc. - unchanged, still hash-seeded, no
+// C# state needed for that). `jellyPos`/`depthNorm` are Phase 1 "Living
+// Water" additions - C#-integrated drift position and depth (see
+// UnderwaterScene.cs's JellyDriftState), replacing the old purely-hash-
+// derived-per-frame position below. `hazeCombined`/`hazeDensity` are the
+// Phase 1 (atmosphere) haze values already computed at this pixel in main() -
+// read (not recomputed) so a jellyfish behind heavier haze visibly recedes,
+// per the plan's "reads as embedded in the water column" requirement.
+//
+// Translation invariance (Phase 1 "Living Water" regression guard): every
+// subsequent line in this function derives its shape/motion only from
+// `local = p - jellyPos`, `seed`, `phase`, `depthScale` (size), and the haze
+// params above - never from `jellyPos` itself again after this point. Moving
+// `jellyPos` therefore only ever translates the rendered result; it cannot
+// change the tentacle/bell's own shape or quality. This is what makes
+// swapping a hash-derived static position for a moving C#-integrated one
+// safe without touching any of the six rounds of tentacle-rescue work below.
 void renderJelly(inout vec3 color, vec2 p, float idx, float phase,
-                  float hazeCombined, float hazeDensity) {
+                  float hazeCombined, float hazeDensity,
+                  vec2 jellyPos, float depthNorm) {
     float seed = idx * 41.7 + 5.0;
 
-    float depthScale   = mix(0.78, 1.16, hash1(seed + 1.0));
-    float baseX        = mix(-0.60, 0.60, hash1(seed + 2.0));
-    float baseY        = mix(-0.05, 0.24, hash1(seed + 3.0));
-    float wobblePhase  = hash1(seed + 4.0) * 6.2831;
+    float depthScale = mix(0.50, 1.15, clamp(depthNorm, 0.0, 1.0));
 
     vec2 jellySize = vec2(0.116, 0.080) * depthScale;
-
-    // Current-driven wander (bounded, not a one-shot traversal that would
-    // need wraparound) - amplitude/speed both track uCurrentDrive/
-    // uCurrentTurbulence, satisfying "drift laterally with the current".
-    vec2 jellyPos = vec2(
-        baseX + (0.05 + 0.10 * uCurrentDrive) * sin(uTime * (0.05 + 0.03 * uCurrentTurbulence) + wobblePhase)
-              + uCurrentDrive * 0.05 * sin(uTime * 0.021 + wobblePhase * 3.1),
-        baseY + 0.02 * sin(uTime * 0.09 + wobblePhase * 1.7)
-    );
 
     float contraction = jellyPulse(phase);
     vec2  local = p - jellyPos;
@@ -374,8 +402,11 @@ void renderJelly(inout vec3 color, vec2 p, float idx, float phase,
 
     // Depth/haze occlusion - reuses the Phase 1 haze already computed at
     // this pixel (no new haze layer) plus a per-jellyfish distance term, so
-    // farther jellyfish read as receding into the water column.
-    float distFactor = clamp((1.16 - depthScale) / 0.38, 0.0, 1.0);
+    // farther jellyfish read as receding into the water column. distFactor's
+    // range was recalibrated (Phase 1 "Living Water") to match depthScale's
+    // new 0.50-1.15 range (was 0.78-1.16, tied to the old static per-jelly
+    // hash) - same 0 (near, full clarity) .. 1 (far, most occluded) meaning.
+    float distFactor = clamp((1.15 - depthScale) / 0.65, 0.0, 1.0);
     float occlusion  = (1.0 - hazeCombined * hazeDensity * 0.5) * mix(1.0, 0.55, distFactor);
 
     // Controlled translucency: bell interior mixes 35-50% back toward
@@ -692,42 +723,88 @@ void main() {
     // Positive p.y = up for every constant below (matches wind_turbine_fire.frag's convention).
     p.y = -p.y;
 
+    // --- Camera parallax (Phase 1 "Living Water") -----------------------------
+    // Engine/Camera.cs's Offset - a slow, layered sine/cosine drift, already
+    // updated every frame by the engine loop regardless of which world reads
+    // it - was previously unused by this scene (see UnderwaterScene.cs's
+    // constructor). Applied here purely as a per-layer coordinate-space
+    // shift (no rotation, no zoom - this should read as slow current drift,
+    // not a moving cinematic camera) so depth planes visibly drift at
+    // different rates, the standard parallax cue that background layers sit
+    // physically farther away than foreground ones. Multipliers, farthest to
+    // nearest:
+    //   water gradient                 0.2x  - the most distant backdrop
+    //   rays/caustics                   0.5x
+    //   haze/murk                        0.7x
+    //   particles/plankton/jellyfish  1.0x (unscaled) - the "near" reference
+    //     layer every other multiplier above is judged relative to.
+    //
+    // Perf note (honest, measured - not assumed): the un-refracted per-layer
+    // parallax bases are intentionally not kept as separate named locals -
+    // only their already-refracted forms below are sampled, so this avoids
+    // 3 unused-past-this-point vec2s. Tried this specifically as a candidate
+    // fix for a synthetic worst-case measurement (a temporary, since-removed
+    // debug override forcing all 3 jellyfish to maximum depth/size and
+    // clustered on-screen simultaneously - not a realistic case, since
+    // independent per-lap hashing rarely puts all 3 there at once) that
+    // showed High profile at 60.1-62.6fps avg across several 3-run sets
+    // under that specific extreme - within margin of the mandatory 60fps
+    // floor. Measured before/after:
+    // this collapse made no measurable difference (confirmed further by
+    // forcing uCameraOffset to a hardcoded zero under the same worst case,
+    // which also made no measurable difference) - the GLSL compiler was
+    // already eliminating the dead intermediates, unlike the tentacle loop's
+    // own genuine two-pass-vs-merged regression (AUDIT.md Entry 41 addendum
+    // 6's "optimization 3"). Kept anyway as a harmless readability
+    // simplification, not a performance claim. The real driver of that
+    // worst-case number was not isolated further this pass - see the
+    // mandatory performance section of this pass's evidence for the actual
+    // measured numbers (both the realistic, unforced smoke test, which is
+    // the pass/fail criterion, and this documented synthetic-extreme
+    // boundary case).
+    vec2 uCameraOffset = vec2(uCameraOffsetX, uCameraOffsetY);
+    vec2 pNear = p - uCameraOffset;
+
     // --- Foreground refraction warp (Phase 3, AUDIT.md Entry 43) -------------
     // A gentle, always-on screen-space UV displacement suggesting looking
     // through moving water, applied ONLY to the diffuse/background layers
-    // below (water gradient, god rays, caustics, haze) via pRefract - the
-    // two-tier lesson this project already learned on Wind Turbine Fire's
-    // heat-distortion fix (AUDIT.md Entry 34) and flagged again in Entry 41's
-    // own risk notes: a uniform full-strength warp applied to a thin curved
-    // structural silhouette reads as a wobble, not a shimmer. This pass takes
-    // the conservative end of that lesson rather than a tapered partial warp -
-    // jellyfish/tentacles below are rendered against the ORIGINAL, unwarped
-    // `p`, never pRefract, i.e. full exclusion, not a smaller-amplitude
+    // below (water gradient, god rays, caustics, haze) - the two-tier lesson
+    // this project already learned on Wind Turbine Fire's heat-distortion fix
+    // (AUDIT.md Entry 34) and flagged again in Entry 41's own risk notes: a
+    // uniform full-strength warp applied to a thin curved structural
+    // silhouette reads as a wobble, not a shimmer. This pass takes the
+    // conservative end of that lesson rather than a tapered partial warp -
+    // jellyfish/tentacles/particles/plankton below are rendered against
+    // pNear (parallax-shifted but never refraction-warped), i.e. full
+    // exclusion from refraction specifically, not a smaller-amplitude
     // version - per this phase's own explicit guidance to prefer excluding
     // them outright over risking any regression to the six-round tentacle
-    // rescue (Entry 41 addenda 1-6). Marine-snow particles and bioluminescent
-    // motes are also left on unwarped `p` - they already have their own
-    // procedural drift and are outside this phase's named scope (water
-    // gradient/haze/rays only). Amplitude derives from the already-existing
-    // uCurrentDrive/uCurrentTurbulence uniforms (no new uniform needed) so
-    // refraction visibly intensifies with water motion; a small baseline
-    // keeps it never fully zero, matching this file's existing "nothing goes
-    // fully static at rest" convention (rays/haze/particles all already do
-    // this).
+    // rescue (Entry 41 addenda 1-6). Amplitude derives from the
+    // already-existing uCurrentDrive/uCurrentTurbulence uniforms (no new
+    // uniform needed) so refraction visibly intensifies with water motion; a
+    // small baseline keeps it never fully zero, matching this file's
+    // existing "nothing goes fully static at rest" convention. Phase 1
+    // "Living Water": each layer's parallax multiplier and the shared
+    // refraction offset are combined in one step (see the perf note above)
+    // so parallax and refraction still compose exactly as before, just
+    // without a separate un-refracted intermediate per layer.
     float refractAmp = 0.0030 + 0.0026 * uCurrentTurbulence + 0.0012 * uCurrentDrive;
     vec2  refractOffset = vec2(
         sin(p.y * 16.0 + uTime * 1.35),
         cos(p.x * 13.0 - uTime * 1.05)
     ) * refractAmp;
-    vec2  pRefract = p + refractOffset;
+    vec2  pRefractWater        = p - uCameraOffset * 0.2 + refractOffset;
+    vec2  pRefractRaysCaustics = p - uCameraOffset * 0.5 + refractOffset;
+    vec2  pRefractHaze         = p - uCameraOffset * 0.7 + refractOffset;
 
     // depthT: 0 at the very top of frame (light entry), 1 at the very
     // bottom (abyss). Perturbed with low-frequency horizontal noise so the
-    // three-zone gradient is never a flat ramp. Sampled against pRefract
-    // (Phase 3) so the water-column gradient itself carries the refraction
-    // shimmer.
-    float depthT = clamp(0.5 - pRefract.y, 0.0, 1.0);
-    float depthNoise = (fbm2(vec2(pRefract.x * 1.1 + 3.0, uTime * 0.015), 2) - 0.5) * 0.12;
+    // three-zone gradient is never a flat ramp. Sampled against pRefractWater
+    // (Phase 3 refraction + Phase 1 parallax, water gradient's own 0.2x
+    // layer) so the water-column gradient carries both the refraction
+    // shimmer and its own (subtle) parallax drift.
+    float depthT = clamp(0.5 - pRefractWater.y, 0.0, 1.0);
+    float depthNoise = (fbm2(vec2(pRefractWater.x * 1.1 + 3.0, uTime * 0.015), 2) - 0.5) * 0.12;
     float depthTN = clamp(depthT + depthNoise, 0.0, 1.0);
 
     // --- Three-zone vertical water gradient ------------------------------
@@ -741,8 +818,10 @@ void main() {
     // --- God rays ----------------------------------------------------------
     // Brightness = time-only baseline (alive under silence) + uLightDrive
     // lift + uBloom lift, so rays never disappear entirely at rest. Sampled
-    // against pRefract (Phase 3) - see refraction-warp comment above.
-    float rf = rayField(pRefract);
+    // against pRefractRaysCaustics (Phase 3 refraction + Phase 1 parallax,
+    // rays/caustics' own 0.5x layer) - see refraction-warp/parallax comments
+    // above.
+    float rf = rayField(pRefractRaysCaustics);
     float rayBrightnessMul = 0.55 + 0.65 * uLightDrive + 0.45 * uBloom;
     vec3  rayColorDeep  = vec3(0.16, 0.48, 0.50);
     vec3  rayColorBloom = vec3(0.48, 0.90, 0.62);
@@ -761,32 +840,69 @@ void main() {
     // so peak brightness at full ray strength stays close to the original
     // (1.35^1.6 =~ 1.62 vs the old flat 1.6), i.e. this redistributes where
     // the energy concentrates rather than adding new energy to the frame.
-    // Noise UVs and the ray-strength sample both use pRefract (Phase 3) so
-    // caustics and the rays they pool inside stay visually locked together
-    // under the same warp rather than drifting apart.
+    // Noise UVs and the ray-strength sample both use pRefractRaysCaustics
+    // (Phase 3 refraction + Phase 1 parallax) so caustics and the rays they
+    // pool inside stay visually locked together under the same warp/
+    // parallax layer rather than drifting apart.
     float causticTopMask = 1.0 - smoothstep(0.0, 0.34, depthTN);
-    vec2  cUV1 = pRefract * 6.0 + vec2(uTime * 0.06, -uTime * 0.03);
-    vec2  cUV2 = pRefract * 7.4 + vec2(-uTime * 0.045, uTime * 0.07);
+    vec2  cUV1 = pRefractRaysCaustics * 6.0 + vec2(uTime * 0.06, -uTime * 0.03);
+    vec2  cUV2 = pRefractRaysCaustics * 7.4 + vec2(-uTime * 0.045, uTime * 0.07);
     float cn1 = vnoise2(cUV1);
     float cn2 = vnoise2(cUV2);
     float ridge1 = pow(1.0 - abs(2.0 * cn1 - 1.0), 2.2);
     float ridge2 = pow(1.0 - abs(2.0 * cn2 - 1.0), 2.2);
     float caustic = ridge1 * ridge2;
-    float rayStrength = rayEnvelope(pRefract);
+    float rayStrength = rayEnvelope(pRefractRaysCaustics);
     float causticLocalRay = pow(clamp(rayStrength * 1.3, 0.0, 1.35), 1.6);
     float causticMask = causticTopMask * causticLocalRay;
     vec3  causticColor = vec3(0.30, 0.68, 0.56);
     color += causticColor * caustic * causticMask * (0.45 + 0.55 * uLightDrive + 0.40 * uBloom) * 0.85;
 
+    // --- Bloom-arc bands (Phase 1 "Living Water") -----------------------------
+    // uBloom (0-1, already established by Phase 1/2/3 as a single continuous
+    // accumulator - see UnderwaterScene.cs) now drives named, documented
+    // behavior bands across every layer in this scene coherently - the same
+    // "continuous scalar with named tuning ranges" pattern already
+    // established by Wind Turbine Fire's Calm/Ignition/Burn, not a separate
+    // state machine or code path per band:
+    //   Deep Calm                 (0.00-0.20): current low, plankton
+    //     essentially absent, rays/caustics faint, jellyfish drift only.
+    //   Bioluminescent Awakening  (0.20-0.45): plankton begins appearing
+    //     sparse, glow intensity rising.
+    //   Current Build             (0.45-0.70): current/drift rate rises
+    //     noticeably, plankton density increases, ray/caustic energy rises.
+    //   Bloom Event                (0.70-1.00): plankton at full density
+    //     with visible streaming/pulsing character, peak caustic shimmer,
+    //     richest overall energy - but still dark-dominant per this scene's
+    //     established readability guard (final exposure/vignette below is
+    //     unchanged by this pass - still only a modest 0.92-1.00 nudge).
+    // Ray/caustic brightness already scale continuously with uBloom via the
+    // rayBrightnessMul/causticColor multipliers above (Phase 1/3) - that
+    // already satisfies "ray/caustic energy rises" through Current
+    // Build/Bloom Event with no new code needed. currentDriveArc below is
+    // this pass's one new piece: a small additive current-drive lift, layered
+    // on top of (never replacing) uCurrentDrive's own audio-driven value,
+    // that builds through Current Build and peaks at Bloom Event - used by
+    // haze/marine-snow/plankton drift so "current visibly picks up" is a
+    // real, shared, cross-layer effect rather than a single layer's trick.
+    float bloomCurrentLift = smoothstep(0.45, 0.70, uBloom) * 0.18 + smoothstep(0.70, 1.0, uBloom) * 0.12;
+    float currentDriveArc  = clamp(uCurrentDrive + bloomCurrentLift, 0.0, 1.4);
+
     // --- Haze/murk: FBM layers with domain-warped lateral current drift ----
     // Baseline drift never zero even at rest; denser/darker toward the
-    // bottom. Built from pRefract (Phase 3), composing with this layer's own
+    // bottom. Built from pRefractHaze (Phase 3 refraction + Phase 1
+    // parallax, haze's own 0.7x layer), composing with this layer's own
     // pre-existing hazeWarp domain-warp exactly as before - two independent
     // warps stacking harmlessly since both are gentle/low-amplitude.
-    vec2  hazeWarp = vec2(fbm2(pRefract * 0.6 + vec2(0.0, uTime * 0.015), 2) * 0.35, 0.0);
-    float driftBase = 0.015 + 0.09 * uCurrentDrive;
-    vec2  hazeUV1 = (pRefract + hazeWarp) * 1.4 + vec2(uTime * driftBase, uTime * 0.006);
-    vec2  hazeUV2 = (pRefract + hazeWarp) * 2.3 + vec2(-uTime * driftBase * 0.7, -uTime * 0.009);
+    // driftBase uses currentDriveArc (Phase 1 "Living Water" bloom-arc
+    // remapping, defined below with the other bloom-band terms just before
+    // this layer needs it) rather than raw uCurrentDrive, so haze drift is
+    // part of the same "current visibly picks up through Current Build"
+    // mechanic as the plankton/marine-snow drift.
+    vec2  hazeWarp = vec2(fbm2(pRefractHaze * 0.6 + vec2(0.0, uTime * 0.015), 2) * 0.35, 0.0);
+    float driftBase = 0.015 + 0.09 * currentDriveArc;
+    vec2  hazeUV1 = (pRefractHaze + hazeWarp) * 1.4 + vec2(uTime * driftBase, uTime * 0.006);
+    vec2  hazeUV2 = (pRefractHaze + hazeWarp) * 2.3 + vec2(-uTime * driftBase * 0.7, -uTime * 0.009);
     float haze1 = fbm2(hazeUV1, 3);
     float haze2 = fbm2(hazeUV2, 2);
     float hazeCombined = clamp(haze1 * 0.6 + haze2 * 0.4, 0.0, 1.0);
@@ -794,15 +910,18 @@ void main() {
     vec3  hazeTint = vec3(0.010, 0.018, 0.032);
     color = mix(color, hazeTint, hazeCombined * hazeDensity * 0.55);
 
-    // --- Jellyfish (Phase 2) -------------------------------------------------
+    // --- Jellyfish (Phase 2, drift path added Phase 1 "Living Water") --------
     // Inserted here, after background/haze but before the nearer marine-snow
     // particulate tier, matching physical depth order - jellyfish are
     // embedded in the water column behind the particulate matter drifting
-    // in front of everything. 3 mid-distance forms, each with its own
-    // C#-integrated pulse phase (see UnderwaterScene.cs).
-    renderJelly(color, p, 0.0, uJellyPhase0, hazeCombined, hazeDensity);
-    renderJelly(color, p, 1.0, uJellyPhase1, hazeCombined, hazeDensity);
-    renderJelly(color, p, 2.0, uJellyPhase2, hazeCombined, hazeDensity);
+    // in front of everything. 3 drifting forms, each with its own
+    // C#-integrated pulse phase AND (new) drift position/depth (see
+    // UnderwaterScene.cs's JellyDriftState). Rendered against pNear - full
+    // camera parallax (the "near" reference layer, per the parallax comment
+    // above) but never refraction-warped, per Phase 3's own exclusion rule.
+    renderJelly(color, pNear, 0.0, uJellyPhase0, hazeCombined, hazeDensity, vec2(uJellyPos0X, uJellyPos0Y), uJellyDepth0);
+    renderJelly(color, pNear, 1.0, uJellyPhase1, hazeCombined, hazeDensity, vec2(uJellyPos1X, uJellyPos1Y), uJellyDepth1);
+    renderJelly(color, pNear, 2.0, uJellyPhase2, hazeCombined, hazeDensity, vec2(uJellyPos2X, uJellyPos2Y), uJellyDepth2);
 
     // --- Marine-snow particles -----------------------------------------------
     // Fixed loop capped by uParticleCount, applying the Entry-33 ember
@@ -838,7 +957,11 @@ void main() {
         float y = mix(topY, bottomY, cyc); // continuous slow sink, wraps at cycle end
 
         float baseX  = mix(-0.9, 0.9, hash1(seed + 4.0));
-        float driftX = (0.05 + 0.35 * uCurrentDrive) * cyc; // baseline drift never zero
+        // driftX uses currentDriveArc (Phase 1 "Living Water" bloom-arc
+        // remapping, defined above) rather than raw uCurrentDrive, so marine
+        // snow drift is part of the same "current visibly picks up through
+        // Current Build" cross-layer mechanic as haze/plankton.
+        float driftX = (0.05 + 0.35 * currentDriveArc) * cyc; // baseline drift never zero
 
         // 3 incommensurate sine perturbations - never a straight line.
         float turb = 0.03  * sin(t * 2.7 + seed)
@@ -846,7 +969,10 @@ void main() {
                    + 0.010 * sin(t * 1.3 + seed * 2.9);
 
         vec2 particlePos = vec2(baseX + driftX + turb * (0.5 + uCurrentTurbulence), y);
-        float dist = length(p - particlePos);
+        // Phase 1 "Living Water": marine snow is a "near" reference-depth
+        // layer (full 1.0x camera parallax, see the parallax comment above)
+        // - distance measured against pNear, not raw p.
+        float dist = length(pNear - particlePos);
 
         float bMax = pow(hash1(seed + 5.0), 2.8);
         float brightness = bMax * mix(0.6, 1.0, tier);
@@ -866,31 +992,96 @@ void main() {
         color += particleColor * brightness * smoothstep(sizePx, 0.0, dist) * 2.0;
     }
 
-    // --- Bioluminescent motes (Phase 2 foreshadowing only, no creature shapes) ---
-    // Ember-style hard gating: zero baseline, absent entirely at rest, only
-    // appears as bloom rises above ~0.6.
-    float moteGate = smoothstep(0.60, 0.85, uBloom);
-    if (moteGate > 0.001) {
-        const int MOTE_COUNT = 10;
-        for (int i = 0; i < MOTE_COUNT; i++) {
+    // --- Bioluminescent plankton bloom (Phase 1 "Living Water") --------------
+    // A small, cheap point/glow field, distinct from the marine-snow
+    // particle system above (smaller, dimmer, more numerous - bioluminescent
+    // plankton, not suspended debris) whose visible density/brightness IS the
+    // scene's evolution mechanic named by the bloom-arc bands above, not
+    // decoration layered on top of an already-evolving scene. Supersedes
+    // Phase 1 (original atmosphere pass)'s "Bioluminescent motes" stub, which
+    // was explicitly documented as foreshadowing-only placeholder with "no
+    // creature shapes" - this is that placeholder's real implementation,
+    // built to the bloom-arc spec instead of a single flat on/off gate.
+    //
+    // Applies every Entry-33 lesson already proven on this file's own
+    // marine-snow layer: squared-hash size skew toward small, pow(hash,~2.6)
+    // brightness skew so most are dim, current-coupled drift (currentDriveArc
+    // - the same bloom-arc-boosted current vector as haze/marine-snow, for
+    // motion coherence across layers), two implicit depth tiers via one
+    // correlated hash driving size/speed/brightness together.
+    //
+    // Per-plankton appearance is staggered across the whole bloom arc (not a
+    // single global on/off) via apThresh - each plankton "switches on" at
+    // its own hashed point along bloomNorm, so the field visibly *builds*
+    // through Awakening/Current Build rather than snapping on as a block;
+    // brightness itself also keeps rising with bloomNorm (mix(0.35,1.0,...))
+    // so Bloom Event reads as richer, not just more numerous. streamBoost/
+    // pulseAmt add the "visible streaming/pulsing character" named
+    // specifically for Bloom Event (0.70-1.00) on top of the density/
+    // brightness ramp shared with the earlier bands.
+    //
+    // Entirely wrapped in an early bloomNorm gate so the loop's *cost*, not
+    // just its visible output, is skipped during Deep Calm - this is what
+    // keeps this layer "essentially absent" in that band cheap as well as
+    // dark, and keeps the added per-frame cost budget-conscious overall
+    // (point/glow math only, no SDF curve evaluation like the tentacles).
+    float bloomNorm = clamp((uBloom - 0.20) / 0.80, 0.0, 1.0); // 0 at Deep Calm's end, 1 at full Bloom Event
+    if (bloomNorm > 0.001) {
+        for (int i = 0; i < MAX_PLANKTON; i++) {
+            if (i >= uPlanktonCount) break;
+
             float fi   = float(i);
-            float seed = fi * 29.3 + 2.0;
+            float seed = fi * 23.71 + 11.0;
 
-            float t   = uTime * 0.07 + hash1(seed) * 10.0;
-            float mx  = mix(-0.85, 0.85, hash1(seed + 1.0)) + 0.05 * sin(t * 2.0 + seed);
-            float my  = mix(0.40, -0.40, hash1(seed + 2.0)) + 0.05 * sin(uTime * 0.3 + seed);
-            vec2  motePos = vec2(mx, my);
-            float dist = length(p - motePos);
+            float apThresh = hash1(seed + 15.0) * 0.85; // spreads turn-on across most of the arc, a few always-early ones
+            float apGate   = smoothstep(apThresh, apThresh + 0.12, bloomNorm);
+            if (apGate < 0.003) continue;
 
-            float pulse = 0.5 + 0.5 * sin(uTime * 1.3 + seed * 3.0);
-            float sizeM = 0.0016;
+            float tier = hash1(seed + 9.0);
 
-            vec3 moteColor = mix(vec3(0.35, 0.85, 0.75), vec3(0.55, 0.78, 0.95), hash1(seed + 3.0));
-            // Violet nudge only at very high bloom - a nudge, never a hue flip.
-            moteColor = mix(moteColor, vec3(0.55, 0.35, 0.75), smoothstep(0.8, 1.0, uBloom) * 0.15);
+            float sizeHash = hash1(seed + 1.0);
+            sizeHash *= sizeHash; // squared skew toward small
 
-            float brightnessM = moteGate * pulse * smoothstep(sizeM, 0.0, dist);
-            color += moteColor * brightnessM * 0.8;
+            float lifeSpeed = mix(0.010, 0.030, tier) * (0.9 + 0.2 * hash1(seed + 2.0));
+            float t   = uTime * lifeSpeed + hash1(seed + 3.0) * 20.0;
+            float cyc = fract(t);
+
+            float topY = 0.55, bottomY = -0.55;
+            float y = mix(topY, bottomY, cyc);
+
+            float baseX = mix(-0.9, 0.9, hash1(seed + 4.0));
+            // Streaming character intensifies specifically through Bloom
+            // Event, per the named band above.
+            float streamBoost = 1.0 + 1.4 * smoothstep(0.70, 1.0, uBloom);
+            float driftX = (0.04 + 0.30 * currentDriveArc) * cyc * streamBoost;
+
+            float turb = 0.025 * sin(t * 3.1 + seed)
+                       + 0.014 * sin(t * 6.7 - seed * 1.3)
+                       + 0.008 * sin(t * 1.6 + seed * 2.9);
+
+            vec2 planktonPos = vec2(baseX + driftX + turb * (0.5 + uCurrentTurbulence), y);
+            // Same "near" reference-depth layer as marine snow/jellyfish
+            // (full 1.0x camera parallax, see the parallax comment above).
+            float dist = length(pNear - planktonPos);
+
+            float bMax = pow(hash1(seed + 5.0), 2.6);
+            // Pulsing character, also specifically a Bloom Event trait -
+            // near-static outside that band.
+            float pulseAmt = smoothstep(0.70, 1.0, uBloom) * 0.35;
+            float pulse = (1.0 - pulseAmt) + pulseAmt * (0.5 + 0.5 * sin(uTime * 1.6 + seed * 3.1));
+
+            float brightness = bMax * mix(0.5, 1.0, tier) * apGate * pulse
+                              * mix(0.35, 1.0, bloomNorm); // glow intensity itself rises through the arc, not just count/density
+
+            vec3 planktonColor = mix(vec3(0.40, 0.90, 0.72), vec3(0.68, 0.95, 0.80), tier);
+            // Violet nudge only at very high bloom - reuses the same rule
+            // established for rim glow/marine-snow-adjacent layers - a
+            // nudge, never a hue flip.
+            planktonColor = mix(planktonColor, vec3(0.55, 0.35, 0.75), smoothstep(0.85, 1.0, uBloom) * 0.12);
+
+            float sizePx = mix(0.0010, 0.0030, sizeHash) * mix(0.7, 1.2, tier);
+
+            color += planktonColor * brightness * smoothstep(sizePx, 0.0, dist) * 1.6;
         }
     }
 

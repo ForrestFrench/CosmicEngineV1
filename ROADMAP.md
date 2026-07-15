@@ -252,6 +252,14 @@ analytic god rays, caustic shimmer, drifting haze, and marine-snow particulate. 
 silhouettes, and refraction warp are all explicitly deferred to a later phase. Does not change the phase
 order above; Stellar Nursery visual polish is still parked pending P3/P4/P5 as described.
 
+**Update (2026-07-15):** jellyfish/tentacles (Phase 2, `AUDIT.md` Entry 41 and addenda) and a foreground
+refraction warp (Phase 3, `AUDIT.md` Entry 43, committed `bfcf82a`) have since been added. A fresh
+architect plan's own "Phase 1" ("Living Water" — drifting jellyfish, camera parallax, plankton bloom,
+`AUDIT.md` Entry 44, not yet committed) has also resolved the Camera-consume item noted elsewhere as
+outstanding for this world specifically — `Engine/Camera.cs` is now genuinely read/used by
+`UnderwaterScene`, though other worlds (Stellar Nursery/Lava Lamp/Wind Turbine Fire) still do not consume
+it. Silhouettes remain deferred; not reopened.
+
 ## Note — Scene Dashboard added (2026-07-06)
 
 A local Scene Dashboard (Scene Dashboard v0.1, see `AUDIT.md` Entry 15), served by the existing

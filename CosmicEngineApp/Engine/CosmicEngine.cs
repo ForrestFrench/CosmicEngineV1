@@ -362,6 +362,11 @@ namespace CosmicEngine.App.Engine
             // WindTurbineFireScene.EmberCount above.
             UnderwaterScene.ParticleCount = _profile.Name == "High" ? 56 : 36;
 
+            // Phase 1 "Living Water": profile-aware plankton bloom-field
+            // count, same pattern/knob site as ParticleCount immediately
+            // above (harmless no-op unless Underwater is the active world).
+            UnderwaterScene.PlanktonCount = _profile.Name == "High" ? 90 : 50;
+
             // Dashboard Show Seed Support: only fills in when the user didn't already
             // ask for a specific seed via CLI --seed - explicit intent always wins.
             if (!_explicitSeedProvided)

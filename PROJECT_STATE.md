@@ -2,7 +2,7 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-14 (Underwater Phase 3 v0.1 — caustic/ray polish + foreground refraction warp, not yet committed, see `AUDIT.md` Entry 43)
+**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 — drifting jellyfish, plankton bloom, camera parallax, "Abyssal Bloom" rename, not yet committed, see `AUDIT.md` Entry 44; Phase 3 from the prior session is now committed as `bfcf82a`)
 
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
@@ -149,7 +149,7 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   on macOS's managed HttpListener implementation under port contention). Added retry-with-backoff and a
   clear actionable error message. Scoped entirely to `ControlServer.cs`'s `Start()` method — see
   `AUDIT.md` Entry 42 for full detail.
-- **Underwater Phase 3 v0.1 (Entry 43, this pass, not yet committed):** caustic/ray interaction polish
+- **Underwater Phase 3 v0.1 (Entry 43, committed `bfcf82a`):** caustic/ray interaction polish
   (ray edge softening via a wider/dimmer halo Gaussian, a softer depth-attenuation curve, and a sharpened
   power-curve concentration of caustic energy specifically inside ray interiors rather than a flat
   upper-water band) plus a subtle, always-on foreground refraction warp on the water gradient/rays/
@@ -168,6 +168,28 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   ordinary run-to-run timing jitter, not a code effect) — backed by the architectural guarantee that
   `renderJelly()` and its three call sites never reference the warped coordinate (confirmed via `grep`).
   See `AUDIT.md` Entry 43 for full detail, including the reviewer sign-off (pending, left blank).
+  **Committed as `bfcf82a`** (Phase 0 of the Phase 1 "Living Water" session below), not pushed.
+- **Underwater Phase 1 "Living Water" v0.1 (Entry 44, this pass, not yet committed):** converts the
+  previously screen-fixed jellyfish (Phase 2) into drifting inhabitants of an evolving environment, directly
+  answering the user's "jellyfish just sit there" complaint. Jellyfish position/depth is now C#-integrated
+  drift-path state (`UnderwaterScene.cs`'s `JellyDriftState`) instead of a static hash — each jellyfish
+  crosses the frame edge-to-edge over ~90-150s (current-biased, depth-biased speed), wrapping to a freshly
+  re-hashed depth/vertical-wander shape each crossing, staggered so at most one is ever fully off-frame at
+  once (verified by construction). Depth now drives scale (0.50-1.15x)/haze-occlusion/speed. The previously
+  fully-unused `Camera` class is now wired up as a per-layer parallax shift (water 0.2x, rays/caustics 0.5x,
+  haze 0.7x, particles/plankton/jellyfish 1.0x). A new bioluminescent plankton bloom-field layer (cheap
+  point/glow, distinct from marine snow) supersedes the old "foreshadowing only" bioluminescent-motes stub,
+  hard-gated by named bloom-arc bands (Deep Calm/Bioluminescent Awakening/Current Build/Bloom Event) that
+  now drive plankton density/brightness/streaming character plus a shared current-drive lift across haze/
+  marine-snow/plankton. `SceneRegistry.cs`'s `Underwater` entry renamed to "Abyssal Bloom" (display only,
+  `Id` unchanged). Mandatory translation-invariance regression check passed (architectural guarantee + a
+  matched-condition capture pair, residual diff traced to ordinary sub-pixel anti-aliasing on thin tentacle
+  lines, not shape distortion). Performance: found and verified (via controlled `git stash` A/B, not
+  assumed) a real, code-attributable High-profile improvement over the Phase-0 baseline (67.7-67.9fps →
+  74.7-75.0fps final, 5-run); also found, investigated, and honestly disclosed a synthetic worst-case
+  boundary (~60-62fps under an adversarial forced-clustering scenario) without chasing further optimization
+  once realistic operation was confirmed comfortably clear of the 60fps floor. See `AUDIT.md` Entry 44 for
+  full detail, including the reviewer sign-off (pending, left blank).
   **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
 
 ## P1 Acceptance Criteria (RenderScale + Live/Safe Profiles + FPS Variance Evidence) — STATUS: implemented, evidence gathered, awaiting review

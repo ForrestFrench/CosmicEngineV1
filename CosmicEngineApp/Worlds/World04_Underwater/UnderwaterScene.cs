@@ -62,6 +62,30 @@ namespace CosmicEngine.App.Worlds.World04
     /// rate = "B makes it move" (Input B / Sculptor), pulse/rim brightness =
     /// "A makes it glow" (Input A / Creator), per this project's established
     /// convention - both already-existing signals, no new audio plumbing.
+    ///
+    /// Phase 1 "Living Water" (fresh architect plan, post committed Phase 3):
+    /// converts the previously screen-fixed jellyfish into drifting
+    /// inhabitants of an evolving environment. Jellyfish position moves from
+    /// purely hash-derived (fixed forever) to C#-integrated drift-path state
+    /// (_jellyDrift below) for the identical reason pulse phase already is -
+    /// the drift rate is current-driven (Input B) and therefore time-varying.
+    /// Each jellyfish continuously crosses the visible frame edge-to-edge
+    /// over roughly 90-150s, wrapping to a freshly re-hashed depth/vertical-
+    /// wander shape each crossing; the 3 jellyfish's crossing phases are
+    /// staggered by construction so at most one is ever fully off-frame at
+    /// once (see the class-level comment on JellyEdgeX for the arithmetic).
+    /// Depth also now drives scale, haze-occlusion, and drift speed (near =
+    /// bigger/faster/clearer, far = smaller/slower/hazier - standard
+    /// parallax), read by the shader from uJellyDepth0/1/2 instead of a
+    /// static per-jellyfish hash. The previously-unused `Camera` (see
+    /// `Engine/Camera.cs`) is now actually consumed here - its already-
+    /// running Offset is forwarded as uCameraOffsetX/Y and applied as a
+    /// per-layer parallax shift in the shader (water/rays/caustics/haze get
+    /// smaller multipliers, particles/plankton/jellyfish the full amount) -
+    /// see underwater.frag's main() for the parallax wiring. A new plankton
+    /// bloom-field layer (uPlanktonCount, profile-scaled like ParticleCount)
+    /// and the bloom-arc-band remapping are implemented entirely in
+    /// underwater.frag - see that file's header for the full design.
     /// </summary>
     public class UnderwaterScene : IWorld
     {
@@ -114,6 +138,13 @@ namespace CosmicEngine.App.Worlds.World04
         // GLSL caps the fixed loop, this just picks how many of it run.
         public static int ParticleCount = 36;
 
+        // Phase 1 "Living Water": profile-scaled plankton bloom-field count
+        // (Safe/High set by CosmicEngine.cs alongside ParticleCount above) -
+        // MAX_PLANKTON in the GLSL caps the fixed loop. Distinct from
+        // ParticleCount (marine snow, unmodified) - see underwater.frag's
+        // plankton section for why a separate, cheaper layer was used.
+        public static int PlanktonCount = 60;
+
         // Phase 2: per-jellyfish pulse phase, continuously wrapping in [0,1).
         // Initial offsets are hand-picked (not hashed) purely so the 3
         // jellyfish start visibly out of sync with each other from frame 1
@@ -128,12 +159,75 @@ namespace CosmicEngine.App.Worlds.World04
         private const float JellyRateMul1 = 0.87f;
         private const float JellyRateMul2 = 1.14f;
 
+        // --- Phase 1 "Living Water": jellyfish drift paths -------------------
+        // Per-jellyfish state for the C#-integrated horizontal "lap" crossing
+        // plus an independent vertical wander, mirroring the exact reasoning
+        // already established for _jellyPhase0/1/2 above: the crossing RATE
+        // is current-driven (Input B) and therefore time-varying, so a
+        // shader-side uTime*rate would not correctly integrate it.
+        //
+        // LapPhase sweeps 0->1 across one off-frame-to-off-frame horizontal
+        // crossing (JellyEdgeX is well outside the visible frame half-width
+        // of ~0.89, so both ends of a lap sit off-frame - the wrap at 1->0 is
+        // therefore never visible, not a teleport). Reaching 1.0 re-hashes
+        // this jelly's depth (near/far), vertical-wander shape, and next
+        // lap's duration from a per-lap seed that increments every wrap, so
+        // consecutive laps never repeat identically. YPhase is a fully
+        // independent, slower wrap driving vertical wander only.
+        //
+        // Direction is fixed per jellyfish for the whole session (hand-picked
+        // like the pulse-phase offsets, not re-hashed) so a lap's "opposite
+        // side" re-entry falls out naturally from the phase wrap alone, with
+        // no direction-reversal logic needed.
+        //
+        // Off-frame-window arithmetic (why "at most one fully off-frame at a
+        // time" holds by construction, not luck): each lap's off-frame
+        // fraction is 2*(JellyEdgeX - 0.89) / (2*JellyEdgeX) ~= 0.152 of the
+        // full lap, centered on this jelly's own LapPhase wrap point (0/1
+        // boundary). With crossing-phase offsets staggered 0.05 / 0.40 / 0.75
+        // (gaps of 0.35, hand-picked below, same spirit as the pulse-phase
+        // offsets), the three ~0.152-wide off-frame windows land at
+        // [0.974,1]u[0,0.126], [0.324,0.476], [0.674,0.826] - none overlap,
+        // with >=0.12 of headroom at every boundary.
+        private const float JellyEdgeX = 1.05f;          // off-frame X bound each lap starts/ends at (visible frame half-width ~0.89)
+        private const float JellyBaseLapSeconds = 120f;  // lap-duration range center (90-150s target)
+        private const float JellyLapJitterSeconds = 30f; // +/- range around the base, re-hashed every lap
+        private const float JellyMinLapSeconds = 70f;    // hard floor so a current spike can't collapse a lap
+        private const float JellyMaxLapSeconds = 170f;   // hard ceiling so a quiet current can't stall a lap
+
+        private struct JellyDriftState
+        {
+            public float LapPhase;   // 0-1, wraps - horizontal crossing progress
+            public float YPhase;     // 0-1, wraps - independent vertical wander
+            public int   LapSeed;    // increments every lap wrap, feeds the per-lap hash
+            public float Direction;  // +1 = drifts left->right, -1 = right->left (fixed per jelly)
+            public float Depth;      // 0 (far) .. 1 (near), re-hashed every lap
+            public float YCenter;    // this lap's vertical-wander center, re-hashed every lap
+            public float YAmp;       // this lap's vertical-wander amplitude, re-hashed every lap
+            public float YFreqMul;   // this lap's vertical-wander frequency multiplier, re-hashed every lap
+            public float LapSeconds; // this lap's duration, re-hashed every lap (clamped 70-170s)
+            public float PosX;       // resolved this frame in UpdateJellyDrift(), read by Render()
+            public float PosY;
+        }
+
+        private JellyDriftState _jellyDrift0 = new() { LapPhase = 0.05f, YPhase = 0.15f, LapSeed = 101, Direction =  1f };
+        private JellyDriftState _jellyDrift1 = new() { LapPhase = 0.40f, YPhase = 0.55f, LapSeed = 202, Direction = -1f };
+        private JellyDriftState _jellyDrift2 = new() { LapPhase = 0.75f, YPhase = 0.85f, LapSeed = 303, Direction =  1f };
+
         private static string ShaderPath(string file) =>
             System.IO.Path.Combine("Worlds", "World04_Underwater", "Shaders", file);
 
         public UnderwaterScene(Camera camera)
         {
             _camera = camera;
+
+            // Resolve each jelly's first lap (depth/vertical-wander shape/
+            // duration) immediately so frame 1 doesn't render with a
+            // zeroed-out default Depth/YAmp before the first wrap (which
+            // could otherwise be 90-150s away).
+            ReseedLap(ref _jellyDrift0, 0);
+            ReseedLap(ref _jellyDrift1, 1);
+            ReseedLap(ref _jellyDrift2, 2);
         }
 
         public void Load()
@@ -199,6 +293,15 @@ namespace CosmicEngine.App.Worlds.World04
             _jellyPhase0 = Wrap01(_jellyPhase0 + jellyPulseHz * JellyRateMul0 * deltaTime);
             _jellyPhase1 = Wrap01(_jellyPhase1 + jellyPulseHz * JellyRateMul1 * deltaTime);
             _jellyPhase2 = Wrap01(_jellyPhase2 + jellyPulseHz * JellyRateMul2 * deltaTime);
+
+            // Phase 1 "Living Water": jellyfish drift-path integration. Same
+            // current-drive signal as the pulse rate above and Render()'s
+            // uCurrentDrive - "B makes it move" now also applies to how fast
+            // each jellyfish crosses the frame, not just its pulse rate.
+            float driftCurrentDrive = MathF.Max(_sBass2, _sMid2);
+            UpdateJellyDrift(ref _jellyDrift0, 0, deltaTime, driftCurrentDrive);
+            UpdateJellyDrift(ref _jellyDrift1, 1, deltaTime, driftCurrentDrive);
+            UpdateJellyDrift(ref _jellyDrift2, 2, deltaTime, driftCurrentDrive);
         }
 
         public void Render()
@@ -227,6 +330,40 @@ namespace CosmicEngine.App.Worlds.World04
             _shader.SetFloat("uJellyPhase1", _jellyPhase1);
             _shader.SetFloat("uJellyPhase2", _jellyPhase2);
 
+            // Phase 1 "Living Water": C#-integrated drift position/depth,
+            // read directly by the shader instead of deriving position from
+            // hash constants (renderJelly() keeps its own hash-seeded
+            // variation for bell/tentacle *character* - only *position* and
+            // *depth* come from here now). Sent as paired floats rather than
+            // a vec2 uniform to avoid adding a new SetVector2 to the shared
+            // ShaderProgram.cs (governance rule 12 - this is a shader-art
+            // pass and should not carry an unrelated infra change); combined
+            // into vec2 on the shader side.
+            _shader.SetFloat("uJellyPos0X", _jellyDrift0.PosX);
+            _shader.SetFloat("uJellyPos0Y", _jellyDrift0.PosY);
+            _shader.SetFloat("uJellyPos1X", _jellyDrift1.PosX);
+            _shader.SetFloat("uJellyPos1Y", _jellyDrift1.PosY);
+            _shader.SetFloat("uJellyPos2X", _jellyDrift2.PosX);
+            _shader.SetFloat("uJellyPos2Y", _jellyDrift2.PosY);
+            _shader.SetFloat("uJellyDepth0", _jellyDrift0.Depth);
+            _shader.SetFloat("uJellyDepth1", _jellyDrift1.Depth);
+            _shader.SetFloat("uJellyDepth2", _jellyDrift2.Depth);
+
+            // Phase 1 "Living Water": the previously-unused Camera (see
+            // Engine/Camera.cs - constructed in this scene's constructor but
+            // never read until now) is forwarded here as a per-layer
+            // parallax shift, wired up entirely in underwater.frag's
+            // main(). A small, modest boost from current drive makes the
+            // drift read as slightly brisker current rather than a static
+            // rate - "slightly increase drift rate with Input B, keep
+            // amplitude modest", same currentDrive signal as everything
+            // else in this method.
+            float cameraDriftBoost = 1.0f + 0.35f * currentDrive;
+            _shader.SetFloat("uCameraOffsetX", _camera.Offset.X * cameraDriftBoost);
+            _shader.SetFloat("uCameraOffsetY", _camera.Offset.Y * cameraDriftBoost);
+
+            _shader.SetInt("uPlanktonCount", PlanktonCount);
+
             _quad.Draw();
         }
 
@@ -244,5 +381,65 @@ namespace CosmicEngine.App.Worlds.World04
 
         private static float Calibrate(float raw, float floor, float max) =>
             MathF.Min(MathF.Max(raw - floor, 0f) / max, 1f);
+
+        // Identical formula to underwater.frag's own hash1() - deliberately
+        // mirrored so C#-side per-lap hashing reads consistently with the
+        // shader's own per-jellyfish hashing convention, even though the two
+        // are computed independently (this hash never needs to agree
+        // numerically with the shader's - only its *shape*, cheap/well-
+        // distributed/deterministic, needs to match).
+        private static float Hash1(float n) => Frac(MathF.Sin(n) * 43758.5453123f);
+
+        private static float Frac(float x) => x - MathF.Floor(x);
+
+        private static float Lerp01(float a, float b, float t) => a + (b - a) * t;
+
+        // Re-hashes one jellyfish's per-lap state (depth, vertical-wander
+        // shape, lap duration) from a seed combining its per-jellyfish
+        // identity (matching underwater.frag's own `seed = idx*41.7+5.0`
+        // per-jelly base, so C#/shader hashing stay conceptually aligned)
+        // with a per-lap counter, so consecutive laps never look identical.
+        private static void ReseedLap(ref JellyDriftState s, int jellyIndex)
+        {
+            float baseSeed = jellyIndex * 41.7f + 5.0f;
+            float h = baseSeed + s.LapSeed * 71.311f;
+
+            s.Depth      = Hash1(h + 1.0f);                                   // 0 (far) .. 1 (near)
+            s.YCenter    = Lerp01(-0.05f, 0.20f, Hash1(h + 2.0f));            // matches the old static baseY band
+            s.YAmp       = Lerp01(0.025f, 0.075f, Hash1(h + 3.0f));           // gentle, smaller than the X crossing
+            s.YFreqMul   = Lerp01(0.6f, 1.4f, Hash1(h + 4.0f));
+            float jitter = (Hash1(h + 5.0f) * 2f - 1f) * JellyLapJitterSeconds;
+            s.LapSeconds = Math.Clamp(JellyBaseLapSeconds + jitter, JellyMinLapSeconds, JellyMaxLapSeconds);
+        }
+
+        // Advances one jellyfish's drift-path state by one frame. Horizontal
+        // ("lap") position sweeps linearly across JellyEdgeX at a rate driven
+        // by this lap's duration, this jelly's own depth (near = faster
+        // apparent crossing, standard parallax), and current drive (Input B,
+        // "B makes it move"); wrapping past 1.0 re-hashes the next lap via
+        // ReseedLap. Vertical wander is a fully independent, slower sine
+        // layered on top, using its own continuously-wrapping phase.
+        private static void UpdateJellyDrift(ref JellyDriftState s, int jellyIndex, float deltaTime, float currentDrive)
+        {
+            float depthSpeedMul   = Lerp01(0.75f, 1.30f, s.Depth); // near = faster
+            float currentSpeedMul = 1.0f + 0.5f * currentDrive;
+            float lapRate = (1f / MathF.Max(s.LapSeconds, JellyMinLapSeconds)) * depthSpeedMul * currentSpeedMul;
+
+            s.LapPhase += lapRate * deltaTime;
+            if (s.LapPhase >= 1f)
+            {
+                s.LapPhase -= 1f;
+                s.LapSeed++;
+                ReseedLap(ref s, jellyIndex);
+            }
+
+            float yRate = (0.05f + 0.02f * currentDrive) * s.YFreqMul;
+            s.YPhase = Wrap01(s.YPhase + yRate * deltaTime);
+
+            s.PosX = s.Direction > 0f
+                ? Lerp01(-JellyEdgeX, JellyEdgeX, s.LapPhase)
+                : Lerp01(JellyEdgeX, -JellyEdgeX, s.LapPhase);
+            s.PosY = s.YCenter + s.YAmp * MathF.Sin(s.YPhase * MathF.Tau);
+        }
     }
 }

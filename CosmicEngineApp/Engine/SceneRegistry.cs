@@ -76,9 +76,16 @@ namespace CosmicEngine.App.Engine
 
         public static readonly SceneDefinition Underwater = new()
         {
+            // Id is deliberately unchanged (Phase 1 "Living Water", display-
+            // rename only) - renaming it would break --world Underwater CLI
+            // usage, existing docs, and every test invocation across this
+            // project's history. DisplayName/Description below are updated
+            // to reflect the drifting jellyfish/plankton-bloom evolution
+            // added this pass, not just the static atmosphere the old copy
+            // described.
             Id             = "Underwater",
-            DisplayName    = "Underwater",
-            Description    = "Shader-only underwater water column - god rays, caustic shimmer, and marine snow drifting through the light.",
+            DisplayName    = "Abyssal Bloom",
+            Description    = "Drifting jellyfish and a bioluminescent plankton bloom, evolving through god rays and caustic shimmer in a living water column.",
             Status         = "Prototype v0.1",
             DefaultProfile = "Safe",
             Showable       = true,

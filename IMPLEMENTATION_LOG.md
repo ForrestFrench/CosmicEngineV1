@@ -1643,3 +1643,125 @@ zero-other-worlds-diff confirmation).
 
 **Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
 project's standing rule against self-signing audit entries or committing without explicit request.
+
+**Note: subsequently committed as `bfcf82a`** (as Phase 0 of the Phase 1 "Living Water" session below).
+
+## 2026-07-15 — Underwater Phase 1 "Living Water" v0.1 (World04 drifting jellyfish + plankton bloom + parallax)
+
+Phase 1 of a fresh architect plan (post the now-committed Phase 3): converts the previously screen-fixed
+jellyfish (Phase 2) into drifting inhabitants of an evolving environment, directly answering the user's
+complaint that the jellyfish "just sit on the screen... doesn't really do anything." Six items, all in
+`Worlds/World04_Underwater/UnderwaterScene.cs` and `Shaders/underwater.frag`, plus two small display/knob
+edits in `Engine/SceneRegistry.cs` and `Engine/CosmicEngine.cs`.
+
+**Jellyfish drift paths:** position/depth is now C#-integrated (`JellyDriftState`, mirrors the existing
+pulse-phase integration pattern) instead of a static per-jellyfish hash. Each jellyfish sweeps a wrapping
+lap phase across an off-frame-to-off-frame horizontal crossing (~90-150s, current- and depth-biased speed),
+re-hashing depth/vertical-wander shape each crossing. The 3 jellies' crossing phases are staggered
+(0.05/0.40/0.75) so at most one is ever fully off-frame at once, verified arithmetically. `renderJelly()`'s
+old internal hash-derived position computation is gone, replaced by 6 new paired-float uniforms (vec2s sent
+as paired floats, not a new `ShaderProgram.SetVector2`, to avoid an infra change inside this shader-art
+pass). Translation invariance (moving position must not change tentacle/bell shape/quality) verified both
+architecturally (`jellyPos` used exactly once, to compute `local = p - jellyPos`) and empirically (a
+matched-condition capture pair, after isolating and freezing several real confounds between separate process
+invocations - traveling-wave tentacle phase jitter from free-running `uTime`, `Camera.Offset`'s independent
+real-time accumulation, and live-microphone jitter - confirmed the harness was fully deterministic via a
+bit-identical same-position control, then showed the different-position pair visually indistinguishable
+with the residual pixel diff traced to ordinary sub-pixel anti-aliasing on thin tentacle lines, not shape
+distortion).
+
+**Per-jelly depth:** drives scale (0.50-1.15x, widened from Phase 2's static 0.78-1.16x), the existing
+haze-occlusion mix (recalibrated to the new range), and drift speed (near = faster, standard parallax).
+
+**Camera parallax:** `Camera` (constructed but never read by this scene before this pass) is now wired up -
+its already-running `Offset` (the engine loop calls `Camera.Update()` every frame regardless of active
+world) is forwarded as a per-layer coordinate-space shift: water gradient 0.2x, rays/caustics 0.5x, haze
+0.7x, particles/plankton/jellyfish 1.0x (unscaled, the "near" reference layer). A small current-driven boost
+(`1.0 + 0.35*currentDrive`) makes drift read as slightly brisker current. Composed with the existing Phase 3
+refraction warp in one step per layer.
+
+**Plankton bloom field:** a new, cheap point/glow layer supersedes the old "Bioluminescent motes"
+foreshadowing-only stub (kept both would have been visually redundant). Applies the established Entry-33
+lessons (squared-hash size skew, power-curve brightness skew, current-coupled drift, implicit depth tiers).
+Per-plankton appearance is staggered across the bloom arc via a hashed threshold so the field visibly builds
+rather than snapping on; wrapped in an early gate so cost, not just brightness, is skipped during Deep Calm.
+
+**Bloom-arc remapping:** reuses the existing `uBloom` accumulator and evolution-time slider verbatim - no
+new accumulator. Named bands (Deep Calm/Bioluminescent Awakening/Current Build/Bloom Event) documented
+directly in the shader, driving plankton density/brightness/streaming plus a shared current-drive lift
+across haze/marine-snow/plankton drift.
+
+**Scene identity:** `SceneRegistry.cs`'s `Underwater` entry renamed to "Abyssal Bloom" (display only - `Id`
+stays `"Underwater"`, preserving `--world Underwater` CLI usage).
+
+### Verification
+Matched-condition translation-invariance check: PASS (see above). Motion diagnostic (60x forced time
+acceleration on drift only, real audio otherwise): 3 captures across ~90s/~210s/~330s of simulated drift
+show clearly different jellyfish positions and visible-count (2/1/2), including a moment with only 1 of 3
+jellyfish visible. Bloom-arc progression (forced `uBloom` 0.1/0.35/0.6/0.9): quantitative dark-region
+sampling shows a clean monotonic increase (bright-pixel count 7974→19478→31526→44371, ~5.6x from Deep Calm
+to Bloom Event); visually subtle at full-frame scale by design (dark, readability-guarded aesthetic),
+confirmed via a 4x-brightness-boosted crop comparison. Camera-parallax evidence: an exaggerated temporary
+offset (real amplitude is too subtle for a bounded capture window) showed jellyfish shifting visibly more
+than the god-ray band, demonstrating the differential per-layer multiplier directly.
+
+### Performance
+Found and verified (via controlled `git stash` A/B in the same session, not assumed) a real,
+code-attributable High-profile improvement over the freshly-recorded Phase-0 baseline (67.7-67.9fps avg,
+5-run) - old code re-measured 3x stayed rock-solid at 66.3-66.4fps, new code re-measured 5x gave 82.0-82.3fps
+consistently. Also found, investigated, and honestly disclosed a synthetic worst-case boundary: forcing all
+3 jellyfish to maximum depth and tight clustering (deliberately more adversarial than independent per-lap
+hashing typically produces) measured 60.1-60.6fps avg with occasional dips into the high 50s; a wider,
+still-plausible spread of the same scenario measured 62.5-62.6fps, comfortably clear of the 60fps floor. Two
+candidate fixes (zeroing camera offset, collapsing parallax intermediates) were tried and measured to have
+no effect, then kept only as harmless readability simplifications, not performance claims - consistent with
+this project's own precedent (Entry 41 addendum 6) of measuring before claiming and not chasing further
+optimization once the realistic-operation target is comfortably met.
+
+**Final measured performance, fully-reverted code:**
+
+| Command | Runs | Result |
+|---|---|---|
+| `--world Underwater --profile High --smoke-test` | 5 | avg fps 74.7-75.0, min observed 73.2-74.9 |
+| `--world Underwater --profile Safe --smoke-test` | 3 | avg fps 74.8-75.0, min observed 73.7-74.9 |
+
+Both comfortably exceed the mandatory 60fps floor and the Phase-0 baseline. A mid-session "fps-environment-
+shift" (Safe briefly read ~375fps before settling back to ~75fps, zero code change in between) matches this
+project's own previously-documented phenomenon (Entry 41 addendum 5) - the final numbers above were
+reconfirmed stable across the session's last several runs, not a single anomalous reading.
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors (final, fully-reverted code) |
+| `--world Underwater --profile High --diagnostic visual` | rest-state avg luminance 0.066-0.067 (prior range 0.063-0.073 - unchanged) |
+
+Zero orphan process / port 8080 free confirmed via `lsof`/`pgrep` before evidence gathering began and after
+the final run.
+
+### Iteration honesty - temporary debug overrides, fully reverted
+Ten env-var-gated static fields/branches (time acceleration, forced bloom/position/phase/time/light/
+current/turbulence/camera-offset, camera-zero) were added to `UnderwaterScene.cs` across this pass's
+evidence gathering, all following this file's established `TempForcedBloom`-family precedent. All fields,
+env-var reads, and Update()/Render() branches were fully removed (not just disabled) before this pass was
+reported done - confirmed via `grep -c "Temp|TEMP" UnderwaterScene.cs` returning `0` and a clean rebuild; one
+residual explanatory comment in `underwater.frag` referencing a since-removed field name was also corrected.
+
+### Scope
+`Worlds/World04_Underwater/UnderwaterScene.cs` and `Shaders/underwater.frag` (both substantially extended),
+`Engine/SceneRegistry.cs` (DisplayName/Description rename only), `Engine/CosmicEngine.cs` (one new
+`PlanktonCount` profile-knob line, same site/pattern as the existing `ParticleCount` line). Zero diff on any
+other world or shared engine/audio/rendering file, confirmed via `git diff --stat`. Per the user's own
+standing preference (scoped regression checks - only test other scenes when a shared file is touched, not
+by default), the other three worlds were not re-run this pass.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase1LivingWater_20260715_070025/`, containing `screenshots/`
+(matched-position translation-invariance pairs and tight crops, 3-timestamp motion diagnostic, bloom-arc
+progression at 0.1/0.35/0.6/0.9 plus brightness-boosted crops, camera-parallax before/after, final
+rest-state), `source_context/` (final `UnderwaterScene.cs`/`underwater.frag`/`SceneRegistry.cs`/
+`CosmicEngine.cs`), `git/` (status, diffstat, the Underwater/engine diff, zero-other-worlds-diff
+confirmation).
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
+project's standing rule against self-signing audit entries or committing without explicit request.
