@@ -178,6 +178,22 @@ float rayEnvelope(vec2 pos) {
 // Full on-screen god-ray visual - per-ray FBM intensity modulation scrolling
 // along the ray's own length, on top of the same band+attenuation shape as
 // rayEnvelope() above.
+//
+// Phase 3 ray/caustic interaction polish (AUDIT.md Entry 43): two refinements
+// to the existing band+attenuation shape, tuning rather than rebuilding it -
+// (1) edge softening: the core Gaussian band is a fairly crisp cutout on its
+// own, so a second, wider/dimmer "halo" Gaussian is added underneath it
+// (screen-blended, not just summed, so it can never push a ray brighter than
+// its own core) - this feathers the visible edge into the surrounding water
+// instead of reading as a hard-edged cutout, while leaving the bright core
+// unchanged. (2) depth-attenuation: a soft smoothstep ease-in near the ray's
+// own origin (fadeIn) replaces the old "full brightness from along=0"
+// discontinuity with a gentle ramp, and the exponential falloff exponent was
+// eased slightly (3.0 -> 2.6) for a marginally longer, more graceful death
+// into darkness - still comfortably reaching near-zero (exp(-2.6*1.3) =~
+// 0.034) well before the bottom third of frame, matching the original
+// design intent, just with a softer curve at both ends instead of one hard
+// start and one abrupt-feeling tail.
 float rayField(vec2 pos) {
     float total = 0.0;
     for (int i = 0; i < RAY_COUNT; i++) {
@@ -189,8 +205,14 @@ float rayField(vec2 pos) {
         vec2  perpD  = vec2(-dir.y, dir.x);
         float perp   = dot(d, perpD);
         float width  = 0.060 + 0.06 * along;
-        float band   = exp(-(perp * perp) / (width * width));
-        float atten  = exp(-along * 3.0);
+
+        float bandCore  = exp(-(perp * perp) / (width * width));
+        float haloWidth = width * 2.4;
+        float bandHalo  = exp(-(perp * perp) / (haloWidth * haloWidth)) * 0.30;
+        float band      = bandCore + bandHalo * (1.0 - bandCore);
+
+        float fadeIn = smoothstep(0.0, 0.12, along);
+        float atten  = exp(-along * 2.6) * fadeIn;
 
         float rn = fbm2(vec2(perp * 10.0, along * 2.2 - uTime * 0.18 + float(i) * 17.3), 2);
         total += band * atten * (0.55 + 0.55 * rn);
@@ -670,11 +692,42 @@ void main() {
     // Positive p.y = up for every constant below (matches wind_turbine_fire.frag's convention).
     p.y = -p.y;
 
+    // --- Foreground refraction warp (Phase 3, AUDIT.md Entry 43) -------------
+    // A gentle, always-on screen-space UV displacement suggesting looking
+    // through moving water, applied ONLY to the diffuse/background layers
+    // below (water gradient, god rays, caustics, haze) via pRefract - the
+    // two-tier lesson this project already learned on Wind Turbine Fire's
+    // heat-distortion fix (AUDIT.md Entry 34) and flagged again in Entry 41's
+    // own risk notes: a uniform full-strength warp applied to a thin curved
+    // structural silhouette reads as a wobble, not a shimmer. This pass takes
+    // the conservative end of that lesson rather than a tapered partial warp -
+    // jellyfish/tentacles below are rendered against the ORIGINAL, unwarped
+    // `p`, never pRefract, i.e. full exclusion, not a smaller-amplitude
+    // version - per this phase's own explicit guidance to prefer excluding
+    // them outright over risking any regression to the six-round tentacle
+    // rescue (Entry 41 addenda 1-6). Marine-snow particles and bioluminescent
+    // motes are also left on unwarped `p` - they already have their own
+    // procedural drift and are outside this phase's named scope (water
+    // gradient/haze/rays only). Amplitude derives from the already-existing
+    // uCurrentDrive/uCurrentTurbulence uniforms (no new uniform needed) so
+    // refraction visibly intensifies with water motion; a small baseline
+    // keeps it never fully zero, matching this file's existing "nothing goes
+    // fully static at rest" convention (rays/haze/particles all already do
+    // this).
+    float refractAmp = 0.0030 + 0.0026 * uCurrentTurbulence + 0.0012 * uCurrentDrive;
+    vec2  refractOffset = vec2(
+        sin(p.y * 16.0 + uTime * 1.35),
+        cos(p.x * 13.0 - uTime * 1.05)
+    ) * refractAmp;
+    vec2  pRefract = p + refractOffset;
+
     // depthT: 0 at the very top of frame (light entry), 1 at the very
     // bottom (abyss). Perturbed with low-frequency horizontal noise so the
-    // three-zone gradient is never a flat ramp.
-    float depthT = clamp(0.5 - p.y, 0.0, 1.0);
-    float depthNoise = (fbm2(vec2(p.x * 1.1 + 3.0, uTime * 0.015), 2) - 0.5) * 0.12;
+    // three-zone gradient is never a flat ramp. Sampled against pRefract
+    // (Phase 3) so the water-column gradient itself carries the refraction
+    // shimmer.
+    float depthT = clamp(0.5 - pRefract.y, 0.0, 1.0);
+    float depthNoise = (fbm2(vec2(pRefract.x * 1.1 + 3.0, uTime * 0.015), 2) - 0.5) * 0.12;
     float depthTN = clamp(depthT + depthNoise, 0.0, 1.0);
 
     // --- Three-zone vertical water gradient ------------------------------
@@ -687,8 +740,9 @@ void main() {
 
     // --- God rays ----------------------------------------------------------
     // Brightness = time-only baseline (alive under silence) + uLightDrive
-    // lift + uBloom lift, so rays never disappear entirely at rest.
-    float rf = rayField(p);
+    // lift + uBloom lift, so rays never disappear entirely at rest. Sampled
+    // against pRefract (Phase 3) - see refraction-warp comment above.
+    float rf = rayField(pRefract);
     float rayBrightnessMul = 0.55 + 0.65 * uLightDrive + 0.45 * uBloom;
     vec3  rayColorDeep  = vec3(0.16, 0.48, 0.50);
     vec3  rayColorBloom = vec3(0.48, 0.90, 0.62);
@@ -699,27 +753,40 @@ void main() {
     // Two independently scrolling ridged-noise layers, multiplied together,
     // masked to the upper third of frame AND modulated by the local
     // (cheap-envelope) ray intensity so it never reads as a full-frame
-    // static-looking overlay.
+    // static-looking overlay. Phase 3 (AUDIT.md Entry 43): causticLocalRay's
+    // exponent sharpens (was a linear clamp) so caustic energy concentrates
+    // specifically inside ray interiors and fades faster in the water
+    // between rays, rather than scaling uniformly with a flat upper-water
+    // band mask; the clamp ceiling (1.6 -> 1.35) is tightened to compensate
+    // so peak brightness at full ray strength stays close to the original
+    // (1.35^1.6 =~ 1.62 vs the old flat 1.6), i.e. this redistributes where
+    // the energy concentrates rather than adding new energy to the frame.
+    // Noise UVs and the ray-strength sample both use pRefract (Phase 3) so
+    // caustics and the rays they pool inside stay visually locked together
+    // under the same warp rather than drifting apart.
     float causticTopMask = 1.0 - smoothstep(0.0, 0.34, depthTN);
-    vec2  cUV1 = p * 6.0 + vec2(uTime * 0.06, -uTime * 0.03);
-    vec2  cUV2 = p * 7.4 + vec2(-uTime * 0.045, uTime * 0.07);
+    vec2  cUV1 = pRefract * 6.0 + vec2(uTime * 0.06, -uTime * 0.03);
+    vec2  cUV2 = pRefract * 7.4 + vec2(-uTime * 0.045, uTime * 0.07);
     float cn1 = vnoise2(cUV1);
     float cn2 = vnoise2(cUV2);
     float ridge1 = pow(1.0 - abs(2.0 * cn1 - 1.0), 2.2);
     float ridge2 = pow(1.0 - abs(2.0 * cn2 - 1.0), 2.2);
     float caustic = ridge1 * ridge2;
-    float causticLocalRay = clamp(rayEnvelope(p) * 1.3, 0.0, 1.6);
+    float rayStrength = rayEnvelope(pRefract);
+    float causticLocalRay = pow(clamp(rayStrength * 1.3, 0.0, 1.35), 1.6);
     float causticMask = causticTopMask * causticLocalRay;
     vec3  causticColor = vec3(0.30, 0.68, 0.56);
     color += causticColor * caustic * causticMask * (0.45 + 0.55 * uLightDrive + 0.40 * uBloom) * 0.85;
 
     // --- Haze/murk: FBM layers with domain-warped lateral current drift ----
     // Baseline drift never zero even at rest; denser/darker toward the
-    // bottom.
-    vec2  hazeWarp = vec2(fbm2(p * 0.6 + vec2(0.0, uTime * 0.015), 2) * 0.35, 0.0);
+    // bottom. Built from pRefract (Phase 3), composing with this layer's own
+    // pre-existing hazeWarp domain-warp exactly as before - two independent
+    // warps stacking harmlessly since both are gentle/low-amplitude.
+    vec2  hazeWarp = vec2(fbm2(pRefract * 0.6 + vec2(0.0, uTime * 0.015), 2) * 0.35, 0.0);
     float driftBase = 0.015 + 0.09 * uCurrentDrive;
-    vec2  hazeUV1 = (p + hazeWarp) * 1.4 + vec2(uTime * driftBase, uTime * 0.006);
-    vec2  hazeUV2 = (p + hazeWarp) * 2.3 + vec2(-uTime * driftBase * 0.7, -uTime * 0.009);
+    vec2  hazeUV1 = (pRefract + hazeWarp) * 1.4 + vec2(uTime * driftBase, uTime * 0.006);
+    vec2  hazeUV2 = (pRefract + hazeWarp) * 2.3 + vec2(-uTime * driftBase * 0.7, -uTime * 0.009);
     float haze1 = fbm2(hazeUV1, 3);
     float haze2 = fbm2(hazeUV2, 2);
     float hazeCombined = clamp(haze1 * 0.6 + haze2 * 0.4, 0.0, 1.0);

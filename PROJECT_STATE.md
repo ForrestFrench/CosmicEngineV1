@@ -2,7 +2,7 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-14 (Jellyfish Tentacle Rescue Pass 1 — traveling-wave tentacle rewrite, round 6, see `AUDIT.md` Entry 41 addendum 5)
+**Last updated:** 2026-07-14 (Underwater Phase 3 v0.1 — caustic/ray polish + foreground refraction warp, not yet committed, see `AUDIT.md` Entry 43)
 
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
@@ -134,7 +134,41 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   including a `before_after_tentacle_side_by_side.png` direct comparison. Honest verdict: jellyfish design
   rescued (this is the first round to change the tentacle *motion model*, not just its *shape
   representation*). See `AUDIT.md` Entry 41 addendum 5 for full detail, including the reviewer sign-off
-  (pending, left blank). **Not committed, not pushed, per explicit instruction.**
+  (pending, left blank). **Note: subsequently committed as `bffc834`** (alongside the tentacle
+  performance follow-up below), the same session that also committed Entry 42's ControlServer fix as
+  `bf5c8f6`.
+- **Tentacle Rescue Pass 1 performance follow-up (Entry 41 addendum 6, committed `bffc834`):** a pure
+  performance pass on the just-accepted traveling-wave tentacle rewrite — a per-tentacle early-out
+  (analytically-derived worst-case reach check) plus a tightened per-jellyfish bounding box recovered
+  High-profile fps from a freshly-measured 5-run baseline of 48.6fps to a final 5-run baseline of
+  68.78fps average (crossing the user's explicit 60fps requirement), with a pixel-diff confirming the
+  optimizations are visually indistinguishable (correctness-preserving prunes, not approximations). See
+  `AUDIT.md` Entry 41 addendum 6 for full detail.
+- **ControlServer dashboard startup reliability fix (Entry 42, committed `bf5c8f6`):** unrelated
+  infrastructure fix, investigated after a real crash report (`HttpListener.Start()` unhandled exception
+  on macOS's managed HttpListener implementation under port contention). Added retry-with-backoff and a
+  clear actionable error message. Scoped entirely to `ControlServer.cs`'s `Start()` method — see
+  `AUDIT.md` Entry 42 for full detail.
+- **Underwater Phase 3 v0.1 (Entry 43, this pass, not yet committed):** caustic/ray interaction polish
+  (ray edge softening via a wider/dimmer halo Gaussian, a softer depth-attenuation curve, and a sharpened
+  power-curve concentration of caustic energy specifically inside ray interiors rather than a flat
+  upper-water band) plus a subtle, always-on foreground refraction warp on the water gradient/rays/
+  caustics/haze layers only — jellyfish/tentacles are rendered against the original unwarped coordinate,
+  fully excluded from the warp (not a tapered partial warp), per this project's own two-tier heat-
+  distortion lesson (Wind Turbine Fire, Entry 34) applied at its most conservative end to protect the
+  just-rescued six-round tentacle work. Depth-framing silhouettes (optional item 3) were evaluated
+  against screenshots and deliberately not added — the composition already reads well without them.
+  Scoped entirely to `underwater.frag`; `UnderwaterScene.cs` touched only for a temporary, fully-reverted
+  debug override (`TempPhase3RefractionCapture`, confirmed removed) — no permanent C#-side change, no new
+  uniform (refraction amplitude derives from existing `uCurrentDrive`/`uCurrentTurbulence`). `dotnet
+  build` 0 warnings/errors; High-profile fps held at 68.3-68.4 avg across 3 runs (at/near the Entry 41
+  addendum 6 floor of 68.78fps, no regression); Safe unaffected (74.9fps). Rest-state luminance 0.073
+  (prior range 0.063-0.071 — small, expected increase, not a wash-out). A pixel-diff crop specifically
+  isolating a jellyfish confirms no wobble/distortion (0.32% of pixels differing >5/255, consistent with
+  ordinary run-to-run timing jitter, not a code effect) — backed by the architectural guarantee that
+  `renderJelly()` and its three call sites never reference the warped coordinate (confirmed via `grep`).
+  See `AUDIT.md` Entry 43 for full detail, including the reviewer sign-off (pending, left blank).
+  **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
 
 ## P1 Acceptance Criteria (RenderScale + Live/Safe Profiles + FPS Variance Evidence) — STATUS: implemented, evidence gathered, awaiting review
 

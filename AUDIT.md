@@ -4184,3 +4184,164 @@ World04 Underwater, or any other scene/world.
 
 **Not committed, not pushed** — left uncommitted in the working tree pending review, per this project's
 standing rule against self-signing audit entries or committing without explicit request.
+
+## Entry 43 — Underwater Phase 3 v0.1 (World04 caustic/ray polish + foreground refraction)
+
+**Date:** 2026-07-14
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending review, not self-signed)
+
+### Goal
+Phase 3 of the approved architect plan for World04 (Phase 1 = atmosphere prototype, committed `5f30ec1`;
+Phase 2 = jellyfish/tentacles, committed `bffc834`): upgrade light behavior from "present" to closer to
+"the reason the scene is beautiful" — caustic/ray interaction polish, a subtle foreground refraction warp,
+and an optional depth-framing silhouette pass evaluated but not forced. Explicitly preserve the just-fixed
+jellyfish/tentacle visual quality (six rounds of prior work, Entry 41 and its addenda) and the ~68-69fps
+High-profile performance floor Entry 41 addendum 6 just recovered.
+
+### Scope
+Confined entirely to `Worlds/World04_Underwater/Shaders/underwater.frag`. `UnderwaterScene.cs` was touched
+only for a temporary, fully-reverted debug-capture override (`TempPhase3RefractionCapture`) — no permanent
+C#-side change was needed (refraction amplitude derives from the already-existing `uCurrentDrive`/
+`uCurrentTurbulence` uniforms). `git diff --stat` against every other world and every shared engine/audio/
+rendering file (`World01_StellarNursery/`, `World02_LavaLamp/`, `World03_WindTurbineFire/`, `Audio/`,
+`Rendering/`, `Engine/`, `Camera.cs`) returns empty. Per the user's own standing preference (scoped
+regression checks — only test other scenes when a shared file is touched, not by default), the other three
+worlds were not re-run this pass, since no shared file was modified.
+
+### What was built
+
+**1. Ray/caustic interaction polish (refined the existing Phase 1 pass, not rebuilt):**
+- **Edge softening** (`rayField()`): the core Gaussian ray band already existed; added a second, wider
+  (2.4x) and much dimmer (0.30 weight) "halo" Gaussian, screen-blended (not summed) so it can never push a
+  ray brighter than its own core — feathers the visible edge into the surrounding water instead of a
+  crisp-edged cutout.
+- **Depth-attenuation retune**: added a `smoothstep(0.0, 0.12, along)` ease-in near each ray's own origin
+  (replacing an instant "full brightness with no ramp" start) and eased the exponential falloff exponent
+  from 3.0 to 2.6 for a marginally longer, more graceful death into darkness — still reaches near-zero
+  (`exp(-2.6*1.3) ≈ 0.034`) comfortably before the bottom third of frame, matching the original design
+  intent with softer curves at both ends rather than one hard start and one abrupt-feeling tail.
+- **Caustic/ray concentration**: `causticLocalRay` (the term that gates caustic brightness by local ray
+  strength) changed from a linear clamp (`clamp(rayEnvelope(p)*1.3, 0, 1.6)`) to a sharpened power curve
+  (`pow(clamp(rayStrength*1.3, 0, 1.35), 1.6)`) — this redistributes where caustic energy concentrates
+  (stronger inside ray interiors, suppressed faster in the gaps between rays) rather than adding new energy
+  to the frame; the clamp ceiling was tightened (1.6→1.35) specifically so peak brightness at full ray
+  strength stays close to the original (1.35^1.6 ≈ 1.62 vs. the old flat 1.6).
+
+**2. Foreground refraction warp — two-tier, jellyfish/tentacles fully excluded:**
+Applied this project's own two-tier lesson (Wind Turbine Fire's heat-distortion fix, Entry 34; flagged
+again in Entry 41's own risk notes) at its most conservative end: a gentle, always-on screen-space UV
+displacement (`refractOffset`, derived from `sin(p.y*16+uTime*1.35)`/`cos(p.x*13-uTime*1.05)`, amplitude
+`0.0030 + 0.0026*uCurrentTurbulence + 0.0012*uCurrentDrive` — never fully zero, ties to already-existing
+current uniforms, no new uniform needed) is applied to `pRefract = p + refractOffset` and used for the
+water-column depth gradient, god rays (`rayField(pRefract)`), caustic noise UVs and ray-strength sample,
+and the haze/murk FBM layers. **Jellyfish/tentacles are rendered against the ORIGINAL, unwarped `p` —
+never `pRefract` — full exclusion, not a smaller-amplitude tapered warp**, per this phase's own explicit
+risk guidance to prefer excluding the just-rescued tentacles outright over risking any regression to the
+six-round rescue (Entry 41 addenda 1-6). Marine-snow particles, bioluminescent motes, and the final
+vignette are also left on unwarped `p` (outside this phase's named scope of water gradient/haze/rays, and
+the vignette specifically needs true screen-space centering, not a warped one).
+
+### Depth-framing silhouettes (item 3, optional/secondary)
+Evaluated against the Phase 3 screenshots (rest-state and bloom-progression) and **not added**. The scene
+already reads clearly as an underwater water column with strong depth cues from the existing gradient/rays/
+haze/jellyfish parallax; kelp/rock silhouettes at the bottom corners were judged not to add enough
+compositional value to justify the additional shader cost and regression-surface area, per this item's own
+"only add if the composition genuinely benefits" instruction. This is a judgment call, not a technical
+blocker — left as a candidate for a future pass if reviewer feedback wants it.
+
+### Verification (normal viewing scale, critical self-assessment)
+- **Rest-state, before/after full-frame comparison** (`00_before_phase3_rest.png` vs.
+  `01_after_phase3_rest.png`): jellyfish/tentacles visually identical in position, shape, and motion state;
+  god rays show a visibly softer, less columnar edge. A pixel-diff on a crop isolating just the largest
+  jellyfish (`06_jellyfish_crop_before_phase3.png` vs. `07_jellyfish_crop_after_phase3_no_wobble.png`)
+  shows a mean absolute difference of 0.6-1.9/255 across RGB channels and only 0.32% of pixels differing by
+  more than 5/255 — consistent with ordinary run-to-run wall-clock timing jitter in the tentacle wave phase
+  between two separate process invocations, not any effect of the refraction warp, and confirms directly
+  (not just architecturally) that jellyfish/tentacles are not wobbling or distorting from this pass's
+  changes.
+- **Bloom-progression captures** (`02_bloom_0.3.png`/`03_bloom_0.6.png`/`04_bloom_1.0.png`, via a temporary
+  `TempPhase3RefractionCapture` override — see Iteration Honesty below): caustic shimmer becomes visibly
+  present starting around bloom 0.3 and pools into a clearer soft bright patch inside the strongest ray's
+  interior by bloom 1.0 (`05_caustic_ray_interaction_crop_bloom1.0.png`, a 3x zoomed crop on that ray) — no
+  caustic texture appears in the darker gaps between rays at any bloom level, confirming the concentration
+  is genuinely ray-localized rather than a uniform upper-band wash. Honest assessment: the effect is subtle
+  and soft rather than a sharp glittering shimmer — consistent with this scene's established dark,
+  readability-guarded aesthetic (CLAUDE.md governance rule 8: no "non-black pixels" as a success proxy) —
+  not an overclaim of a dramatic visual change.
+- **Rest-state luminance**: 0.073 (established Phase 1/2 range across all six tentacle rounds: 0.063-0.071)
+  — a small, expected increase from the ray-halo softening and refraction occasionally sampling into
+  brighter gradient regions, not a wash-out; the readability guard (final exposure/vignette) was not
+  touched this pass.
+- **Motion diagnostic** (real, near-silent audio, final fully-reverted code): T1→T5 16.93% pixels changed,
+  T5→T15 22.34% (addendum 6 baseline: 14.42%/20.09%) — a modest, expected increase consistent with the new
+  always-on refraction warp continuously animating the background layers; not frozen, not strobing.
+
+### Performance (mandatory regression check per this phase's own brief)
+`--profile High --smoke-test` run 3x on the final, fully-reverted code:
+
+| Run | avg fps | min observed fps |
+|---|---|---|
+| 1 | 68.4 | 66.8 |
+| 2 | 68.3 | 66.6 |
+| 3 | 68.4 | 67.6 |
+
+Holds at/very near the ~68.7-68.9fps floor Entry 41 addendum 6 established — no regression from this
+phase's additions (ray halo softening adds 2 extra `exp()` calls inside `rayField()`'s existing per-ray
+loop; the refraction warp is 2 `sin`/`cos` calls evaluated once per fragment, not per-ray or per-tentacle).
+Safe profile unaffected (74.9fps avg, min 74.5 — matches the established ~75fps baseline).
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors (both mid-iteration with the temp debug override present-but-inert, and on the final fully-reverted code) |
+| `--world Underwater --profile High --smoke-test` (x3) | avg fps 68.3-68.4, min observed 66.6-67.6 |
+| `--world Underwater --profile Safe --smoke-test` | avg fps 74.9, min observed 74.5 |
+| `--world Underwater --profile Safe --diagnostic visual` | rest-state avg luminance 0.073 (prior range 0.063-0.071) |
+| `--world Underwater --profile Safe --diagnostic motion` | T1→T5 16.93%, T5→T15 22.34% (addendum 6 baseline 14.42%/20.09%) |
+
+A pre-existing `--dashboard-only` session (`run-show.sh` + its child `dotnet ... CosmicEngine.App.dll
+--dashboard-only` process, PIDs 50474/50487) was found holding port 8080 at this session's very start
+(before any Phase 3 shader work began) — stopped before any bounded run, confirmed via `lsof`/`pgrep`
+returning empty immediately after. Zero orphan process / port 8080 free confirmed via the same checks after
+every subsequent run in this pass.
+
+### Iteration honesty — temporary debug override, fully reverted
+`TempPhase3RefractionCapture` (static float field + one-line `Update()` branch on `UnderwaterScene`, same
+precedent as `TempForcedBloom`/`TempTentacleFixCapture` through `/5`, incremented name to avoid colliding
+with those already-reverted fields) forced `_bloom`/`_lightEnvelope` to 0.3/0.6/1.0 in turn for the
+bloom-progression and caustic/ray-interaction captures, then fully removed (field and `Update()` branch) —
+confirmed via `grep -c "TempPhase3RefractionCapture" UnderwaterScene.cs` returning `0` and a clean rebuild.
+`git diff` on `UnderwaterScene.cs` after the revert returns empty — no permanent change to that file, no
+leftover trace of the override.
+
+### Known limitations
+- The caustic/ray concentration effect is a modest visual refinement, not a dramatic transformation — this
+  is a deliberate consequence of preserving the scene's existing dark, readability-guarded aesthetic rather
+  than an unmet target; a reviewer wanting a more pronounced shimmer would need a follow-up pass, not a bug
+  fix.
+- Depth-framing silhouettes (item 3) were evaluated and deliberately not added this pass — a judgment call,
+  not a technical finding; can be revisited in a future pass if wanted.
+- All new constants (halo width/weight, attenuation ease-in/exponent, caustic power-curve exponent and
+  clamp ceiling, refraction amplitude/frequency) are first-pass eyeball tuning against this pass's own
+  screenshots, not validated against real sustained guitar playing or the actual show hardware — same
+  caveat as every prior pass on this file.
+- The jellyfish/tentacle no-wobble verification used two separate process invocations (not a single
+  continuous run) for the before/after crop comparison, so the measured 0.32% pixel-diff includes ordinary
+  wall-clock timing jitter in the tentacle wave phase on top of any actual code effect — disclosed here
+  rather than presented as a perfectly clean zero, though the architectural guarantee (jellyfish render
+  calls use unwarped `p`, verified via `grep` showing no `pRefract` reference inside `renderJelly()` or its
+  three call sites) is the primary evidence, not the pixel-diff number alone.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase3_20260714_193300/`, containing `screenshots/` (before/after full-frame
+rest-state, bloom progression 0.3/0.6/1.0, a caustic/ray-interaction zoomed crop, before/after jellyfish
+crops proving no wobble), `logs/` (`visual_before_phase3/`, `visual_after_phase3_rest/`,
+`visual_bloom_0.3/`, `visual_bloom_0.6/`, `visual_bloom_1.0/`, `motion_final/` — each a full raw
+`--diagnostic visual`/`--diagnostic motion` output folder with its own REPORT.md and PPM captures, plus a
+consolidated `build_and_smoketest.log`), `source_context/` (final `UnderwaterScene.cs`/`underwater.frag`),
+`git/` (status, `underwater.frag` diff, `UnderwaterScene.cs` zero-diff confirmation, zero-other-worlds-diff
+confirmation).
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
+project's standing rule against self-signing audit entries or committing without explicit request.
