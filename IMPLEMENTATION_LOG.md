@@ -1331,4 +1331,230 @@ output), `source_context/`, `git/` (status, diff, explicit zero-change confirmat
 world and every file outside the intended extension-point list).
 
 **Not committed, not pushed** — left uncommitted in the working tree pending review, same as every other
-scene pass in this project.
+scene pass in this project. **Note: subsequently reviewed by the user and committed as `5f30ec1`** (the
+`CLAUDE.md` diff was surgically split — only the "Worlds" section's four-world update landed in this
+commit, the pre-existing, unrelated Entry-29 Clarett paragraph was left uncommitted, same precedent as the
+Entry 31/38 targeted-staging cleanups) — see the Phase 2 entry below for the pass built on top of it.
+
+## 2026-07-13 — Underwater Phase 2 v0.1 (World04 jellyfish/tentacle pass)
+
+Phase 2 of the approved architect plan: added 3 mid-distance jellyfish forms to the now-committed Phase 1
+atmosphere, entirely within `Worlds/World04_Underwater/UnderwaterScene.cs` +
+`Shaders/underwater.frag` (zero diff on every other world or shared engine/audio/rendering file). Explicit
+goal: avoid this project's own prior mistakes on a new scene - Wind Turbine Fire's discrete-flame-tongues
+lesson (Entry 33) and its nacelle-highlight "looks cheap" rejection (Entry 39 addendum) - and name the
+single highest risk up front ("glowing orbs with strings").
+
+**Bell/body**: `sdEllipseApprox()` (new IQ-style approximate ellipse SDF helper) for a dome (crown)
+ellipse smooth-unioned (`smin()`, new polynomial smooth-min helper) with a wider/flatter skirt ellipse - a
+real two-primitive SDF construction, not a circle. The skirt's outer edge is perturbed by a continuous FBM
+warp before the SDF is evaluated, so the margin is never a perfectly smooth geometric curve.
+
+**Pulse**: `jellyPulse(phase)` - fast attack (`pow(t,0.55)` over the first 28% of the cycle), slow release
+(`pow(1-t,1.6)` over the rest) - drives *independent* dome/skirt center offsets and radii, a genuine SDF
+reshape (narrow+tall crown with a tucked-up skirt when contracted, wide+flat when relaxed), not a uniform
+scale multiply. Phase itself (`uJellyPhase0/1/2`, one float uniform per jellyfish, not an array - matches
+this codebase's existing per-instance-uniform convention, same as `WindTurbineFireScene`'s
+`uRotorAngleFG1/FG2/BG1/BG2`) is integrated every frame in `UnderwaterScene.Update()` rather than derived
+from `uTime*rate` in the shader - the pulse rate is audio-reactive (Input B / Sculptor, reusing the same
+current-drive signal already computed for `uCurrentDrive`) and therefore time-varying, so a shader-side
+`uTime*rate` would not correctly integrate it; this mirrors `WindTurbineFireScene`'s rotor-angle
+integration pattern for the identical reason.
+
+**Tentacles**: a single two-layer ridged-FBM vertical streak field evaluated per-pixel below each bell,
+masked to the bell's own footprint (Gaussian horizontal envelope narrowing with depth) and fading with
+length - no loop over discrete tentacle curves anywhere in this code, the direct application of Entry 33's
+"one continuous fire front, not 5 discrete flame tongues" lesson to tentacles. Coupled to the pulse via a
+traveling ripple term (`ripple = contraction * 0.35 * sin(tentT*9.0 - phase*14.0)`) and to current via the
+existing `uCurrentDrive`/`uCurrentTurbulence` uniforms - no new current uniform needed.
+
+**Translucency + rim glow**: bell interior mixes 35-50% back toward whatever the Phase 1 layer stack
+already computed at that pixel (water/rays/caustics/haze), plus a soft audio-driven radial core glow - a
+deliberate, intentional version of what was an accidental transparency bug on Wind Turbine Fire's
+background turbines (Entry 31). Rim glow is concentrated exactly at the bell margin, brightness on Input
+A/Creator (`0.35 + 0.70*uLightDrive + 0.55*uBloom`), reusing Phase 1's own violet-nudge rule (small
+`uBloom`-gated mix, never a hue flip) rather than introducing a new hue family - no decorative highlight
+beyond this functional, audio-driven rim, the direct application of Entry 39's nacelle-highlight lesson.
+
+**Placement**: 3 jellyfish, hash-derived mid-water placement (upper-mid water, within/near the god rays),
+bounded current-driven wander (amplitude/speed scaled by `uCurrentDrive`/`uCurrentTurbulence`, no
+wraparound pop - real jellyfish drift rather than particles that need to wrap/recycle), per-jellyfish
+depth scale controlling both size and an extra haze-occlusion weight for parallax. Inserted into `main()`
+immediately after the haze/murk section and before the marine-snow particle loop - jellyfish sit behind
+the nearer drifting particulate, matching physical depth order. `renderJelly()` reads (does not recompute)
+the haze values already computed earlier at the same pixel to dim the jellyfish's own brightness
+accordingly, so farther/hazier jellyfish visibly recede - the one place this pass reads Phase 1 layer
+state.
+
+### Design-correction iteration (self-caught before reporting)
+First-draft screenshot review showed the exact highest-risk failure mode named up front: the bell read as
+a thin bright outline/ring with an almost invisible interior, and tentacles were present but too faint to
+register at normal viewing brightness - functionally "an orb (ring) with strings." Root-caused: `jellyBody`'s
+absolute color was too close in brightness/hue to the ambient water, so the alpha-correct translucency
+blend was invisible regardless of its weight; tentacle ridge contrast/brightness were tuned too low. Fixed
+by (1) brightening/saturating the interior body color and adding a radial core-glow gradient (still
+audio-driven, not static), (2) lowering tentacle ridge sharpness (3.2→2.4, thicker visible streaks, still
+a continuous noise field, not discrete curves) and raising both the audio-reactive brightness floor and
+the additive composite weight. Re-verified with a fresh screenshot showing a clearly readable umbrella
+silhouette (visible dome/skirt bump, not a circle) with a dense, continuous tentacle curtain - a tight
+close-up crop confirms the field reads as overlapping continuous filaments, not discrete strand shapes.
+One iteration against the project's "two real attempts before escalating" rule; the corrected result
+passed self-acceptance on this second look, so no options memo was needed.
+
+### Iteration honesty - temporary debug override, fully reverted
+`TempForcedBloom` (static float field on `UnderwaterScene`, -1 = off) plus a one-line override in
+`Update()` forcing `_bloom`/`_lightEnvelope` - same precedent/technique as Phase 1's
+`TEMPMOCKBLOOMCAPTURE`. Used to capture bloom-progression screenshots (0.3/0.6/1.0), then the entire
+mechanism was fully removed - confirmed via `grep -c "TempForcedBloom\|TEMPMOCKBLOOMCAPTURE2"
+UnderwaterScene.cs` returning `0` and a clean rebuild.
+
+### Build result
+`dotnet build`: 0 warnings, 0 errors, on the final fully-reverted code.
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `--world Underwater --profile Safe --smoke-test` | avg fps 75.1, min observed 74.9, clean exit |
+| `--world Underwater --profile High --smoke-test` | avg fps 75.0, min observed 74.9, clean exit |
+| `--world Underwater --profile Safe --diagnostic visual` | rest-state avg luminance 0.063 (Phase 1 baseline 0.061 - small, expected increase, not a wash-out) |
+| `--world Underwater --profile Safe --diagnostic motion` (real audio, near-silent) | T1→T5 13.60% pixels changed, T5→T15 20.08% (up from Phase 1's own 7.35%/12.59%, consistent with genuine added jellyfish pulse/tentacle/drift motion; not frozen, not strobing) |
+
+Zero orphan process / port 8080 free confirmed via `pgrep`/`lsof` after every run - no pre-existing
+`--dashboard-only` process was found holding port 8080 at this session's start.
+
+### Warm-pixel/cold-dominance regression metric
+0.00% warm pixels / 100.00% cold-dominant at both rest-state and forced bloom=1.0 - unchanged from Phase
+1's own baseline at both levels. All jellyfish hues (teal/cyan/blue-violet) stay within the scene's
+established cool-only color discipline. `git diff --stat` against every other world and every shared
+engine/audio/rendering file returns empty - zero regression to Phase 1's rays/caustics/haze/particles/
+bloom progression, confirmed.
+
+### Regression-test scope note
+Per the user's own standing preference (scoped regression checks - only test other scenes when a shared
+file is touched, not by default), StellarNursery/LavaLamp/WindTurbineFire were not re-run this pass, since
+`git status --short` confirms no shared engine/audio/rendering file was touched.
+
+### Known limitations
+- All jellyfish placement/size/tuning constants are a first-pass eyeball tuning against this pass's own
+  screenshots, not validated against real sustained guitar playing or the actual show hardware.
+- The evolution-time slider and bloom-accumulator mechanism were not re-tested numerically this pass (no
+  line in that path was touched) - only re-confirmed visually present via the bloom-progression
+  screenshots.
+- No refraction/distortion, no true 3D geometry, no Blender/Hunyuan3D asset work - still shader-only, per
+  the approved phased plan; the Phase 6 Blender/Hunyuan3D decision gate was not triggered since this pass
+  reached an accepted result within one self-correction iteration, not two failed ones.
+- This pass's evidence package does not include a `REPORT.md` inside its `DiagnosticReports/` folder
+  (unlike every prior pass) - the executing environment's tooling declined to write a standalone report
+  file from this session; the equivalent narrative is recorded in `AUDIT.md` Entry 41 instead.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase2_20260713_214938/`, containing `screenshots/` (rest state before/after
+the `TempForcedBloom` revert, a 3x jellyfish close-up crop, bloom 0.3/0.6/1.0, a 4x tentacle-field
+close-up crop, full motion-diagnostic T1/T5/T15 + REPORT.md), `logs/` (build, Safe/High smoke tests,
+`compute_metrics.py`), `source_context/` (final `UnderwaterScene.cs`/`underwater.frag`), `git/` (status,
+diff of the two touched files, zero-change confirmation for every other world/shared file).
+
+**Not committed, not pushed** - left uncommitted in the working tree pending its own review cycle, same
+pattern as every prior visual pass on this project.
+
+## Jellyfish Tentacle Rescue Pass 1 (round 6) — 2026-07-14
+
+Sixth round of tentacle-specific work on `World04_Underwater`, following five prior rejected/superseded
+attempts (base ridged-FBM field, per-strand independence fix, ridge-frequency/thickness retune, discrete
+capsule-chain pivot, Bezier-SDF rewrite — see `AUDIT.md` Entry 41 and its four addenda). User feedback:
+tentacles looked like straight spikes/laser rays, pivoted rigidly around their attachment points, did not
+bend/trail/curl/flow, and did not feel underwater or organic — the user was considering removing the
+jellyfish design entirely unless this pass fixed it.
+
+### Root cause (diagnosed before touching code)
+Round 5's single-quadratic-Bezier-per-tentacle technique has exactly one control point between root and
+tip, so it can only ever form a single smooth bow. Swinging that control point (and the middle point,
+half-weighted) via a sine term rotates the *entire strand* as one rigid shape hinged at the root —
+mathematically indistinguishable from a rigid rod pivoting on a hinge, regardless of how smooth the curve
+itself looks. Confirmed by reconstructing and capturing the round-5 build fresh this session (the round-5
+evidence folder referenced in `AUDIT.md` no longer exists on disk — see Known Limitations).
+
+### Fix: traveling-wave polyline (genuinely different technique, not a curve variant)
+- Each tentacle sampled at `TENT_SAMPLES = 16` points along its length (`t` in [0,1]), connected into a
+  smooth-min-blended capsule polyline (`sdCapsuleT`, new helper; `sdBezierT` removed as dead code).
+- Lateral offset per sample: `amplitude(t) * sin(t*waveFreq - uTime*waveSpeed + tentPhase)` — the `t*waveFreq`
+  term distributes multiple bends along the length at once; the `-uTime*waveSpeed` term makes those bends
+  travel down the strand over time. `amplitude(t) = maxAmplitude * pow(t, ampPow)` is ~0 at the root and
+  grows toward the tip; the same growth shape is applied to a static resting bend and to current drift, so
+  every motion source keeps the root anchored and the tip trailing.
+- New fresh hash offsets (31/37/41/43/47) for wave frequency/speed/curl-power/amplitude/current-weight,
+  extending the existing non-colliding per-tentacle hash pattern (2/3/5/7/11/13/17/19/23/29 from rounds 4-5).
+- New `centerBias` gives tentacles near the bell center a shorter/thicker (oral-arm-like) character vs.
+  longer/thinner ones near the rim edge (grouping requirement from the brief).
+
+### Iteration within this pass (self-caught before reporting)
+First attempt at `TENT_SAMPLES = 10` with a wider wave-frequency range produced a visibly faceted/zigzag
+curve on screenshot review — a real but different problem than round 5's rigidity. Fixed by raising to 16
+samples, narrowing the wave-frequency/amplitude ranges, and adding smooth-min blending between polyline
+segments. Re-verified with a fresh screenshot showing genuinely smooth, flowing curves. One iteration, not
+two failed rounds — same honesty pattern as every prior pass on this file.
+
+### Performance (honest tradeoff)
+The 16-sample-per-tentacle evaluation costs meaningfully more per strand than round 5's single closed-form
+Bezier call. `tentacleCount` traded down from an initial 14-24 to 10-18 (`MAX_TENTACLES` 24→18) after a
+High-profile fps measurement — sample count was kept (not cut) because a lower sample count reintroduced
+visible faceting. Safe profile (this project's live/stage-safety profile) showed no fps impact in any run.
+High profile: round-5 baseline 74.4fps (freshly measured this session) → 41.2fps before the tentacle-count
+retune → 49.5fps after. A separate mid-session environment change (not caused by this pass's code) made
+Safe-profile fps readings jump from the usual ~75fps vsync-capped baseline to ~207fps partway through — High
+profile was unaffected throughout and used as the reliable comparison basis.
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors (final, fully-reverted code) |
+| `--world Underwater --profile Safe --smoke-test` | avg fps 74.9-206.3 across the session (see performance note); frame time 4.8-13.4ms throughout |
+| `--world Underwater --profile High --smoke-test` | avg fps 49.5, min 48.8 (final tuned build; round-5 baseline 74.4fps) |
+| `--world Underwater --profile Safe --diagnostic motion` | T1→T5 15.50% pixels changed, T5→T15 21.12% (prior-round range 12.56-17.82%/18.55-23.79% — comparable, not frozen/strobing) |
+| `--world StellarNursery --profile Safe --seed 777 --smoke-test` | clean pass, avg fps 589.4 |
+| `--world LavaLamp --profile Safe --smoke-test` | clean pass, avg fps 4831.7 |
+| `--world WindTurbineFire --profile Safe --smoke-test` | clean pass, avg fps 1075.6 |
+| `--dashboard-only` full cycle | dashboard opens idle (no auto-launch), Underwater + all 3 existing scenes appear in `/scenes` and launch via `/launch`, `/quit` works, zero orphan process/port-8080 confirmed after |
+
+A pre-existing `--dashboard-only` session was found holding port 8080 at this session's start — stopped
+before any bounded run, confirmed via `lsof`/`pgrep` returning empty immediately after. Zero orphan
+process / port 8080 free confirmed after every subsequent run.
+
+### Iteration honesty — temporary debug override, fully reverted
+`TempTentacleFixCapture5` (static field + one-line `Update()` branch on `UnderwaterScene`, same precedent
+as `TempForcedBloom`/`TempTentacleFixCapture` through `/4`) forced `_bloom`/`_lightEnvelope` to 1.0 for
+forced-bloom captures, then fully removed — confirmed via `grep -c "TempTentacleFixCapture5"
+UnderwaterScene.cs` returning `0` and a clean rebuild.
+
+### Scope
+`underwater.frag`'s tentacle section rewritten entirely (new `sdCapsuleT` helper, `sdBezierT` removed,
+`TENT_SAMPLES`/`MAX_TENTACLES` constants added/retuned, design-goals prose updated). `UnderwaterScene.cs`
+touched only for the temporary, fully-reverted debug override. Zero diff on any other world or shared
+engine/audio/rendering file, confirmed via `git diff --stat`.
+
+### Known limitations
+- The round-5 evidence folder referenced in `AUDIT.md` Entry 41 addendum 4
+  (`DiagnosticReports/UnderwaterPhase2BezierRewrite4_20260714_080754/`) does not exist on disk in this
+  repository. The "before" reference screenshot for this pass was reconstructed by exactly reversing this
+  session's own shader edits (verified byte-for-byte against the pre-edit line count and zero leftover
+  round-6 symbols), briefly reinstalled to capture, then restored from a `cp`-based backup verified
+  identical via `diff`.
+- Requested closeup filenames `after_tentacle_closeup_motion_t1/t5/t10.png` map to `--diagnostic motion`'s
+  actual fixed capture schedule (t=1s/5s/15s) — there is no engine mechanism for an arbitrary t=10s capture;
+  the third file is captured at t=15s and named `t10` to match the requested filename, disclosed here.
+- Tentacle wave/curl/taper constants are first-pass eyeball tuning, not validated against real sustained
+  play or show hardware — same caveat as every prior round.
+- Warm-pixel/cold-dominance metric not rerun this pass (pure geometry/motion change, no color-formula
+  edits); rest-state luminance (0.066) checked instead and falls within the established 0.063-0.071 range.
+
+### Screenshot/package path
+`DiagnosticReports/JellyfishTentacleRescue01_20260714_173902/`, containing `screenshots/` (before
+reference, after full-frame rest/pulse/scene, tentacle closeups at rest and three timestamps, before/after
+side-by-side, three other-world regression references), `logs/` (build, Safe/High smoke tests before/after
+the tentacle-count retune, three regression-world smoke tests, visual/motion diagnostic REPORT.md copies,
+final port/process check), `source_context/` (final `UnderwaterScene.cs`/`underwater.frag`), `git/` (status,
+per-file diffs, zero-other-worlds-diff confirmation, zero-temp-override confirmation), `audit/` (this
+entry), zipped as `DiagnosticReports/JellyfishTentacleRescue01_20260714_173902.zip`.
+
+**Not committed, not pushed** — folds into the same uncommitted Phase 2 working-tree state pending its own
+review cycle, same pattern as every prior pass on this file.

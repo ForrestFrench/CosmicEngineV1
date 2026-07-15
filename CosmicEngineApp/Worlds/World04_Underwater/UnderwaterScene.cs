@@ -48,6 +48,20 @@ namespace CosmicEngine.App.Worlds.World04
     /// (moderate attack, ~2-3s release) rather than tracking the raw envelope
     /// directly, so light swells and lingers instead of twitching with every
     /// transient - a deliberate anti-twitchiness design goal, not polish.
+    ///
+    /// Phase 2 (jellyfish/tentacle pass, v0.1): adds 3 mid-distance jellyfish
+    /// forms directly in underwater.frag (SDF bell + continuous ridged-FBM
+    /// tentacle filament field - see that file's own header for the full
+    /// design). The only new C#-side state is per-jellyfish pulse phase
+    /// (_jellyPhase0/1/2 below) - integrated here rather than derived from
+    /// uTime*rate in the shader, mirroring WindTurbineFireScene's rotor-angle
+    /// integration pattern, because the pulse *rate* itself is audio-reactive
+    /// (Input B) and therefore time-varying; a shader-side "uTime * rate"
+    /// would not correctly integrate a rate that changes over time (same
+    /// class of bug rotor-angle integration already avoids for WTF). Pulse
+    /// rate = "B makes it move" (Input B / Sculptor), pulse/rim brightness =
+    /// "A makes it glow" (Input A / Creator), per this project's established
+    /// convention - both already-existing signals, no new audio plumbing.
     /// </summary>
     public class UnderwaterScene : IWorld
     {
@@ -99,6 +113,20 @@ namespace CosmicEngine.App.Worlds.World04
         // mirrors WindTurbineFireScene.EmberCount) - MAX_PARTICLES in the
         // GLSL caps the fixed loop, this just picks how many of it run.
         public static int ParticleCount = 36;
+
+        // Phase 2: per-jellyfish pulse phase, continuously wrapping in [0,1).
+        // Initial offsets are hand-picked (not hashed) purely so the 3
+        // jellyfish start visibly out of sync with each other from frame 1
+        // rather than all beginning at phase 0. Per-jellyfish rate
+        // multipliers below add further, permanent desync on top of that.
+        private float _jellyPhase0 = 0.10f;
+        private float _jellyPhase1 = 0.55f;
+        private float _jellyPhase2 = 0.82f;
+        private const float JellyBasePulseHz  = 0.22f; // ~4.5s cycle at rest
+        private const float JellyPulseRateGain = 0.35f; // extra Hz at full Input B drive
+        private const float JellyRateMul0 = 1.00f;
+        private const float JellyRateMul1 = 0.87f;
+        private const float JellyRateMul2 = 1.14f;
 
         private static string ShaderPath(string file) =>
             System.IO.Path.Combine("Worlds", "World04_Underwater", "Shaders", file);
@@ -160,6 +188,17 @@ namespace CosmicEngine.App.Worlds.World04
                 _bloom = MathF.Min(_bloom + _lightEnvelope * BloomRisePerSecondAtFullDrive * deltaTime, 1f);
             else
                 _bloom = MathF.Max(_bloom - BloomDecayPerSecond * deltaTime, 0f);
+
+            // Phase 2: jellyfish pulse-phase integration. Input B (Sculptor /
+            // "water motion") sets the pulse rate - reuses the same
+            // current-drive signal Render() derives for uCurrentDrive, so
+            // "B makes it move" applies uniformly to current AND pulse rate.
+            // Per-jellyfish rate multipliers keep all 3 permanently desynced.
+            float jellyPulseDrive = MathF.Max(_sBass2, _sMid2);
+            float jellyPulseHz = JellyBasePulseHz + JellyPulseRateGain * jellyPulseDrive;
+            _jellyPhase0 = Wrap01(_jellyPhase0 + jellyPulseHz * JellyRateMul0 * deltaTime);
+            _jellyPhase1 = Wrap01(_jellyPhase1 + jellyPulseHz * JellyRateMul1 * deltaTime);
+            _jellyPhase2 = Wrap01(_jellyPhase2 + jellyPulseHz * JellyRateMul2 * deltaTime);
         }
 
         public void Render()
@@ -184,6 +223,10 @@ namespace CosmicEngine.App.Worlds.World04
             _shader.SetFloat("uCurrentDrive", currentDrive);
             _shader.SetFloat("uCurrentTurbulence", MathF.Min(currentTurbulence, 1.2f));
 
+            _shader.SetFloat("uJellyPhase0", _jellyPhase0);
+            _shader.SetFloat("uJellyPhase1", _jellyPhase1);
+            _shader.SetFloat("uJellyPhase2", _jellyPhase2);
+
             _quad.Draw();
         }
 
@@ -196,6 +239,8 @@ namespace CosmicEngine.App.Worlds.World04
 
         private static float Lerp(float current, float target, float smoothing) =>
             current * smoothing + target * (1f - smoothing);
+
+        private static float Wrap01(float v) => v - MathF.Floor(v);
 
         private static float Calibrate(float raw, float floor, float max) =>
             MathF.Min(MathF.Max(raw - floor, 0f) / max, 1f);
