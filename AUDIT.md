@@ -4050,3 +4050,137 @@ zero-other-worlds-diff confirmation).
 **Not committed, not pushed** — folds into the same uncommitted Phase 2 working-tree state, awaiting its own
 review cycle alongside the base pass and all five prior addenda above.
 
+## Entry 42 — Dashboard `HttpListener.Start()` unhandled-crash investigation and hardening
+
+**Date:** 2026-07-14
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending review, not self-signed)
+
+### Reported crash
+User launched via the normal desktop shortcut (`Run Cosmic Engine.command` → `run-show.sh` → build then
+`dotnet <dll> --dashboard-only`) and hit an unhandled crash immediately after audio capture succeeded:
+
+```
+[AudioEngine] Capture opened: device="Clarett 4Pre USB", format=Stereo16, sampleRate=44100, bufferSize=2048 frames.
+Unhandled exception. System.ArgumentNullException: Value cannot be null.
+   at System.Threading.Monitor.ReliableEnter(Object obj, Boolean& lockTaken)
+   at System.Net.HttpEndPointListener.ProcessAccept(SocketAsyncEventArgs args)
+   at System.Net.HttpEndPointListener.Accept(SocketAsyncEventArgs e)
+   at System.Net.HttpEndPointListener..ctor(HttpListener listener, IPAddress addr, Int32 port, Boolean secure)
+   at System.Net.HttpEndPointManager.GetEPListener(String host, Int32 port, HttpListener listener, Boolean secure)
+   at System.Net.HttpEndPointManager.AddPrefixInternal(String p, HttpListener listener)
+   at System.Net.HttpEndPointManager.AddListener(HttpListener listener)
+   at System.Net.HttpListener.Start()
+   at CosmicEngine.App.ControlServer.Start() in .../ControlServer.cs:line 20
+   at CosmicEngine.App.Engine.DashboardHost.Run() in .../Engine/DashboardHost.cs:line 47
+   at Program.<Main>$(String[] args) in .../Program.cs:line 17
+```
+
+Good news buried in the log: audio capture against the real Clarett 4Pre USB interface succeeded cleanly —
+the prior-session virtual-device (Hue Sync Audio) issue is resolved and unrelated to this crash.
+
+### Scope confirmation — Underwater work ruled out
+`git log --oneline -- ControlServer.cs Engine/DashboardHost.cs Program.cs` shows `ControlServer.cs` was
+touched by the Underwater Phase 1 commit (`5f30ec1`) and the Wind Turbine Fire commit (`091da2c`);
+`DashboardHost.cs`/`Program.cs` were last touched only by the original dashboard-only-mode commit
+(`554cd31`), long before Underwater. `git show 5f30ec1 -- ControlServer.cs` confirms the Underwater diff is
+purely additive — a new `UnderwaterEvolutionSeconds` tuning case, its `/values` serializer entry, and new
+HTML/JS slider markup — nowhere near `Start()` (top of file, untouched since before both recent scene
+passes). `git status --short` at session start also showed none of the three files as modified in the
+working tree. **Confirmed: this is a pre-existing latent bug, not a regression from Underwater or Wind
+Turbine Fire work.**
+
+### `ControlServer.Start()` before this pass
+```csharp
+public static void Start()
+{
+    _listener = new HttpListener();
+    _listener.Prefixes.Add("http://localhost:8080/");
+    _listener.Start();
+    ...
+}
+```
+Zero error handling of any kind around `HttpListener.Start()` — any exception it throws is unhandled and
+crashes the whole process, exactly as the user observed.
+
+### Reproduction
+10 sequential aggressive start/`kill -9`/restart cycles (1.5s apart, then again with ~0.6s spacing and no
+gap between kill and restart) did **not** reproduce a crash — `HttpListener.Start()` succeeded every time
+in these cycles.
+
+Launching two `--dashboard-only` instances **simultaneously** (both racing for port 8080 at process start)
+**did** reproduce an unhandled crash at the identical location and call chain
+(`ControlServer.cs:20` → `HttpListener.Start()` → `DashboardHost.Run()` → `Program.cs:17`), with:
+```
+Unhandled exception. System.Net.HttpListenerException (48): Address already in use
+   at System.Net.HttpEndPointManager.GetEPListener(...)
+   ...
+   at CosmicEngine.App.ControlServer.Start() in .../ControlServer.cs:line 20
+```
+This confirms the code path is genuinely fragile under port contention/socket-state races, matching the
+plausible cause named in the brief: several agent sessions earlier the same day had been repeatedly
+starting and force-stopping `--dashboard-only` processes on this exact port (see Entry 41 addenda, which
+each found and killed a pre-existing dashboard session before running their own tests).
+
+### Root cause
+Confirmed with real evidence at two levels:
+1. **Direct evidence**: `ControlServer.Start()` has no retry or error handling around `HttpListener.Start()`,
+   and a genuine race (simultaneous port contention) reproducibly crashes it unhandled with
+   `HttpListenerException`, at the same file/line/call-chain as the user's report.
+2. **Documented behavior of the specific implementation involved**: on macOS/Linux, `System.Net.HttpListener`
+   runs through .NET's managed, Mono-derived `HttpEndPointListener`/`HttpEndPointManager` implementation
+   (no native `http.sys` outside Windows). The user's exact exception — `ArgumentNullException` inside
+   `Monitor.ReliableEnter`, reached via `HttpEndPointListener.ProcessAccept`/`Accept`/constructor — is
+   consistent with this implementation's internal `SocketAsyncEventArgs`-based accept-loop setup hitting a
+   null internal field when it races against OS-level socket state that hasn't fully settled (e.g. a port
+   very recently released by a killed process). This is the same general failure class as the
+   `HttpListenerException` reproduced directly above — both are unhandled exceptions thrown by the same
+   unprotected `HttpListener.Start()` call under port/socket contention, differing only in which internal
+   code path the race happens to hit. I was not able to reproduce the exact `ArgumentNullException` variant
+   in the time available (only the `HttpListenerException` variant), so the "just-killed-process settling"
+   trigger specifically is inferred from the stack trace and known implementation behavior, not directly
+   reproduced bit-for-bit — flagged here as an honest limit rather than overclaimed.
+
+### Fix applied
+`ControlServer.Start()` (`CosmicEngineApp/ControlServer.cs`) now retries `HttpListener` construction/start
+up to 5 times with a 400ms delay between attempts, catching any exception (broad catch is deliberate — the
+point is to absorb whatever this specific internal implementation throws, not just the documented
+`HttpListenerException`). If all attempts fail, it throws a single `InvalidOperationException` with a
+clear, actionable message ("Port 8080 may still be in use by a previous Cosmic Engine instance... wait a
+few seconds and try again, or run `lsof -i :8080`...") with the last real exception attached as
+`InnerException` for debugging, instead of letting a raw internal .NET stack trace crash the process
+unhandled. No other method or file changed; no architectural restructuring.
+
+### Verification
+- **Recreated the original failure mode under the fix**: two simultaneous `--dashboard-only` launches,
+  post-fix. Instance A now stays up and successfully serves the dashboard; instance B logs 4 retry
+  attempts ("Could not start dashboard on port 8080 (attempt N/5): HttpListenerException: Address already
+  in use. Retrying in 400ms...") then fails with the new clear `InvalidOperationException` message —
+  correct behavior, since A never releases the port in this scenario, so a legitimate final failure is the
+  right outcome, now reported clearly instead of crashing raw.
+- **Recovery test** (the realistic "just-killed-process" scenario): instance A holds the port; instance B
+  starts 1.2s later and hits attempt 1 failure ("Address already in use"); A is then killed mid-retry; B's
+  attempt 2 succeeds and B comes up as a fully working dashboard (`Control panel: http://localhost:8080`,
+  reaches the dashboard-idle wait loop normally). This confirms the retry logic actually recovers from the
+  transient-contention case, not just fails more politely.
+- **Build**: `dotnet build` — 0 warnings, 0 errors.
+- **Smoke test**: `dotnet run -- --smoke-test` — avg fps 74.9, min observed 74.4, completed and exited
+  cleanly (`[Smoke Test] Complete... [StellarNursery] Unloaded.`), no process left running afterward.
+- **Dashboard-only launch/quit cycle**: started via `dotnet bin/Debug/net8.0/CosmicEngine.App.dll
+  --dashboard-only`, `GET /status` returned a valid JSON status (`"running":false,...,"audioCapturing":true`),
+  `POST /quit` triggered clean shutdown (`[Dashboard] Quit requested before any scene was launched -
+  shutting down.`), process exited with status 0, port 8080 confirmed free afterward. (Note: the bare
+  `curl -X POST /quit` with no body returned an HTTP "Length Required" response body from the request
+  parser, but the quit flag still fired correctly and the process still shut down cleanly — this is a
+  pre-existing, unrelated quirk in the `/quit` request-body handling, not something introduced or fixed by
+  this pass, and out of this pass's scope.)
+- **No orphan processes**: confirmed via `ps aux | grep CosmicEngine` and `lsof -i :8080` after every test
+  in this pass — clean in every case at session end.
+
+### Scope
+Only `CosmicEngineApp/ControlServer.cs` changed (`Start()` method only — retry loop + clearer failure
+message). No change to `Engine/DashboardHost.cs`, `Program.cs`, the dashboard/control-server architecture,
+World04 Underwater, or any other scene/world.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending review, per this project's
+standing rule against self-signing audit entries or committing without explicit request.

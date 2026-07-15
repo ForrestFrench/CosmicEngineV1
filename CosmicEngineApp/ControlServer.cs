@@ -13,11 +13,63 @@ namespace CosmicEngine.App
         private static Thread? _thread;
         private static HttpListener? _listener;
 
+        // Reliability hardening (AUDIT.md, HttpListener.Start() crash investigation):
+        // on macOS/Linux, HttpListener.Start() runs through .NET's managed
+        // (Mono-derived) HttpEndPointListener implementation rather than native
+        // http.sys, which has known socket-race edge cases when port 8080 was very
+        // recently held by another Cosmic Engine instance (e.g. one that was
+        // force-killed rather than quit cleanly, or two instances started back to
+        // back). Observed failure modes include HttpListenerException ("Address
+        // already in use") - reproduced directly by starting two --dashboard-only
+        // instances simultaneously - and, per the originally reported crash, an
+        // ArgumentNullException thrown deep inside that same implementation's
+        // internal accept-loop setup when OS socket state hasn't fully settled yet.
+        // Both are the same underlying transient condition, so retry a few times
+        // with a short delay before giving up with a clear, actionable message
+        // instead of letting either exception crash the whole process unhandled.
+        private const int StartMaxAttempts = 5;
+        private const int StartRetryDelayMs = 400;
+
         public static void Start()
         {
-            _listener = new HttpListener();
-            _listener.Prefixes.Add("http://localhost:8080/");
-            _listener.Start();
+            Exception? lastError = null;
+
+            for (int attempt = 1; attempt <= StartMaxAttempts; attempt++)
+            {
+                try
+                {
+                    _listener = new HttpListener();
+                    _listener.Prefixes.Add("http://localhost:8080/");
+                    _listener.Start();
+                    lastError = null;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    _listener = null;
+
+                    if (attempt < StartMaxAttempts)
+                    {
+                        Console.WriteLine(
+                            $"[ControlServer] Could not start dashboard on port 8080 " +
+                            $"(attempt {attempt}/{StartMaxAttempts}): {ex.GetType().Name}: {ex.Message}. " +
+                            $"Retrying in {StartRetryDelayMs}ms...");
+                        Thread.Sleep(StartRetryDelayMs);
+                    }
+                }
+            }
+
+            if (lastError != null)
+            {
+                throw new InvalidOperationException(
+                    $"ControlServer could not start the dashboard on http://localhost:8080 after " +
+                    $"{StartMaxAttempts} attempts. Port 8080 may still be in use by a previous Cosmic " +
+                    "Engine instance (especially if it was force-killed rather than quit normally via " +
+                    "the dashboard's Quit button) - wait a few seconds and try again, or run " +
+                    "`lsof -i :8080` to check for a lingering process.",
+                    lastError);
+            }
 
             _thread = new Thread(Loop)
             {
