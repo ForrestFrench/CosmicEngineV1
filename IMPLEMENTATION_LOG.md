@@ -1926,3 +1926,92 @@ diffstat, the `underwater.frag` diff, zero-temp-override confirmation).
 
 **Not committed, not pushed** — folds into the same uncommitted Phase 1/Phase 2 working-tree state, awaiting
 its own review cycle alongside the base passes above.
+
+## 2026-07-15 — Abyssal Bloom Phase 3 "Distant Event" v0.1 (World04 abyssal glow field)
+
+A fresh, ChatGPT-specified phase directly addressing the review of "Living Water"/"Bloom refinement": the
+scene "still mostly reads as jellyfish under light rays, with plankton as a supporting layer." Adds one new
+environmental element to `underwater.frag` — a distant, vast, irregular field of shifting abyssal glow low
+in the water column — with a hard constraint: must read as abstract/atmospheric, never a creature.
+
+**Concept:** two independently-drifting FBM layers (a low-frequency "macro" shape giving 2-3 broad,
+irregular lobes across the frame width, plus a higher-frequency, independently-warped "detail" layer for
+internal churn) combined with a per-pixel vertical mask (bottom ~35-40% of frame, boundary perturbed by two
+cheap sine terms so it's never a flat iso-line). No radial symmetry anywhere, no single center — nothing for
+the eye to read as a body. Composited immediately after the water-gradient block and before rays/caustics/
+haze/jellyfish/plankton, so every other layer naturally sits in front of and partially obscures it.
+
+**Gating:** reuses `uBloom` directly (`glowArc = pow(uBloom, 2.3)`), no new accumulator, no C#-side state.
+Near-zero through Deep Calm/most of Awakening, rising through Current Build, fullest at Bloom Event — gates
+the layer's cost, not just its output, mirroring the plankton field's own gate pattern.
+
+**Two design corrections, self-caught before reporting via an isolated-render technique** (a temporary
+`fragColor = vec4(...); return;` line rendering only this layer's own output, reverted after each check —
+this is what caught both problems, since a full-composite screenshot dominated by ray/jellyfish brightness
+would have hidden them): (1) a wrong assumption about `fbm2()`'s output range (an N-octave call tops out at
+`1-0.5^N`, not 1.0) made the layer far too dim to see at any bloom level — fixed by explicitly renormalizing
+each fbm2 term; (2) the vertical mask's own smooth gradient dominated the noise field's weak horizontal
+variation, reading as flat horizontal strata rather than an irregular field — fixed via the mask-boundary
+perturbation, a higher macro frequency, and rebalanced ambient/core weighting. Neither consumed the
+two-attempts governance budget — both caught and fixed within the same pass, before any screenshot was
+reported final.
+
+### Verification
+Isolated, deconfounded emergence evidence (bottom-band region sample, rest of pipeline bypassed): mean
+luminance 0.055 → 0.590 → 2.044 → 5.561 (bloom 0.10/0.35/0.60/0.90) — a genuine, monotonic, ~100x increase
+from near-imperceptible to a real presence. Full-composite screenshots at the same 4 levels confirm the same
+trend visually (subtle bluish haze rising from the bottom edge at high bloom, imperceptible at low bloom),
+and read as atmospheric/distant, not a foreground object competing with the jellyfish. "Not a cartoon sea
+creature" self-check: isolated multi-lobe renders show 2-3 irregular soft-edged patches, no bilateral
+symmetry, no body/limb/face structure. Motion diagnostic (isolated, tentacle-free bottom-band sample):
+mean abs diff/channel grows monotonically with elapsed time (2.63 at T1→T5, 7.26 at T1→T15), and a boosted
+T1-vs-T15 crop comparison shows the glow lobes have visibly reshaped — genuine slow internal movement, not a
+static backdrop.
+
+**Zero regression, confirmed:** `underwater.frag`'s only diff is the new `abyssalGlowShape()` helper and its
+composited block — every pre-existing function (`renderJelly()`, `rayField()`, the plankton loop, haze/
+caustic blocks) is byte-identical. Rest-state luminance 0.066-0.067 (established range 0.063-0.073). A
+pixel-diff of the final rest-state screenshot against the immediately-prior committed pass's own rest-state
+screenshot shows mean abs diff 0.20/255, 1.10% of pixels differing >5/255 — consistent with ordinary
+run-to-run jellyfish drift/tentacle-phase timing jitter, not a real regression. Real motion diagnostic at
+rest: T1→T5 16.65%, T5→T15 24.33% (established baseline 16.47%/24.11%) — comparable, not frozen/strobing.
+
+### Performance — a real regression found and fixed, then a false alarm ruled out
+First implementation (2 octaves on all 3 `fbm2` calls, a wider vertical mask) measured 61.0-61.4fps at forced
+Bloom Event (High) — above 60fps but too little margin against the established 65.1-65.4fps baseline.
+Isolating the layer initially seemed to show no attributable cost, root-caused via a fresh `git stash` A/B to
+this project's own documented "fps-environment-shift" phenomenon (the *pure committed baseline* also read
+~61fps early this session before settling to ~65fps). Two zero-visual-cost optimizations were kept anyway:
+`fbm2` octave count halved on 2 of 3 calls (2→1), and the vertical-mask footprint tightened from ~60% to
+~35-40% of frame. Final measured performance, fully-reverted code, stable session regime: forced Bloom Event
+High 63.6-65.0fps avg (steady-state 64.8-65.0fps, min observed 64.1-64.5) — within noise of the established
+baseline, comfortably clear of the 60fps floor. Current Build (0.55) 68.9-69.6fps; rest state 79.7-81.9fps;
+Safe forced Bloom Event 319.1-320.8fps — all unaffected/unregressed.
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors |
+| `--world Underwater --profile High --smoke-test` (forced Bloom Event) | 5 runs, avg 63.6-65.0fps, min 64.1-64.5 (steady-state) |
+| `--world Underwater --profile High --smoke-test` (forced Current Build 0.55) | 3 runs, avg 68.9-69.6fps |
+| `--world Underwater --profile High --smoke-test` (rest state) | 5 runs, avg 79.7-81.9fps |
+| `--world Underwater --profile Safe --smoke-test` (forced Bloom Event) | 3 runs, avg 319.1-320.8fps |
+| `--world Underwater --profile Safe --diagnostic visual` | rest-state luminance 0.066-0.067 |
+| `--world Underwater --profile Safe --diagnostic motion` | real: 16.65%/24.33% (rest); isolated: monotonic 2.63→7.26 mean diff (T1→T5→T15) |
+
+### Iteration honesty — temporary debug overrides, fully reverted
+`TempAbyssalGlowCapture` (`UnderwaterScene.cs`, env-var-gated, same `TempForcedBloom`-family precedent) plus
+an isolated-render debug line in `underwater.frag` (toggled in and out several times for the visual-quality
+and deconfounded-emergence/motion evidence) — both fully removed before this pass was reported done,
+confirmed via `grep -c "TEMP|Temp"` returning `0` on both files and a clean rebuild. `UnderwaterScene.cs` has
+zero diff against the prior committed state as a result.
+
+### Scope
+Confined entirely to `Worlds/World04_Underwater/Shaders/underwater.frag`. Zero diff on `UnderwaterScene.cs`,
+every other world, and every shared engine/audio/rendering file, confirmed via `git diff --stat`.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase3AbyssalGlow_20260715_190003/`, containing `screenshots/`, `logs/`
+(`abyssal_glow_analysis.py` plus raw diagnostic folders and `perf_summary.md`), `source_context/`, `git/`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle.

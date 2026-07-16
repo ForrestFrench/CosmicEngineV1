@@ -260,9 +260,18 @@ outstanding for this world specifically — `Engine/Camera.cs` is now genuinely 
 `UnderwaterScene`, though other worlds (Stellar Nursery/Lava Lamp/Wind Turbine Fire) still do not consume
 it. Silhouettes remain deferred; not reopened. That same fresh plan's "Phase 2" ("Bloom refinement" — plankton
 flow-field alignment + traveling pulse-train brightness waves, `AUDIT.md` Entry 45 and its perf-fix
-addendum, not yet committed) has since given the Phase 1 plankton field real streaming/pulsing structure
+addendum, committed `faddaba`) has since given the Phase 1 plankton field real streaming/pulsing structure
 and fixed a pre-existing sub-60fps shortfall at the scene's forced Bloom Event climax (High: ~50fps →
 ~65fps). Does not change the phase order above.
+
+**Update (2026-07-15, continued):** a ChatGPT-specified "Abyssal Bloom Phase 3 'Distant Event'" pass
+(`AUDIT.md` Entry 46, not yet committed) directly addressed that review's own next-step recommendation —
+"the next visual gain should come from stronger environmental transformation, not more jellyfish anatomy" —
+by adding a distant, irregular, domain-warped abyssal glow field low in the water column, gated across the
+same `uBloom` arc every other layer already uses, explicitly abstract/atmospheric rather than a creature
+(a hard constraint, satisfied and self-checked via an isolated-render technique — see the audit entry).
+Jellyfish/tentacle/plankton/camera/caustic/ray code is entirely untouched by this pass. Does not change the
+phase order above.
 
 ## Note — Scene Dashboard added (2026-07-06)
 

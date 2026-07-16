@@ -17,6 +17,19 @@ out vec4 fragColor;
 // layer (gradient/rays/caustics/haze/particles/motes/grade) untouched except
 // where jellyfish physically interact with it (haze occlusion sampling).
 //
+// Abyssal Bloom Phase 3 "Distant Event" (post "Living Water"/"Bloom
+// refinement"): adds one new environmental layer - a vast, distant field of
+// shifting abyssal glow low in the water column, composited into the water
+// gradient itself (see "Abyssal Glow Field" section, just before main()) so
+// every other layer naturally sits in front of it and partially obscures it.
+// Addresses ChatGPT's review that the scene still mostly read as "jellyfish
+// under light rays, with plankton as a supporting layer" - this is
+// deliberately NOT another jellyfish/creature element (explicit hard
+// constraint from the brief: abstract/atmospheric only, no cartoon sea
+// creature) - it is pure domain-warped noise, gated to emerge gradually
+// across the same uBloom arc every other gated layer in this file already
+// uses. Jellyfish/tentacle/plankton code is untouched by this pass.
+//
 // Guitar 1 (Creator) -> uLightDrive: ray/caustic/glow brightness and the
 // uBloom accumulation drive (uLightDrive itself already carries the C#-side
 // asymmetric attack/release envelope - see UnderwaterScene.cs - so it swells
@@ -789,6 +802,83 @@ float planktonPulseWave(vec2 pos, float bloomNorm) {
     return 0.5 + 0.5 * sin(phase);
 }
 
+// --- Abyssal Glow Field (Phase 3 "Distant Event") ---------------------------
+// Fable-authored roadmap item, directly addressing ChatGPT's review of the
+// "Living Water"/"Bloom refinement" passes: "the next visual gain should
+// come from stronger environmental transformation, not more jellyfish
+// anatomy... the scene still mostly reads as jellyfish under light rays,
+// with plankton as a supporting layer." This adds a vast, distant field of
+// shifting abyssal glow low in the water column, well behind everything
+// else in the scene.
+//
+// Explicit constraint (hard, not a preference): must read as abstract/
+// atmospheric, not a creature or character - no symmetric shape, no orb, no
+// silhouette with a recognizable body ("do not make a cartoon sea
+// creature"). Built the same way this file already avoids single-shape
+// reads elsewhere (rayField's fanned bands, the plankton field's channel-
+// based streams, the haze layer's own FBM murk): one continuous, irregular,
+// domain-warped noise field with a soft directional (vertical, not radial)
+// mask - never a radially-symmetric shape, never a single center. Two
+// independently-drifting FBM layers compose into the field:
+//   - a low-frequency "macro" shape (less than one full noise cycle across
+//     the visible frame width) defining a few broad, uneven lobes - this is
+//     what reads as one continuous vast presence rather than many small
+//     glints;
+//   - a higher-frequency "detail" layer, itself domain-warped by a third,
+//     independently-drifting noise term (its own warp, distinct phase/rate
+//     from the macro layer, so the two components never lock into a single
+//     moving pattern) - this is the internal churn that reads as "something
+//     down there is alive," not a static painted backdrop.
+// The two layers' drift rates/directions are deliberately incommensurate
+// (different axes, different speeds) so no part of this field ever repeats
+// or oscillates predictably - there is nothing here for the eye to latch
+// onto as a body, limb, or face.
+// Perf (measured, not assumed - see AUDIT.md for the before/after fps): the
+// first implementation used 2 octaves on all three fbm2 calls here (6
+// vnoise2 calls per affected pixel) plus a vertical mask reaching nearly to
+// mid-frame, and forced-Bloom-Event High measured 61.0-61.4fps avg - above
+// the 60fps floor but with too little margin against this project's own
+// documented session-level fps variance. The macro shape and its warp term
+// are both meant to be broad/low-frequency by design (that is the whole
+// point of "macro") and lost negligible visual quality dropping to 1 octave
+// each (confirmed by screenshot comparison) - only the detail layer (the
+// "internal churn" component) benefits from the extra octave, so it alone
+// keeps 2. This halves the vnoise2 count on 2 of the 3 calls (6 -> 4 total)
+// at zero visible cost, combined with the tightened glowVMask footprint
+// below.
+// Design correction (self-caught before reporting, not a review failure -
+// see AUDIT.md): a first pass combined macro/detail directly assuming
+// fbm2(...) already spans roughly [0,1], but fbm2()'s own amplitude series
+// (0.5 + 0.25 + ...) means an N-octave call actually tops out at 1-0.5^N -
+// 0.5 for 1 octave, 0.75 for 2 - so the un-normalized combination topped out
+// around 0.6 with a mean near 0.3, and the whole field was consequently far
+// too dim to read at any bloom level (confirmed via an isolated-render
+// capture showing peak pixel values of ~2-6/255 even at forced full Bloom
+// Event). Each fbm2 term is now explicitly renormalized to its own analytic
+// max before combining, so `shape` genuinely spans close to [0,1] as the
+// rest of this function's threshold/weight constants assume.
+float abyssalGlowShape(vec2 pos, float drift) {
+    // Design correction #2 (self-caught, isolated-render check at high
+    // magnification - see AUDIT.md): with macro at 0.55x frequency, less
+    // than one full noise cycle fits across the visible frame width, so the
+    // field's horizontal variation was far weaker than the vertical mask's
+    // own gradient - the composite read as "one smooth wavy band" rather
+    // than an irregular field with multiple distinguishable lobes. Raised to
+    // 0.85x (roughly 1.5 cycles across the frame) so at least 2-3 lobes are
+    // visible at once, still broad/vast relative to any foreground element
+    // but no longer reading as a single coherent wave.
+    vec2  macroUV = pos * 0.85 + vec2(uTime * 0.006, uTime * 0.004 * drift);
+    float macro   = fbm2(macroUV, 1) * 2.0;        // fbm2(.,1) maxes at 0.5 - renormalize to [0,1]
+
+    vec2  warpUV   = pos * 1.3 + vec2(-uTime * 0.010 * drift, uTime * 0.007);
+    float warp     = fbm2(warpUV, 1) - 0.25;        // centered around 0 (fbm2(.,1) mean ~0.25)
+    vec2  detailUV = pos * 2.6 + vec2(warp * 0.6, warp * 0.4)
+                                + vec2(uTime * 0.009 * drift, -uTime * 0.005);
+    float detail   = fbm2(detailUV, 2) * (1.0 / 0.75); // fbm2(.,2) maxes at 0.75 - renormalize to [0,1]
+
+    return clamp(macro * 0.60 + detail * 0.40, 0.0, 1.0);
+}
+
 void main() {
     vec2 uv = vUV;
     uv.y = 1.0 - uv.y;
@@ -890,6 +980,102 @@ void main() {
 
     vec3 color = mix(zoneTop, zoneMid, smoothstep(0.0, 0.45, depthTN));
     color = mix(color, zoneBottom, smoothstep(0.45, 1.0, depthTN));
+
+    // --- Abyssal Glow Field (Phase 3 "Distant Event") -----------------------
+    // Composited immediately after the water-gradient "canvas" and before
+    // every other layer (rays/caustics/haze/jellyfish/plankton) - per this
+    // pass's own design, everything below naturally draws on top of and
+    // partially obscures this field, which is exactly what reinforces its
+    // distance rather than competing with the foreground elements. Sampled
+    // against pRefractWater - the same most-distant 0.2x-parallax +
+    // refraction coordinate the water gradient's own depthT/depthNoise
+    // already use - so this reads as part of the same distant backdrop, not
+    // a separate nearer layer; no new parallax multiplier introduced.
+    //
+    // Gated on two independent, cheap checks before any of the (relatively)
+    // expensive FBM work runs, mirroring this file's own established "gate
+    // cost, not just visible output" pattern (the plankton field's
+    // bloomNorm > 0.001 gate; the tentacle/plankton loops' spatial early-
+    // outs):
+    //   1. glowArc - a uniform-only value (identical for every pixel this
+    //      frame, so this check costs nothing per-pixel), near-zero through
+    //      Deep Calm and most of Bioluminescent Awakening, rising through
+    //      Current Build, fullest at Bloom Event - this is the "emerge
+    //      gradually through the bloom arc" requirement, and it skips the
+    //      whole block below during Deep Calm exactly like the plankton
+    //      field does, not just fading the output to invisible while still
+    //      paying for it.
+    //   2. glowVMask - a per-pixel vertical gate, since this event lives low
+    //      in the water column near/below the visible bottom edge. Tightened
+    //      (measured, not assumed - see AUDIT.md) from an initial (-0.55,
+    //      0.10) band, which left the FBM work running across roughly the
+    //      bottom 60% of frame, to (-0.62, -0.14) - now only the bottom
+    //      ~35-40% of frame pays the FBM cost at all, which is also a
+    //      tighter match to "deep background, near the bottom edge" than
+    //      the original wider band was. This is the spatial-masking check
+    //      this pass's own brief calls for before adding real per-fragment
+    //      cost across the full frame; a soft smoothstep gate (never a hard
+    //      mask) so there is no visible
+    //      seam where the field "turns on".
+    float glowArc = pow(clamp(uBloom, 0.0, 1.0), 2.3);
+    if (glowArc > 0.0004) {
+        // Design correction (self-caught, isolated-render check - see
+        // AUDIT.md): a first pass gated purely on pRefractWater.y, an
+        // iso-line with zero horizontal variation - at high magnification
+        // this read as flat, uniformly-curved horizontal strata (closer to
+        // sedimentary layers than an irregular living field). Perturbing the
+        // boundary itself with two cheap, incommensurate sine terms (no new
+        // fbm2/transcendental-heavy cost - just 2 sin() calls, same
+        // "irregular, not a perfect oscillation" technique already used by
+        // rayAngle()'s sway) breaks the iso-line into an undulating,
+        // never-repeating boundary before the noise field even begins.
+        float vMaskWobble = 0.055 * sin(pRefractWater.x * 2.3 + uTime * 0.021)
+                           + 0.032 * sin(pRefractWater.x * 5.1 - uTime * 0.014 + 1.7);
+        float glowVMask = 1.0 - smoothstep(-0.62, -0.14, pRefractWater.y + vMaskWobble);
+        if (glowVMask > 0.003) {
+            // Internal churn very subtly quickens through the arc (never
+            // enough to read as urgency, only enough to feel like "more is
+            // happening") - part of what makes the escalation toward Bloom
+            // Event a qualitative change (slow, barely-perceptible drift ->
+            // a visibly living field), not just a brightness increase.
+            float drift = 1.0 + 0.35 * glowArc;
+            float shape = abyssalGlowShape(pRefractWater, drift);
+
+            // Two soft bands rather than a hard threshold - a broad, dim
+            // "ambient" presence plus irregular brighter cores within it, so
+            // the field has internal contrast (reads as structured, alive)
+            // without any single core reading as a body: the cores are
+            // numerous, irregular, and continuously reshaping with the
+            // noise field underneath them, never a fixed or countable
+            // shape.
+            //
+            // Design correction #3 (self-caught, isolated-render check - see
+            // AUDIT.md): the ambient term's own weight was strong enough
+            // relative to the core term that the field's overall brightness
+            // trend still tracked the (now-perturbed but still smooth)
+            // vertical mask more than the noise field's own patchiness.
+            // Lowered the core threshold (more of the field crosses into
+            // "core" territory) and rebalanced the weights so the patchy,
+            // irregular core term is what visually dominates - the ambient
+            // term is now only a faint backdrop, not competing with it.
+            float core      = smoothstep(0.30, 0.62, shape);
+            float glowField = shape * 0.16 + core * 1.15;
+
+            // Color stays on this scene's established deep-blue/cyan ramp,
+            // with the same small violet nudge already used for jellyfish
+            // rim/plankton at high bloom (never a hue flip) - this event
+            // does not introduce a new color family to the scene. Magnitudes
+            // retuned alongside the shape-renormalization fix above so the
+            // brightest cores read as a real, if still dark-dominant,
+            // presence at Bloom Event rather than an imperceptible tint.
+            vec3 glowDeep      = vec3(0.055, 0.100, 0.190);
+            vec3 glowBloom     = vec3(0.190, 0.320, 0.560);
+            vec3 abyssalColor  = mix(glowDeep, glowBloom, core);
+            abyssalColor = mix(abyssalColor, vec3(0.36, 0.22, 0.60), smoothstep(0.80, 1.0, uBloom) * 0.30);
+
+            color += abyssalColor * glowField * glowArc * glowVMask;
+        }
+    }
 
     // --- God rays ----------------------------------------------------------
     // Brightness = time-only baseline (alive under silence) + uLightDrive

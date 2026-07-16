@@ -5032,3 +5032,208 @@ override confirmation).
 
 **Not committed, not pushed** — folds into the same uncommitted Phase 1/Phase 2 working-tree state, awaiting
 its own review cycle alongside the base passes above.
+
+## Entry 46 — Abyssal Bloom Phase 3 "Distant Event" v0.1 (World04 abyssal glow field)
+
+**Date:** 2026-07-15
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+A fresh, ChatGPT-specified, user-approved phase directly addressing the review of the just-committed
+"Living Water"/"Bloom refinement" passes: *"The next visual gain should come from stronger environmental
+transformation, not more jellyfish anatomy... the scene still mostly reads as jellyfish under light rays,
+with plankton as a supporting layer."* This pass adds one new environmental element — a distant, vast,
+shifting field of abyssal glow low in the water column — gated to emerge gradually across the same
+`uBloom` arc every other layer in this scene already uses, explicitly required to read as
+abstract/atmospheric rather than a creature or character ("do not make a cartoon sea creature").
+
+### Scope
+Confined entirely to `Worlds/World04_Underwater/Shaders/underwater.frag`. `UnderwaterScene.cs` was touched
+only for temporary, fully-reverted debug overrides used for evidence capture (`TempAbyssalGlowCapture`,
+env-var-gated) — confirmed **zero permanent diff** via `git diff --stat` and `grep -c "TEMP|Temp"` returning
+`0` in both files. `git diff --stat` against every other world and every shared engine/audio/rendering file
+(`World01_StellarNursery/`, `World02_LavaLamp/`, `World03_WindTurbineFire/`, `Audio/`, `Rendering/`,
+`Engine/`) is confirmed empty. Per the user's own standing preference (scoped regression checks — only test
+other scenes when a shared file is touched, not by default), the other three worlds were not re-run this
+pass. Jellyfish/tentacle rendering, the plankton field's own internals, camera/parallax code, and the
+caustic/ray/refraction code were none of them touched — confirmed via the diff (the only functions added are
+`abyssalGlowShape()` and the new composited block in `main()`; every pre-existing function body is
+byte-identical).
+
+### Concept chosen and why
+**A large, irregular, domain-warped field of shifting abyssal glow, low in the water column (bottom
+edge/background of frame)** — not a trench, vent-field, or light-wall variant; chosen because it maps most
+directly onto this engine's existing fullscreen-quad/noise architecture (reusing the file's own `fbm2`/
+`vnoise2` primitives, the same "continuous procedural field, not discrete repeated shapes" principle
+already proven on the plankton current-channels and the tentacle traveling-wave rescue) and composites
+naturally as an extension of the water gradient's own near-black abyss zone, per the brief's own suggestion
+that the water gradient is "the natural canvas this distant event should emerge from/within." Built from two
+independently-drifting FBM layers (a low-frequency "macro" shape defining a few broad, irregular lobes
+across the width, plus a higher-frequency, independently-warped "detail" layer for internal churn) combined
+with a per-pixel vertical mask — deliberately never a radially-symmetric shape, never a single center, so
+there is nothing for the eye to read as a body.
+
+### How it's gated across the bloom arc
+Reuses `uBloom` directly (no new accumulator, no C#-side state) via `glowArc = pow(clamp(uBloom,0,1), 2.3)`
+— a uniform-only value, near-zero through Deep Calm and most of Bioluminescent Awakening, rising through
+Current Build, fullest at Bloom Event. This also gates the layer's *cost*, not just its visible output
+(mirrors the plankton field's own `bloomNorm > 0.001` gate) — the expensive FBM work is skipped entirely
+whenever `glowArc <= 0.0004`. A second, independent, per-pixel gate (`glowVMask`, a sine-perturbed vertical
+mask centered on the bottom ~35-40% of frame) additionally skips the FBM work for the majority of the frame
+regardless of bloom state — the spatial-masking check this pass's own brief called for before adding real
+per-fragment cost across the full frame.
+
+**Emergence evidence (isolated, deconfounded from rays/haze — see Iteration honesty below for the
+technique):** a temporary isolated-render capture (only this layer's own output, rest of the pipeline
+bypassed) sampled a fixed bottom-band region at bloom 0.10/0.35/0.60/0.90:
+
+| uBloom | isolated mean luminance (0-255) | isolated bright-pixel count |
+|---|---|---|
+| 0.10 | 0.055 | 984 |
+| 0.35 | 0.590 | 1,022 |
+| 0.60 | 2.044 | 4,272 |
+| 0.90 | 5.561 | 43,905 |
+
+A genuine, monotonic, ~100x emergence from near-zero to a real presence — confirming "near-imperceptible at
+low bloom, clearly present and atmospheric at high bloom" is not just a plausible-looking screenshot
+sequence but a real, isolated, measured effect. The same four levels captured in the full composited scene
+(contaminated by rays/haze also brightening with the same forced `uBloom`, disclosed as a confound, not
+hidden) show a consistent monotonic trend in a fixed bottom-band sample: mean luminance 6.77 → 8.95 → 12.14
+→ 17.88, bright-pixel(>12) count 4.05% → 17.74% → 47.47% → 89.80% of the sampled region.
+
+### Own honest, critical assessment against "not a cartoon sea creature"
+**Two design corrections were required before this was convincing — disclosed here, not smoothed over.**
+A first isolated-render check (at normal, non-boosted brightness) showed the layer's actual pixel values
+were far too dim to be visible at all (peak ~2-6/255 even at forced full Bloom Event) — traced to a wrong
+assumption about `fbm2()`'s own output range (an N-octave call tops out at `1-0.5^N`, not 1.0, so the
+un-normalized combination topped out around 0.6 with a low mean). Fixed by explicitly renormalizing each
+`fbm2` term to its own analytic max. A second isolated-render check at high magnification then showed the
+*corrected* field read as flat, uniformly-curved horizontal bands — closer to sedimentary strata than an
+irregular living field — because the vertical mask (a pure function of screen-y) dominated the noise field's
+own comparatively weak horizontal variation. Fixed by (a) perturbing the mask boundary itself with two cheap
+incommensurate sine terms so it is never a flat iso-line, (b) raising the macro layer's frequency so 2-3
+lobes are visible across the frame width instead of one smooth wave, and (c) rebalancing the "ambient vs.
+core" weighting so the patchy, irregular core term visually dominates over the smooth ambient trend. Neither
+correction consumed the two-genuine-attempts budget from CLAUDE.md governance rule 10 — both were caught and
+fixed within the same implementation pass, before any screenshot was reported as final, via the isolated-
+render technique itself (not by tuning against the full composited scene, which would have hidden both
+problems behind rays/jellyfish brightness).
+
+**Final verdict, checked against my own isolated-render and full-composite screenshots:** yes, this reads as
+abstract/atmospheric. The isolated multi-lobe renders (`isolated_glow_only_v4_bottomcrop_boosted3x.png`/
+`8x.png`) show 2-3 irregular soft-edged patches of glow with no bilateral symmetry, no defined outline, no
+limb/body/face-like structure — nothing a viewer could point to as "a creature." The full-composite
+screenshots at bloom 0.60/0.90 (`bloom_0.60_full.png`/`bloom_0.90_full.png`) show the effect as a subtle
+bluish haze rising from the very bottom edge of frame, clearly reading as depth/atmosphere rather than a
+foreground object — it does not compete with the jellyfish silhouettes for attention at any bloom level
+tested.
+
+### Confirmation: jellyfish/plankton/rays/caustics/haze/water-gradient unchanged
+- **Code-level:** `git diff` on `underwater.frag` shows only two additions — the new `abyssalGlowShape()`
+  helper function and the new composited block in `main()`, inserted between the water-gradient block and
+  the god-rays block. Every pre-existing function (`renderJelly()`, `rayField()`, the plankton loop, the
+  haze/caustic blocks) is byte-identical to the pre-pass committed state.
+- **Visual-level:** rest-state luminance (real audio, no override) measured 0.066-0.067 across all three
+  visual-diagnostic phases — identical to the established 0.063-0.073 range spanning every prior pass on
+  this file. A pixel-diff of the final rest-state screenshot against the immediately-prior committed pass's
+  own rest-state screenshot (`UnderwaterPhase2PlanktonPerf_20260715_180632/screenshots/05_final_rest_state.png`)
+  shows a mean absolute difference of 0.20/255 across RGB channels and only 1.10% of sampled pixels differing
+  by more than 5/255 — consistent with ordinary run-to-run jellyfish drift-path/tentacle-wave-phase timing
+  jitter between two separate process invocations (the same category of residual this file's own prior
+  no-wobble checks have repeatedly documented as expected), not a real regression.
+- **Motion-level:** real (unforced) `--diagnostic motion` at rest: T1→T5 16.65%, T5→T15 24.33% (established
+  baseline: 16.47%/24.11%) — comparable, not frozen/strobing, no change to existing motion character.
+
+### Performance (mandatory regression check per this pass's own brief)
+**First implementation cost too much and was caught by this pass's own mandatory check, not by the user.**
+Initial version (2 octaves on all 3 `fbm2` calls, a vertical mask reaching to mid-frame) measured 61.0-61.4fps
+avg at forced Bloom Event, High — above the 60fps floor but with too little margin, and a ~4fps drop from the
+established 65.1-65.4fps baseline. Isolating the new layer (temporarily disabled) initially appeared to show
+no attributable cost — root-caused via a fresh `git stash` A/B to this session's own well-documented
+"fps-environment-shift" phenomenon (Entry 41 addendum 5 / Entry 44 / Entry 45 all report the same effect):
+the *pure committed baseline*, with zero code from this pass, also read ~61fps early in this session before
+settling to a stable 65.2-65.4fps several runs later. Two zero-visual-cost optimizations were kept anyway
+(applied before the environment-shift was understood, both real, both cost-free): (1) reduced the macro/warp
+`fbm2` calls from 2 octaves to 1 (halves the vnoise2 count on 2 of 3 calls, 6→4 total), (2) tightened the
+vertical mask footprint from covering roughly the bottom 60% of frame to roughly the bottom 35-40%.
+
+**Final measured performance (fully-reverted code, stable session regime):**
+
+| Scenario | Profile | Runs | avg fps | min observed |
+|---|---|---|---|---|
+| Forced Bloom Event (uBloom=1.0), worst case | High | 5 | 63.6-65.0 (steady-state 64.8-65.0) | 64.1-64.5 (steady-state runs) |
+| Forced Current Build (uBloom=0.55), realistic mid-arc | High | 3 | 68.9-69.6 | 66.7-67.8 |
+| Rest state (Deep Calm, real audio, no override) | High | 5 | 79.7-81.9 | 78.1-80.2 |
+| Forced Bloom Event (uBloom=1.0) | Safe | 3 | 319.1-320.8 | 296.8-305.3 |
+
+Before/after vs. the established Entry 45 addendum baseline (65.1-65.4fps forced Bloom Event, High): this
+pass's final numbers are within ordinary session noise of that baseline — **no measurable regression**,
+comfortably clear of the mandatory 60fps floor. The visual-quality design corrections described above (fbm2
+renormalization, macro-frequency increase, mask-boundary perturbation, ambient/core rebalancing) added zero
+new `fbm2`/transcendental calls — all are constant retunes — so the performance numbers above, measured on
+the visually-corrected code, stand as the final figures.
+
+### Motion diagnostic (slow internal movement)
+Real `--diagnostic motion` (t=1s/5s/15s) with the layer isolated (temporary render-only override, reverted
+immediately after) and forced to full Bloom Event, sampled in a tentacle-free bottom-band region (y in
+[0.78,0.99] of frame — confirmed clear of any jellyfish/tentacle rendering by direct visual inspection of the
+crop) to isolate purely this layer's own movement from jellyfish/ray motion elsewhere in frame:
+
+| Comparison | mean abs diff/channel (0-255) |
+|---|---|
+| T1 → T5 (4s) | 2.63 |
+| T1 → T15 (14s) | 7.26 |
+| T5 → T15 (10s) | 5.03 |
+
+A monotonically-growing difference with elapsed time, and a direct visual comparison of the boosted T1 vs.
+T15 crops (`motion_isolated_T1_bottomcrop_boosted.png`/`motion_isolated_T15_bottomcrop_boosted.png`) shows
+the bright lobe shapes have visibly reshuffled/reshaped between the two captures — confirming genuine slow
+internal movement, not a static backdrop, consistent with the "something vast and alive" design intent.
+
+### Iteration honesty — temporary debug overrides, fully reverted
+Two distinct temporary mechanisms were used across this pass, both fully removed before being reported done:
+1. **`TempAbyssalGlowCapture`** (`UnderwaterScene.cs`: a static float field, env-var-gated via
+   `COSMICENGINE_TEMP_ABYSSAL_GLOW`, default -1 = off, plus a one-line `Update()` override forcing
+   `_bloom`/`_lightEnvelope`) — same established precedent as every prior `TempForcedBloom`-family override
+   on this file. Used for all bloom-arc-progression and forced-Bloom-Event performance captures. Fully
+   removed (field, `Load()` env-var read, `Update()` branch) — confirmed via `grep -c "TEMP|Temp"
+   UnderwaterScene.cs` returning `0` and a clean rebuild; `git diff --stat` on `UnderwaterScene.cs` returns
+   empty.
+2. **Isolated-render debug line** (`underwater.frag`: a single `fragColor = vec4(...); return;` line inside
+   the gated block, toggled in and out several times across this pass's visual-quality iteration and the
+   deconfounded emergence/motion evidence gathering) — used to render *only* this layer's own output with
+   the rest of the pipeline bypassed, the technique that caught both design corrections described above (a
+   full-composite screenshot, dominated by ray/jellyfish brightness, would not have surfaced either problem).
+   Fully removed after each use — confirmed via `grep -c "TEMP diagnostic isolation" underwater.frag`
+   returning `0` on the final code and a clean rebuild.
+
+### Known limitations
+- All new constants (macro/detail frequency and drift rates, core/ambient threshold and weight balance,
+  color magnitudes, vertical-mask extent and wobble amplitude, the `glowArc` exponent) are first-pass
+  eyeball/isolated-render tuning against this pass's own screenshots, not validated against real sustained
+  guitar playing or the actual show hardware — same caveat as every prior pass on this file.
+- The deconfounded full-composite bloom-arc luminance table above is contaminated by rays/haze also
+  brightening under the same forced-`uBloom` override (disclosed, not hidden) — the isolated-render table is
+  the clean evidence for this layer's own emergence specifically.
+- The motion-diagnostic sample region (y in [0.78,0.99]) was chosen by direct visual inspection to be clear
+  of jellyfish/tentacle reach in this particular capture's jellyfish positions (which vary run-to-run via the
+  drift-path system) — not a geometrically-guaranteed exclusion for every possible jellyfish position.
+- Performance headroom (64.8-65.0fps steady-state vs. the 60fps floor) is comfortable but not as wide as the
+  original pre-Phase-3 ceiling (~75-82fps at rest) — this layer does have a real, small, disclosed cost at
+  its worst case, kept within budget via the optimizations described above rather than eliminated entirely.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase3AbyssalGlow_20260715_190003/`, containing `screenshots/` (bloom-arc
+progression at 0.10/0.35/0.60/0.90 full-frame and a combined 3x-boosted bottom-band comparison strip,
+isolated-render captures at each bloom level for deconfounded emergence evidence, isolated multi-lobe
+crops at 3x/8x boost for the "not a creature" check, a direct 0.10-vs-0.90 unboosted side-by-side, motion-
+diagnostic T1/T5/T15 isolated captures plus boosted crops, final rest-state, a pixel-diff regression check
+against the prior pass's own rest-state screenshot), `logs/` (`abyssal_glow_analysis.py` — the PPM→PNG
+conversion and quantitative region-sampling script — plus raw `Visual_*`/`Motion_*` diagnostic folders and
+`perf_summary.md` with the full staged before/after fps tables), `source_context/` (final
+`underwater.frag`/`UnderwaterScene.cs`), `git/` (status, diffstat, the `underwater.frag` diff, zero-other-
+files-diff confirmation, zero-temp-scaffolding confirmation).
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
+project's standing rule against self-signing audit entries or committing without explicit request.

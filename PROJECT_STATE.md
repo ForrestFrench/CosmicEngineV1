@@ -2,7 +2,7 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) — not yet committed, see `AUDIT.md` Entry 45 and its addendum)
+**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc, forced Bloom Event High holding at 63.6-65.0fps (steady-state 64.8-65.0fps) — not yet committed, see `AUDIT.md` Entry 46)
 
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
@@ -228,6 +228,30 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   pixel-identical luminance (0.137/0.139/0.141) between the pre-fix and post-fix code. Confined entirely to
   `underwater.frag`'s plankton section; `UnderwaterScene.cs` ends this addendum with zero diff (temporary
   debug overrides fully reverted). See `AUDIT.md` Entry 45 addendum for full detail, including the reviewer
+  sign-off (pending, left blank).
+  **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
+
+- **Abyssal Bloom Phase 3 "Distant Event" v0.1 (Entry 46, this pass, not yet committed):** a fresh,
+  ChatGPT-specified phase addressing the review that the scene "still mostly reads as jellyfish under light
+  rays, with plankton as a supporting layer" — adds one new environmental element, a distant, irregular,
+  domain-warped field of abyssal glow low in the water column, gated across the same `uBloom` arc every other
+  layer already uses (`glowArc = pow(uBloom, 2.3)`, near-zero through Deep Calm, fullest at Bloom Event) and
+  spatially masked to the bottom ~35-40% of frame. Two design corrections were self-caught before reporting
+  via an isolated-render diagnostic technique (rendering only this layer's own output with the rest of the
+  pipeline bypassed): a wrong assumption about `fbm2()`'s output range made the layer far too dim to see at
+  any bloom level (fixed via explicit renormalization), and the vertical mask's own smooth gradient initially
+  dominated the noise field's horizontal variation, reading as flat bands rather than an irregular field
+  (fixed via a perturbed mask boundary, higher macro frequency for 2-3 visible lobes, and rebalanced
+  ambient/core weighting). Isolated, deconfounded emergence evidence shows a genuine ~100x monotonic
+  brightness increase from bloom 0.10 to 0.90 in a fixed bottom-band sample. A first implementation measured
+  61.0-61.4fps at forced Bloom Event (High) — above the 60fps floor but with thin margin against this
+  project's own documented session-level fps variance — optimized (fbm2 octave reduction, tighter vertical-
+  mask footprint) to a final 63.6-65.0fps (steady-state 64.8-65.0fps), within noise of the established
+  65.1-65.4fps baseline. Confined entirely to `underwater.frag`; `UnderwaterScene.cs` ends this pass with
+  zero diff (temporary debug overrides fully reverted). Jellyfish/tentacle/plankton/rays/caustics/haze/
+  water-gradient code all confirmed byte-identical via diff, and visually unchanged (rest-state luminance
+  0.066-0.067, matching the established 0.063-0.073 range; motion diagnostic 16.65%/24.33%, matching the
+  established 16.47%/24.11% baseline). See `AUDIT.md` Entry 46 for full detail, including the reviewer
   sign-off (pending, left blank).
   **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
 
