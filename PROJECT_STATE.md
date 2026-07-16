@@ -2,7 +2,7 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 — drifting jellyfish, plankton bloom, camera parallax, "Abyssal Bloom" rename, not yet committed, see `AUDIT.md` Entry 44; Phase 3 from the prior session is now committed as `bfcf82a`)
+**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) — not yet committed, see `AUDIT.md` Entry 45 and its addendum)
 
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
@@ -169,7 +169,7 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   `renderJelly()` and its three call sites never reference the warped coordinate (confirmed via `grep`).
   See `AUDIT.md` Entry 43 for full detail, including the reviewer sign-off (pending, left blank).
   **Committed as `bfcf82a`** (Phase 0 of the Phase 1 "Living Water" session below), not pushed.
-- **Underwater Phase 1 "Living Water" v0.1 (Entry 44, this pass, not yet committed):** converts the
+- **Underwater Phase 1 "Living Water" v0.1 (Entry 44, committed `e1c576b`):** converts the
   previously screen-fixed jellyfish (Phase 2) into drifting inhabitants of an evolving environment, directly
   answering the user's "jellyfish just sit there" complaint. Jellyfish position/depth is now C#-integrated
   drift-path state (`UnderwaterScene.cs`'s `JellyDriftState`) instead of a static hash — each jellyfish
@@ -190,6 +190,45 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   boundary (~60-62fps under an adversarial forced-clustering scenario) without chasing further optimization
   once realistic operation was confirmed comfortably clear of the 60fps floor. See `AUDIT.md` Entry 44 for
   full detail, including the reviewer sign-off (pending, left blank).
+- **Underwater Phase 2 "Bloom refinement" v0.1 (Entry 45, this pass, not yet committed):** gives the Phase 1
+  plankton bloom field real structure instead of independent per-mote random drift/twinkle. Flow-field
+  alignment: plankton are grouped into 7 coarse, smoothly-blended "current channels" (mirroring the
+  jellyfish-tentacle lane-blending technique, Entry 41 addendum 1), each with its own slowly-evolving flow
+  direction that biases plankton motion — verified analytically (a Python re-implementation of the exact
+  shader math) to show within-channel flow-angle alignment averaging 0.77-0.85 (near 1.0 = tightly aligned
+  stream) versus only 0.37-0.38 across different channels' means. Pulse-train brightness waves: a literal
+  traveling-wave function of position and time replaces the old per-plankton independent blink, verified
+  analytically to be a true traveling wave (floating-point-precision invariance along the wave's own travel
+  line). Both mechanics' strength/frequency rise with the existing bloom-arc's `bloomNorm`, plus a new
+  brightness-variance widening term, giving Awakening→Bloom Event a genuine qualitative escalation, not just
+  more/brighter dots. **A real performance regression was found by this pass's own mandatory check and
+  fixed, not just accepted:** the first implementation cost ~17% relative fps at forced worst-case (all
+  plankton, full Bloom Event) versus a contemporaneous Phase-1-only baseline; two optimization rounds
+  (hoisting a per-pixel-redundant per-plankton computation into a once-per-pixel array, dropping unused
+  transcendental calls) brought that down to ~5% relative. Also found and honestly disclosed (not silently
+  accepted) that Phase 1's own pre-existing plankton-loop cost already sits below the 60fps floor at that
+  same forced full-density scenario — unlike a prior disclosed worst case (Entry 44's clustered-jellyfish
+  edge), this is the scene's designed climax state, not a rare synthetic edge, so it's flagged as a genuine
+  follow-up candidate rather than swept under the rug. Confined entirely to `underwater.frag`'s plankton
+  section — `UnderwaterScene.cs` ends this pass with zero diff (no C#-integrated state was needed; flow/pulse
+  timing reads `uTime`/`bloomNorm` directly rather than requiring audio-rate integration). Zero regression to
+  jellyfish drift/pulse/tentacles, camera parallax, marine-snow particles, water/ray/caustic/haze layers, or
+  the bloom-arc band boundaries (all confirmed unchanged). See `AUDIT.md` Entry 45 for full detail, including
+  the reviewer sign-off (pending, left blank).
+  **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
+- **Underwater Phase 2 "Bloom refinement" perf-fix addendum (Entry 45 addendum, this pass, not yet
+  committed):** priority follow-up treating the base pass's own disclosed sub-60fps shortfall at forced full
+  Bloom Event (High, 50.5-50.7fps) as a priority item. Isolated the plankton loop as the sole cause (disabling
+  it recovered fps to rest-state levels), then found it had no spatial early-out at all — every fragment paid
+  full per-plankton cost regardless of that plankton's ~0.001-0.003 p-unit visible radius. Fixed via a
+  mathematically exact per-frame reach bound (not a headroom guess) plus a small prefix-cost hash
+  consolidation, in two measured rounds. **Forced Bloom Event, High: 49.9-50.1fps → 65.1-65.4fps avg (5
+  runs, min observed 64.5-64.8)** — a ~30% relative improvement, crossing the 60fps floor with real margin.
+  Visual preservation confirmed via git-stash A/B: `--diagnostic visual` at forced `uBloom=0.85` measured
+  pixel-identical luminance (0.137/0.139/0.141) between the pre-fix and post-fix code. Confined entirely to
+  `underwater.frag`'s plankton section; `UnderwaterScene.cs` ends this addendum with zero diff (temporary
+  debug overrides fully reverted). See `AUDIT.md` Entry 45 addendum for full detail, including the reviewer
+  sign-off (pending, left blank).
   **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
 
 ## P1 Acceptance Criteria (RenderScale + Live/Safe Profiles + FPS Variance Evidence) — STATUS: implemented, evidence gathered, awaiting review

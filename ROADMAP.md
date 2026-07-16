@@ -255,10 +255,14 @@ order above; Stellar Nursery visual polish is still parked pending P3/P4/P5 as d
 **Update (2026-07-15):** jellyfish/tentacles (Phase 2, `AUDIT.md` Entry 41 and addenda) and a foreground
 refraction warp (Phase 3, `AUDIT.md` Entry 43, committed `bfcf82a`) have since been added. A fresh
 architect plan's own "Phase 1" ("Living Water" — drifting jellyfish, camera parallax, plankton bloom,
-`AUDIT.md` Entry 44, not yet committed) has also resolved the Camera-consume item noted elsewhere as
+`AUDIT.md` Entry 44, committed `e1c576b`) has also resolved the Camera-consume item noted elsewhere as
 outstanding for this world specifically — `Engine/Camera.cs` is now genuinely read/used by
 `UnderwaterScene`, though other worlds (Stellar Nursery/Lava Lamp/Wind Turbine Fire) still do not consume
-it. Silhouettes remain deferred; not reopened.
+it. Silhouettes remain deferred; not reopened. That same fresh plan's "Phase 2" ("Bloom refinement" — plankton
+flow-field alignment + traveling pulse-train brightness waves, `AUDIT.md` Entry 45 and its perf-fix
+addendum, not yet committed) has since given the Phase 1 plankton field real streaming/pulsing structure
+and fixed a pre-existing sub-60fps shortfall at the scene's forced Bloom Event climax (High: ~50fps →
+~65fps). Does not change the phase order above.
 
 ## Note — Scene Dashboard added (2026-07-06)
 

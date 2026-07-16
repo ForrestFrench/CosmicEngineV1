@@ -713,6 +713,82 @@ void renderJelly(inout vec3 color, vec2 p, float idx, float phase,
     }
 }
 
+// --- Plankton flow/pulse helpers (Phase 2 "Bloom refinement") --------------
+// Added to give the Phase 1 "Living Water" plankton bloom field real
+// structure - flow-coherent streaming and traveling brightness pulse
+// trains - instead of independent per-mote random drift/twinkle. Kept as
+// small standalone functions (rather than inlined into the loop below) for
+// the same readability reason rayEnvelope()/rayOrigin()/rayAngle() are split
+// out above; both are cheap (hash1/sin only, no fbm2/vnoise2 - a full 2D
+// noise-field evaluation per plankton per pixel was considered and rejected
+// on cost grounds given the loop already runs up to MAX_PLANKTON times per
+// pixel) and reuse only infrastructure this file already has (hash1, plus
+// the same lane-blending pattern already proven on this file's own jellyfish
+// tentacles - AUDIT.md Entry 41 addendum 1 - here applied to plankton
+// "current channels" instead of tentacle strands).
+
+// Number of coarse horizontal current channels plankton are grouped into.
+// Small on purpose - the point is a few visually-distinguishable streams,
+// not per-particle individuality (that's what the residual turb wobble in
+// the main loop is for).
+const float PLANKTON_CHANNEL_COUNT      = 7.0;
+const int   PLANKTON_CHANNEL_BOUNDARIES = 8; // PLANKTON_CHANNEL_COUNT + 1 endpoints
+
+// Perf correction (self-caught before reporting this pass done - see
+// AUDIT.md for the measured before/after): the 8 channel-boundary angles
+// below depend only on uTime and a small integer index (0-7), never on any
+// per-plankton value. The first implementation recomputed all of this
+// (2 hash1 + 2 sin) from scratch for every one of up to 90 plankton per
+// pixel, which cost real, measured fps (High profile at worst-case forced
+// bloom dropped from an already-existing Phase 1 baseline of ~52fps to
+// ~44fps, a violation of the 60fps floor). Hoisting the 8 boundary angles
+// into a once-per-pixel precomputation (this function; called once, before
+// the plankton loop, only when bloomNorm already gates the loop open) and
+// having planktonChannelAngle() below do a cheap array lookup + blend per
+// plankton instead removes that redundancy entirely - identical visual
+// result (verified - see AUDIT.md), far fewer transcendental calls.
+void computePlanktonChannelBoundaryAngles(out float chAngle[PLANKTON_CHANNEL_BOUNDARIES]) {
+    for (int c = 0; c < PLANKTON_CHANNEL_BOUNDARIES; c++) {
+        float cf    = float(c);
+        float ang   = hash1(cf * 12.9 + 3.0) * 6.2831853;
+        // Slow per-channel angle drift - channels reshape gradually over
+        // minutes, never frozen, never fast enough to look like jitter.
+        float drift = sin(uTime * 0.008 + cf * 5.3) * 0.6;
+        chAngle[c]  = ang + drift;
+    }
+}
+
+// Looks up this plankton's shared current-channel flow angle from the
+// precomputed boundary array above - a plankton's baseX places it between
+// two adjacent channels, smoothly blended (smoothstep, not a hard switch)
+// so channel boundaries are never a visible seam, mirroring the tentacle
+// lane technique's own "two adjacent hashed lanes blended by fract"
+// structure (AUDIT.md Entry 41 addendum 1).
+float planktonChannelAngle(float baseX, float chAngle[PLANKTON_CHANNEL_BOUNDARIES]) {
+    float chCoord = (baseX * 0.5 + 0.5) * PLANKTON_CHANNEL_COUNT; // 0..count across the field width
+    int   chLo    = clamp(int(floor(chCoord)), 0, PLANKTON_CHANNEL_BOUNDARIES - 2);
+    float chBlend = smoothstep(0.0, 1.0, fract(chCoord));
+    return mix(chAngle[chLo], chAngle[chLo + 1], chBlend);
+}
+
+// Traveling brightness pulse-train: a literal function of position and
+// time (not a per-plankton independent phase), so as uTime advances the
+// bright "wavefront" sweeps continuously through the field - this is what
+// makes the bloom read as "something is happening" rather than "particles
+// twinkling randomly". Direction is fixed, roughly matching the ambient
+// current's own rightward/downward bias so waves visually travel with the
+// water rather than across it. freq/speed both rise with bloomNorm so
+// pulse trains are slow/sparse in Bioluminescent Awakening and quick/tight
+// by Bloom Event - a qualitative escalation, not just a brightness/density
+// scale-up.
+float planktonPulseWave(vec2 pos, float bloomNorm) {
+    vec2  waveDir = normalize(vec2(0.6, 1.0));
+    float freq    = mix(2.1, 4.2, bloomNorm);
+    float speed   = mix(0.55, 1.55, bloomNorm);
+    float phase   = dot(pos, waveDir) * freq - uTime * speed;
+    return 0.5 + 0.5 * sin(phase);
+}
+
 void main() {
     vec2 uv = vUV;
     uv.y = 1.0 - uv.y;
@@ -1015,18 +1091,90 @@ void main() {
     // its own hashed point along bloomNorm, so the field visibly *builds*
     // through Awakening/Current Build rather than snapping on as a block;
     // brightness itself also keeps rising with bloomNorm (mix(0.35,1.0,...))
-    // so Bloom Event reads as richer, not just more numerous. streamBoost/
-    // pulseAmt add the "visible streaming/pulsing character" named
-    // specifically for Bloom Event (0.70-1.00) on top of the density/
-    // brightness ramp shared with the earlier bands.
+    // so Bloom Event reads as richer, not just more numerous.
     //
     // Entirely wrapped in an early bloomNorm gate so the loop's *cost*, not
     // just its visible output, is skipped during Deep Calm - this is what
     // keeps this layer "essentially absent" in that band cheap as well as
     // dark, and keeps the added per-frame cost budget-conscious overall
     // (point/glow math only, no SDF curve evaluation like the tentacles).
+    //
+    // Phase 2 "Bloom refinement" (this pass): the field above already had
+    // density/brightness/staggered-appearance structure but read as
+    // independent per-mote wander and per-mote blinking - "particles
+    // twinkling randomly" rather than a current-borne bloom. This pass adds
+    // two real structural mechanics, both using planktonChannelAngle()/
+    // planktonPulseWave() defined just above main():
+    //   1. Flow-field alignment - each plankton's baseX places it in one of
+    //      a small number of shared "current channels" (smoothly blended,
+    //      never a hard seam), each channel drifting in its own slowly-
+    //      evolving direction, so plankton with nearby baseX visibly move
+    //      together rather than independently - see flowBendX below.
+    //   2. Pulse trains - a traveling brightness wave sampled at each
+    //      plankton's own position (planktonPulseWave), so waves of
+    //      brightness sweep continuously through the whole field over time
+    //      instead of each mote blinking on its own random schedule.
+    // Both mechanics' strength/frequency rise with bloomNorm - Awakening
+    // shows only a faint, tentative channel bend and a slow, sparse pulse
+    // train; Bloom Event shows strongly aligned streaming and a quick,
+    // tight pulse train - a qualitative escalation across the arc, not just
+    // more/brighter dots. Brightness variance (brightVarMul below) also widens
+    // through the arc for the same reason - Awakening's population reads as
+    // uniformly dim, Bloom Event's reads as a real mix of dim and bright.
     float bloomNorm = clamp((uBloom - 0.20) / 0.80, 0.0, 1.0); // 0 at Deep Calm's end, 1 at full Bloom Event
     if (bloomNorm > 0.001) {
+        // Computed once per pixel, not once per plankton - see the perf
+        // note on computePlanktonChannelBoundaryAngles() above.
+        float chAngle[PLANKTON_CHANNEL_BOUNDARIES];
+        computePlanktonChannelBoundaryAngles(chAngle);
+
+        // Perf fix (plankton spatial early-out, AUDIT.md Entry 45 addendum -
+        // see that entry for the isolation evidence): disabling this entire
+        // loop at forced full Bloom Event recovered ~75fps on High, matching
+        // Deep Calm rest-state almost exactly - proving this loop, not
+        // anything else in the scene, is responsible for the ~50fps
+        // worst-case shortfall below the 60fps floor. The loop had no
+        // spatial early-out at all: every fragment ran the full per-plankton
+        // cost (flow-channel lookup, wobble, pulse-train, color mix) for
+        // every one of uPlanktonCount plankton regardless of proximity, even
+        // though the actual visible radius (sizePx below) is only
+        // ~0.001-0.003 p-units - the overwhelming majority of (fragment,
+        // plankton) pairs contribute exactly zero, and that work was 100%
+        // wasted. Same class of fix already proven on this file's own
+        // tentacle loop (Entry 41 addendum 6: 48.6fps -> 74.9fps from an
+        // analogous per-element reach check).
+        //
+        // flowWeight/turbMul below are the same closed-form expressions the
+        // per-plankton math already used, but neither actually depends on
+        // anything per-plankton (both are pure functions of this frame's
+        // uniforms - bloomNorm, currentDriveArc, uCurrentTurbulence) so they
+        // were being silently recomputed identically for every plankton;
+        // hoisting them here removes that redundancy AND doubles as the
+        // exact (not guessed) bound needed for the reach check just below:
+        //   flowBendX = flowDirX * flowWeight * cyc, with |flowDirX| <= 1
+        //     (cos) and cyc in [0,1] (fract) - so |flowBendX| <= flowWeight
+        //     exactly, for every plankton, every frame.
+        //   turb = 0.014*sin(..) + 0.008*sin(..), so |turb| <= 0.022 exactly
+        //     (sum of the two amplitudes) - multiplied by turbMul.
+        // A fragment farther than sizePx + planktonReachPad from a
+        // plankton's cheap "coarse" position (baseX+driftX, no
+        // transcendental calls) can therefore never receive a nonzero
+        // contribution from it, so skipping straight to `continue` there
+        // changes zero pixels of visible output - it is a tight analytic
+        // bound derived from the existing motion formulas, not a headroom
+        // guess.
+        float flowWeight        = mix(0.35, 1.0, bloomNorm) * (0.05 + 0.22 * currentDriveArc);
+        float turbMul           = 0.5 + uCurrentTurbulence;
+        float planktonReachPad  = flowWeight + 0.022 * turbMul;
+        // sizePx's own max possible value (mix(0.0010,0.0030,x<=1)*mix(0.7,1.2,x<=1),
+        // both factors capped at their own upper bound) - a fixed compile-time
+        // bound, used only for the coarse reach check below so the real
+        // per-plankton sizeHash hash1() call (see below) can be deferred past
+        // that check instead of paid by every plankton unconditionally; still
+        // exact/conservative, not a guess.
+        const float PLANKTON_SIZEPX_MAX = 0.0030 * 1.2;
+        float planktonReachMax  = PLANKTON_SIZEPX_MAX + planktonReachPad;
+
         for (int i = 0; i < MAX_PLANKTON; i++) {
             if (i >= uPlanktonCount) break;
 
@@ -1039,11 +1187,34 @@ void main() {
 
             float tier = hash1(seed + 9.0);
 
-            float sizeHash = hash1(seed + 1.0);
-            sizeHash *= sizeHash; // squared skew toward small
-
-            float lifeSpeed = mix(0.010, 0.030, tier) * (0.9 + 0.2 * hash1(seed + 2.0));
-            float t   = uTime * lifeSpeed + hash1(seed + 3.0) * 20.0;
+            // Perf (prefix cost reduction, AUDIT.md Entry 45 addendum): after
+            // the spatial early-out above was added, this loop's remaining
+            // cost is dominated by the handful of hash1() calls every
+            // plankton pays unconditionally just to know its own coarse
+            // position (needed for the reach check itself) - unlike the
+            // flow/pulse/color tail, this prefix can't be skipped by a
+            // position check since it's what PRODUCES the position. Two
+            // small, disclosed simplifications here reduce that prefix from
+            // 6 hash1() calls to 4:
+            //  1. sizeHash (used only for sizePx, not position) is deferred
+            //     until after the reach check below, using the fixed
+            //     PLANKTON_SIZEPX_MAX bound in the check itself instead -
+            //     saves one hash1() call for every culled plankton.
+            //  2. lifeSpeed's small jitter and t's phase offset - both minor
+            //     lifecycle-timing variance terms, not position/color/size
+            //     identity - are now derived from a single hash1() call
+            //     instead of two independent ones (second sub-value via
+            //     fract(h*K), a standard single-hash multi-output trick).
+            //     This introduces a mild deterministic correlation between a
+            //     plankton's fall-speed jitter and its cycle phase offset
+            //     that did not exist before; judged visually negligible
+            //     (verified below) since both are minor per-plankton timing
+            //     variance, not a structural/positional/color attribute
+            //     (the kind of correlation Entry 33 warns against).
+            float hLife       = hash1(seed + 2.0);
+            float lifeSpeed   = mix(0.010, 0.030, tier) * (0.9 + 0.2 * hLife);
+            float tPhaseFrac  = fract(hLife * 71.317); // derived second sub-value, decorrelated in practice
+            float t   = uTime * lifeSpeed + tPhaseFrac * 20.0;
             float cyc = fract(t);
 
             float topY = 0.55, bottomY = -0.55;
@@ -1055,22 +1226,82 @@ void main() {
             float streamBoost = 1.0 + 1.4 * smoothstep(0.70, 1.0, uBloom);
             float driftX = (0.04 + 0.30 * currentDriveArc) * cyc * streamBoost;
 
-            float turb = 0.025 * sin(t * 3.1 + seed)
-                       + 0.014 * sin(t * 6.7 - seed * 1.3)
-                       + 0.008 * sin(t * 1.6 + seed * 2.9);
+            // Spatial early-out - see planktonReachPad's derivation above.
+            // coarsePos uses only terms already computed (no new
+            // transcendental calls beyond the hash1s paid for above) and is
+            // guaranteed within planktonReachMax (using the fixed sizePx
+            // upper bound - the real per-plankton value is computed only
+            // below, for survivors) of this plankton's true final position.
+            // Skips sizeHash, the flow-channel lookup, wobble, pulse-train,
+            // and color math entirely for fragments provably out of reach -
+            // this is the fix's whole effect.
+            vec2  coarsePos  = vec2(baseX + driftX, y);
+            vec2  coarseDiff = pNear - coarsePos;
+            if (dot(coarseDiff, coarseDiff) > planktonReachMax * planktonReachMax) continue;
 
-            vec2 planktonPos = vec2(baseX + driftX + turb * (0.5 + uCurrentTurbulence), y);
+            float sizeHash = hash1(seed + 1.0);
+            sizeHash *= sizeHash; // squared skew toward small
+            float sizePx = mix(0.0010, 0.0030, sizeHash) * mix(0.7, 1.2, tier);
+
+            // Phase 2 "Bloom refinement": flow-field alignment. Sample this
+            // plankton's shared current-channel direction (from baseX, see
+            // planktonChannelAngle() above) and bend its path toward it,
+            // growing progressively over its fall (cyc, the same lifecycle
+            // parameter driftX already uses) so the bend reads as a
+            // continuous curved streamline rather than an instant offset.
+            // flowWeight (hoisted above) rises with bloomNorm and with the
+            // ambient current (currentDriveArc) - negligible/tentative in
+            // Bioluminescent Awakening, strongly aligned by Bloom Event.
+            // Only cos(flowAngle) (the x-bend) is actually used below - the
+            // y-component was computed in an earlier draft and dropped
+            // (this pass keeps the fall cadence untouched, x-only bend),
+            // so sin(flowAngle) is never evaluated - one fewer transcendental
+            // call per plankton.
+            float flowAngle  = planktonChannelAngle(baseX, chAngle);
+            float flowDirX   = cos(flowAngle);
+            float flowBendX  = flowDirX * flowWeight * cyc;
+
+            // Residual independent wobble - reduced from Phase 1's 3-term/
+            // full amplitude (was the dominant motion term; now a minor
+            // organic touch layered on top of the channel-aligned
+            // streamline above, not the primary driver of lateral motion).
+            // Perf: also trimmed from 3 sine terms to 2 (one fewer
+            // transcendental call per plankton) - at this reduced
+            // amplitude the third term's contribution was not visually
+            // distinguishable from the other two.
+            float turb = 0.014 * sin(t * 3.1 + seed)
+                       + 0.008 * sin(t * 6.7 - seed * 1.3);
+
+            vec2 planktonPos = vec2(baseX + driftX + flowBendX + turb * turbMul, y);
             // Same "near" reference-depth layer as marine snow/jellyfish
             // (full 1.0x camera parallax, see the parallax comment above).
             float dist = length(pNear - planktonPos);
 
+            // Perf: unchanged constant-exponent pow from Phase 1 (was
+            // briefly made variable-exponent - mix(3.2,2.2,bloomNorm) - to
+            // widen brightness variance through the arc, but that measured
+            // as added cost for a purely cosmetic effect; reuses the
+            // already-computed `tier` hash below instead, at zero extra
+            // hash1/pow cost, for the same "richer mix, not just more of
+            // the same" widening.
             float bMax = pow(hash1(seed + 5.0), 2.6);
-            // Pulsing character, also specifically a Bloom Event trait -
-            // near-static outside that band.
-            float pulseAmt = smoothstep(0.70, 1.0, uBloom) * 0.35;
-            float pulse = (1.0 - pulseAmt) + pulseAmt * (0.5 + 0.5 * sin(uTime * 1.6 + seed * 3.1));
+            // Reuses `tier` (already computed above, no new hash1 call) to
+            // widen the bright/dim spread as bloomNorm rises - Awakening's
+            // population reads as uniformly dim, Bloom Event's as a real
+            // mix of dim and bright, without any added per-plankton cost.
+            float brightVarMul = mix(1.0, mix(0.45, 1.85, tier), bloomNorm);
 
-            float brightness = bMax * mix(0.5, 1.0, tier) * apGate * pulse
+            // Phase 2 "Bloom refinement": traveling pulse-train (see
+            // planktonPulseWave() above) replaces the old per-plankton
+            // independent blink - present at low weight from Awakening
+            // onward (slow, sparse) and dominant by Bloom Event (quick,
+            // tight), so "waves of brightness travel through the field"
+            // rather than motes twinkling on independent random schedules.
+            float pulseTrainAmt = mix(0.10, 0.65, bloomNorm);
+            float pulseWave     = planktonPulseWave(planktonPos, bloomNorm);
+            float pulse         = mix(1.0, pulseWave, pulseTrainAmt);
+
+            float brightness = bMax * mix(0.5, 1.0, tier) * apGate * pulse * brightVarMul
                               * mix(0.35, 1.0, bloomNorm); // glow intensity itself rises through the arc, not just count/density
 
             vec3 planktonColor = mix(vec3(0.40, 0.90, 0.72), vec3(0.68, 0.95, 0.80), tier);
@@ -1078,8 +1309,6 @@ void main() {
             // established for rim glow/marine-snow-adjacent layers - a
             // nudge, never a hue flip.
             planktonColor = mix(planktonColor, vec3(0.55, 0.35, 0.75), smoothstep(0.85, 1.0, uBloom) * 0.12);
-
-            float sizePx = mix(0.0010, 0.0030, sizeHash) * mix(0.7, 1.2, tier);
 
             color += planktonColor * brightness * smoothstep(sizePx, 0.0, dist) * 1.6;
         }

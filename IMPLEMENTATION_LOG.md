@@ -1765,3 +1765,164 @@ confirmation).
 
 **Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
 project's standing rule against self-signing audit entries or committing without explicit request.
+
+## 2026-07-15 — Underwater Phase 2 "Bloom refinement" v0.1 (World04 plankton flow/pulse structure)
+
+Phase 2 of the roadmap, immediately following Phase 1 "Living Water" (Entry 44, now committed as
+`e1c576b`). Gives the Phase 1 plankton bloom field real structure — flow-coherent streaming and traveling
+brightness pulse trains, instead of independent per-mote random drift/twinkle — and makes the
+Awakening→Bloom Event transition a qualitative escalation rather than "more dots." Confined entirely to
+`Worlds/World04_Underwater/Shaders/underwater.frag`'s plankton section; `UnderwaterScene.cs` ends this pass
+with zero diff (no C#-integrated state needed — flow/pulse timing reads `uTime`/`bloomNorm` directly, since
+neither evolves at an audio-reactive, time-varying rate the way jelly drift/pulse phase do).
+
+**Flow-field alignment:** each plankton's `baseX` places it into one of 7 coarse, smoothly-blended "current
+channels" (mirroring the jellyfish-tentacle lane-blending technique, Entry 41 addendum 1), each channel
+carrying its own slowly-evolving flow angle. Plankton bend toward their channel's direction progressively
+over their fall cycle, so nearby plankton visibly move together. Verified analytically (a Python
+re-implementation of the exact shader math, not just a screenshot) — within-channel flow-angle alignment
+averaged 0.77-0.85 (near 1.0 = tightly aligned) versus 0.37-0.38 across different channels' means.
+
+**Pulse-train brightness waves:** a literal function of position and time (`dot(pos, waveDir) * freq -
+uTime * speed`) replaces the old per-plankton independent blink, so a brightness "wavefront" sweeps
+continuously through the field. Verified analytically to floating-point precision that the wave is
+invariant along its own travel line — a true traveling wave, not per-point blinking. Both mechanics'
+strength/frequency rise with the existing bloom-arc's `bloomNorm`, plus a new brightness-variance widening
+term (reusing an already-computed hash at zero extra cost) — giving Awakening→Bloom Event a genuine
+character change, not just density/brightness scaling.
+
+**A real performance regression was found and fixed, not just accepted.** The first implementation cost
+~17% relative fps at forced worst-case (all plankton, full Bloom Event) versus a contemporaneous
+Phase-1-only baseline (43.7-45.1 vs 53.0-53.2 avg fps, High profile) — triggered by this pass's own
+mandatory perf check. Root cause: a per-plankton channel-boundary-angle computation that only actually
+depended on `uTime` and a small integer channel index was being redundantly recomputed for every one of up
+to 90 plankton per pixel. Fixed by hoisting it into a once-per-pixel precomputed 8-entry array (cheap
+lookup per plankton instead), plus dropping a few unused/purely-cosmetic transcendental calls — brought the
+Phase-2-attributable cost down to ~5% relative (50.5-50.7 vs 53.0-53.2 avg fps). Verified via
+`--diagnostic visual` that the optimization was a pure performance change (identical luminance before/after
+at forced `uBloom=0.85`).
+
+**Disclosed, not hidden:** Phase 1's own pre-existing plankton-loop cost already sits below the 60fps floor
+at forced full Bloom Event density (53.0-53.2fps, isolated via contemporaneous `git stash` A/B) — this
+predates Phase 2. Unlike a prior disclosed worst case (Entry 44's clustered-jellyfish edge, a low-probability
+synthetic scenario), full Bloom Event is the scene's own designed climax state, reached by ordinary extended
+play — so this is flagged as a genuine follow-up candidate rather than swept under the rug or silently
+optimized further inside a "richer plankton behavior" pass (would have exceeded this pass's scope per
+governance rule 12).
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors |
+| `--world Underwater --profile High --smoke-test` (rest state, Deep Calm) | avg fps 81.6-82.3 (8 runs) — matches/exceeds Task 1's freshly-committed ~75-82fps baseline (mid-session fps-environment-shift observed, same documented phenomenon as Entry 41 addendum 5/Entry 44) |
+| `--world Underwater --profile Safe --smoke-test` (rest state) | avg fps 375.4-376.1 (6 runs) |
+| Forced bloom=1.0 (Bloom Event, worst case), High | Phase 1 baseline 53.0-53.2 (3 runs) vs Phase 2 final 50.5-50.7 (5 runs) — ~5% relative added cost |
+| Forced bloom=0.55 (Current Build, realistic mid-arc), High | 59.5-59.6 avg fps (3 runs) |
+| `--world Underwater --diagnostic motion` (real audio, rest) | T1→T5 16.47%, T5→T15 24.11% pixels changed (prior range 12.56-15.61%/18.55-21.63% — comparable, not frozen/strobing) |
+
+Zero orphan process / port 8080 free confirmed via `lsof`/`pgrep` before evidence gathering began and after
+the final run.
+
+### Iteration honesty - temporary debug override, fully reverted
+`TempForcedBloom` (env-var-gated static field + one-line `Update()` branch on `UnderwaterScene`, same
+established `TempForcedBloom`-family precedent) was used to capture bloom-band screenshots and run
+forced-bloom performance sweeps without waiting through the real multi-minute ramp, then fully removed -
+confirmed via `grep -c "Temp|TEMP" UnderwaterScene.cs` returning `0` and a clean rebuild; `UnderwaterScene.cs`
+has zero diff against the Entry-44 commit as a result.
+
+### Scope
+`Worlds/World04_Underwater/Shaders/underwater.frag` only (plankton section, plus two new small helper
+functions above `main()`). Zero diff on `UnderwaterScene.cs` and every other world/shared engine/audio/
+rendering file, confirmed via `git diff --stat`. Per the user's own standing preference (scoped regression
+checks - only test other scenes when a shared file is touched, not by default), the other three worlds were
+not re-run this pass.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase2BloomRefinement_20260715_074832/`, containing `screenshots/` (bloom-arc
+band captures at 0.05/0.30/0.55/0.85 plus brightness-boosted versions, forced-bloom motion diagnostic
+T1/T5/T15 plus boosted diff heatmap, final rest-state and real motion diagnostic T1/T5/T15), `logs/`
+(`plankton_flow_diagnostic.py` and its full output - the analytic flow-coherence/pulse-train proof -
+`perf_summary.md` with the full A/B performance table), `source_context/` (final `underwater.frag`/
+`UnderwaterScene.cs`), `git/` (status, diffstat, the `underwater.frag` diff, zero-other-files-diff
+confirmation).
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
+project's standing rule against self-signing audit entries or committing without explicit request.
+
+## 2026-07-15 — Underwater Phase 2 "Bloom refinement" perf-fix addendum (World04 plankton spatial early-out)
+
+Priority follow-up to the Bloom refinement pass above, treating its own disclosed Known-limitations
+shortfall (High profile at forced full Bloom Event measuring 50.5-50.7fps, below the 60fps floor,
+pre-existing in Phase 1's plankton loop before Phase 2 touched anything) as a priority item, using the
+same isolate-then-fix methodology already proven on this file's tentacle loop (Entry 41 addendum 6).
+
+**Isolation, not assertion:** temporarily disabling the plankton loop entirely at forced Bloom Event
+recovered fps to 73.1-75.0 avg (High), matching rest-state almost exactly — confirming the plankton loop,
+not anything else in the scene, was responsible for the ~25fps shortfall.
+
+**Root cause:** the plankton loop had no spatial early-out of any kind — every on-screen fragment paid the
+full per-plankton cost (lifecycle hashing, flow-channel lookup, wobble, pulse-train, color mix) for every
+one of `uPlanktonCount` plankton, regardless of whether that plankton's ~0.001-0.003 p-unit visible radius
+could possibly reach that fragment.
+
+**Fix, two rounds, each measured separately:**
+1. A mathematically exact (not headroom-guessed) per-frame reach bound (`planktonReachPad`), derived from
+   the same closed-form expressions the per-plankton motion math already used, hoisted out of the loop and
+   compared against a cheap "coarse" position so out-of-reach fragments `continue` before any of the
+   expensive tail math runs. Measured: 49.9-50.1 → 58.7-59.1fps avg (High, forced Bloom Event) — a real
+   ~17% relative improvement, but still short of the 60fps floor. Diagnosed why: with `currentDrive`
+   forced to 0 (isolating the bound's own dependency on audio), fps was statistically unchanged
+   (58.7-59.0fps) — proving the always-executed per-plankton *prefix* (~6 `hash1()` calls just to know a
+   plankton's own coarse position), not the tail math the early-out targets, was now the dominant cost.
+2. Prefix-cost reduction: deferred the size-only hash past the reach check (using a fixed compile-time
+   upper bound in the check itself), and combined two independent lifecycle-timing hash1() calls into one
+   (second sub-value via `fract(h * 71.317)`) — a disclosed, verified-negligible correlation between minor
+   per-plankton timing variance, not a structural/positional/color attribute. Measured: crosses the 60fps
+   floor — first 8-run set 61.1-63.9fps avg, fresh 5-run re-confirmation 65.1-65.4fps avg (min observed
+   64.5-64.8), a tight distribution comfortably above the floor.
+
+Count reduction (`MAX_PLANKTON`/`uPlanktonCount`) was not needed — the floor was crossed with margin using
+only the early-out plus one small, disclosed math simplification.
+
+**Before/after, forced Bloom Event, High:** 49.9-50.1fps → 65.1-65.4fps avg (~30% relative improvement),
+crossing the 60fps floor with real margin.
+
+**Visual result confirmed preserved via git-stash A/B, not assertion:** `--diagnostic visual` at forced
+`uBloom=0.85` measured pixel-identical luminance (0.137/0.139/0.141 across all three diagnostic phases)
+between the pure Entry-45-committed baseline (`git stash`) and this addendum's optimized code (`git stash
+pop`) — direct confirmation the fix changes zero rendered output at this state. The flow-coherence/
+pulse-train analytic script (`plankton_flow_diagnostic.py`) was re-run unchanged against the optimized code
+and reconfirmed the same traveling-wave invariant to ~1e-15 floating-point precision, since neither
+`planktonChannelAngle()` nor `planktonPulseWave()` were touched by this addendum (only the loop's prefix
+ordering and the lifeSpeed/phase hash derivation changed).
+
+### Bounded test results
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors |
+| `--world Underwater --profile High --smoke-test` (forced Bloom Event) | 5 runs, avg 65.1-65.4fps, min 64.5-64.8 |
+| `--world Underwater --profile High --smoke-test` (rest state) | 5 runs, avg 79.9-81.4fps, min 78.2-80.2 |
+| `--world Underwater --profile Safe --smoke-test` (rest state) | 3 runs, avg 375.3-375.8fps |
+| `--world Underwater --profile High --diagnostic visual` | luminance 0.066-0.067 (rest), 0.137/0.139/0.141 (forced 0.85, pixel-identical pre/post fix) |
+
+### Iteration honesty — temporary debug overrides, fully reverted
+`TempForcedBloomPerf`/`TempForcedCurrentDrivePerf` (static fields on `UnderwaterScene`, same established
+`TempForcedBloom`-family precedent) plus a one-line shader isolation hack (`if (false && bloomNorm >
+0.001)`, reverted immediately after its single measurement) were used for this addendum's measurement work,
+then fully removed — confirmed via `grep -c "Temp|TEMP" UnderwaterScene.cs` returning `0` and a clean
+rebuild; `UnderwaterScene.cs` has zero diff against the base pass's own committed state as a result.
+
+### Scope
+`Worlds/World04_Underwater/Shaders/underwater.frag`'s plankton section only (250 insertions/21 deletions
+against the base pass). Zero diff on `UnderwaterScene.cs`, every other world, and every shared engine/
+audio/rendering file, confirmed via `git diff --stat`.
+
+### Screenshot/package path
+`DiagnosticReports/UnderwaterPhase2PlanktonPerf_20260715_180632/`, containing `screenshots/` (forced Bloom
+Event full-frame at two timestamps, boosted versions, a plankton-field close-up crop, final rest-state),
+`logs/` (`perf_summary.md` with the full staged before/after fps tables, a re-run copy of the flow/pulse
+analytic script), `source_context/` (final `underwater.frag`/`UnderwaterScene.cs`), `git/` (status,
+diffstat, the `underwater.frag` diff, zero-temp-override confirmation).
+
+**Not committed, not pushed** — folds into the same uncommitted Phase 1/Phase 2 working-tree state, awaiting
+its own review cycle alongside the base passes above.
