@@ -24,6 +24,19 @@ namespace CosmicEngine.App.Rendering.Video
         public float Fps { get; private set; }
         public float DurationSec { get; private set; }
 
+        private volatile float _playbackSpeed = 1.0f;
+
+        /// <summary>
+        /// Phase 3 Effect Stack v1: playback speed as decode-rate pacing on the reader thread (see
+        /// VIDEO_SYSTEM_ARCHITECTURE.md §2.2), not a shader effect. Clamped to 0.25x-2x per spec.
+        /// Settable live (volatile field, read once per ReaderLoop iteration) - no process restart.
+        /// </summary>
+        public float PlaybackSpeed
+        {
+            get => _playbackSpeed;
+            set => _playbackSpeed = Math.Clamp(value, 0.25f, 2.0f);
+        }
+
         private Process? _process;
         private Thread? _readerThread;
         private volatile bool _running;
@@ -65,7 +78,12 @@ namespace CosmicEngine.App.Rendering.Video
                 // indefinitely without the engine having to restart the process itself (deferred
                 // per VIDEO_SYSTEM_ARCHITECTURE.md §2.2 "Loop" - hold-last-frame + process-restart
                 // loop is judged sufficient for M2/M3; real crossfade looping is a later milestone).
-                Arguments = $"-stream_loop -1 -re -i \"{path}\" -f rawvideo -pix_fmt bgra -an pipe:1",
+                // Phase 3 Effect Stack v1: dropped "-re" (which paces ffmpeg's own output at a fixed
+                // 1x) so ffmpeg decodes as fast as it can into the ring buffer; real-time pacing plus
+                // the live-adjustable 0.25x-2x PlaybackSpeed multiplier is now applied entirely on
+                // our own reader thread below (VIDEO_SYSTEM_ARCHITECTURE.md §2.2 "Playback speed =
+                // frame-release pacing on the reader thread").
+                Arguments = $"-stream_loop -1 -i \"{path}\" -f rawvideo -pix_fmt bgra -an pipe:1",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -106,6 +124,15 @@ namespace CosmicEngine.App.Rendering.Video
             var stdout = _process.StandardOutput.BaseStream;
             byte[] readBuf = new byte[_frameSize];
 
+            // Phase 3 Effect Stack v1: self-paced frame release. ffmpeg (without "-re") decodes
+            // into this thread as fast as it can; we hold each decoded frame for
+            // (1/Fps)/PlaybackSpeed before publishing it into the ring buffer, so the *rate* new
+            // frames become visible to TryAcquireFrame matches the requested speed - not the raw
+            // decode rate. sourceFps falls back to 30 if probing ever returned 0.
+            float sourceFps = Fps > 0f ? Fps : 30f;
+            var frameStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            double nextReleaseMs = 0;
+
             try
             {
                 while (_running)
@@ -126,6 +153,17 @@ namespace CosmicEngine.App.Rendering.Video
                     }
 
                     if (!_running || totalRead < _frameSize) break;
+
+                    // Pace release: sleep until this frame's scheduled release time before
+                    // publishing it, so downstream frame *availability* (not raw decode speed)
+                    // reflects PlaybackSpeed. A stalled/late decode never sleeps negative.
+                    double frameIntervalMs = 1000.0 / sourceFps / Math.Clamp(_playbackSpeed, 0.25f, 2.0f);
+                    nextReleaseMs += frameIntervalMs;
+                    double waitMs = nextReleaseMs - frameStopwatch.Elapsed.TotalMilliseconds;
+                    if (waitMs > 0 && waitMs < 2000 && _running)
+                        Thread.Sleep((int)waitMs);
+                    else if (waitMs < 0)
+                        nextReleaseMs = frameStopwatch.Elapsed.TotalMilliseconds; // resync if we fell behind
 
                     lock (_ringLock)
                     {
