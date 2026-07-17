@@ -439,6 +439,11 @@ namespace CosmicEngine.App
                         case "UnderwaterEvolutionSeconds":
                             Tuning.UnderwaterEvolutionSeconds = Math.Clamp(val, 30f, 300f);
                             break;
+                        // World05 Hybrid Test (Phase 1 "Hybrid Proof"): same defensive-clamp
+                        // pattern as the two scene-evolution sliders above.
+                        case "HybridBlend":
+                            Tuning.HybridBlend = Math.Clamp(val, 0f, 1f);
+                            break;
                     }
                 }
 
@@ -460,7 +465,8 @@ namespace CosmicEngine.App
                     Tuning.BassBrightness,
                     Tuning.DimLevel,
                     Tuning.WindTurbineFireEvolutionSeconds,
-                    Tuning.UnderwaterEvolutionSeconds
+                    Tuning.UnderwaterEvolutionSeconds,
+                    Tuning.HybridBlend
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -624,6 +630,10 @@ namespace CosmicEngine.App
 <p style='color:#666;font-size:12px'>How long sustained loud playing takes to fully evolve the Wind Turbine Fire scene (World03) from cold/calm to fully hot. Only affects that one scene — set it to match your song length.</p>
 <div class='row'><label>Fire Evolution Time</label><input type='range' id='WindTurbineFireEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='WindTurbineFireEvolutionSeconds_v'></span></div>
 
+<h3>HYBRID TEST (PROTOTYPE) — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
+<p style='color:#666;font-size:12px'>Phase 1 hybrid-video proof (World05). Blend between the hardcoded video clip layer (0) and the composited procedural child world (1). Only affects the Hybrid Test scene.</p>
+<div class='row'><label>Video / World Blend</label><input type='range' id='HybridBlend' min='0' max='1' step='0.01'><span class='val' id='HybridBlend_v'></span></div>
+
 <h3>UNDERWATER — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
 <p style='color:#666;font-size:12px'>How long sustained light drive takes to fully bloom the Underwater scene (World04) from calm/dark to fully bloomed. Only affects that one scene — set it to match your song length.</p>
 <div class='row'><label>Bloom Evolution Time</label><input type='range' id='UnderwaterEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='UnderwaterEvolutionSeconds_v'></span></div>
@@ -751,7 +761,8 @@ const defaults = {
   BassMax: 35, MidMax: 12, TrebleMax: 0.4,
   BassBrightness: 1.20, DimLevel: 0.20,
   WindTurbineFireEvolutionSeconds: 240,
-  UnderwaterEvolutionSeconds: 240
+  UnderwaterEvolutionSeconds: 240,
+  HybridBlend: 0.5
 };
 
 const sliders = document.querySelectorAll('input[type=range]');

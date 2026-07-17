@@ -44,5 +44,12 @@ namespace CosmicEngine.App
         // for every other scene, same as WindTurbineFireEvolutionSeconds/
         // WindTurbineFireScene.EmberCount.
         public static float UnderwaterEvolutionSeconds = 240f;
+
+        // World05 Hybrid Test (Phase 1 "Hybrid Proof", video-atoms milestone): the single blend
+        // uniform for HybridTestScene's mix(video, child, uBlend) composite. 0 = pure video layer,
+        // 1 = pure procedural child world, 0.5 = even mix. Clamped defensively to [0,1] both here
+        // and again in HybridTestScene.Render(), matching the WindTurbineFireEvolutionSeconds/
+        // UnderwaterEvolutionSeconds defensive-clamp pattern. Harmless no-op for every other scene.
+        public static float HybridBlend = 0.5f;
     }
 }
