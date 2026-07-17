@@ -86,6 +86,15 @@ namespace CosmicEngine.App.Worlds.World04
     /// bloom-field layer (uPlanktonCount, profile-scaled like ParticleCount)
     /// and the bloom-arc-band remapping are implemented entirely in
     /// underwater.frag - see that file's header for the full design.
+    ///
+    /// Phase 4 "Presence / Color / Depth Population" (direct user review
+    /// feedback post-Phase 3): adds a distant, abstract "alien presence"
+    /// shadow layer, several cheap background jellyfish, and tasteful color-
+    /// variation nudges - all implemented in underwater.frag (see that
+    /// file's header). The only C#-side addition is BackgroundJellyCount
+    /// (profile-scaled, mirrors ParticleCount/PlanktonCount) - the presence
+    /// layer and background jellies both use pure shader-side hash + uTime
+    /// placement, no new per-instance C#-integrated state.
     /// </summary>
     public class UnderwaterScene : IWorld
     {
@@ -144,6 +153,16 @@ namespace CosmicEngine.App.Worlds.World04
         // ParticleCount (marine snow, unmodified) - see underwater.frag's
         // plankton section for why a separate, cheaper layer was used.
         public static int PlanktonCount = 60;
+
+        // Phase 4 "Presence / Color / Depth Population": profile-scaled
+        // background-jellyfish count (Safe/High set by CosmicEngine.cs
+        // alongside ParticleCount/PlanktonCount above) - MAX_BG_JELLY in the
+        // GLSL caps the fixed loop. Deliberately no C#-integrated per-
+        // instance state (unlike _jellyDrift0/1/2 below) - background
+        // jellies are cheap, shader-hash-placed, and don't need audio-
+        // reactive lap timing, see underwater.frag's "Background Jellyfish"
+        // section for the full rationale.
+        public static int BackgroundJellyCount = 6;
 
         // Phase 2: per-jellyfish pulse phase, continuously wrapping in [0,1).
         // Initial offsets are hand-picked (not hashed) purely so the 3
@@ -363,6 +382,13 @@ namespace CosmicEngine.App.Worlds.World04
             _shader.SetFloat("uCameraOffsetY", _camera.Offset.Y * cameraDriftBoost);
 
             _shader.SetInt("uPlanktonCount", PlanktonCount);
+
+            // Phase 4 "Presence / Color / Depth Population": profile-scaled
+            // background-jellyfish count - see underwater.frag's
+            // "Background Jellyfish" section. No per-instance uniforms
+            // needed (unlike the 3 hero jellies) - all placement/motion is
+            // derived shader-side from hash + uTime.
+            _shader.SetInt("uBgJellyCount", BackgroundJellyCount);
 
             _quad.Draw();
         }

@@ -5237,3 +5237,347 @@ files-diff confirmation, zero-temp-scaffolding confirmation).
 
 **Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
 project's standing rule against self-signing audit entries or committing without explicit request.
+
+## Entry 47 — Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 (World04 monster shadow + background jellyfish + color variation)
+
+**Date:** 2026-07-15
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Goal
+A fresh, direct user-review pass on the just-committed Phase 3 abyssal glow field (`fed7a7d`), superseding
+ChatGPT's originally-recommended "Phase 4: Song Feel/Audio Tuning" for this pass. User's own words: "The
+user reviewed the current Abyssal Bloom scene and still finds it too sparse and boring... three jellyfish
+floating around is not enough interest for a full song behind a psych/prog band." Four required additions,
+all confined to `underwater.frag` plus a profile-scaled count knob: (1) a distant, abstract alien
+presence/shadow with its own independent "appears every few seconds" visibility cycle layered on the
+existing bloom arc; (2) tasteful color-variation nudges across existing layers; (3) 4-8 cheap, reduced-detail
+background jellyfish; (4) preserved 60fps-floor performance discipline.
+
+### Scope
+`Worlds/World04_Underwater/Shaders/underwater.frag` (primary — new "Distant Alien Presence" and "Background
+Jellyfish" sections, plus six small color-variation nudges layered onto existing brightness/mix terms),
+`Worlds/World04_Underwater/UnderwaterScene.cs` (one new profile-scaled `BackgroundJellyCount` static int +
+its uniform send — no new C#-integrated per-instance drift state, since both new layers use pure
+shader-side hash + `uTime` placement, judged sufficient/cheaper than the hero jellies' C#-integrated pattern
+per this pass's own brief), `Engine/CosmicEngine.cs` (the matching profile-scaled assignment, same site
+`ParticleCount`/`PlanktonCount` already use). `git diff --stat` against every other world and every shared
+engine/audio/rendering file (`World01_StellarNursery/`, `World02_LavaLamp/`, `World03_WindTurbineFire/`,
+`Audio/`, `Rendering/`, `Engine/Camera.cs`, `Engine/ControlServer.cs`, `Engine/SceneRegistry.cs`) confirmed
+empty. Per the user's own standing preference (scoped regression checks — only test other scenes when a
+shared file is touched), the other three worlds *were* re-run this pass since `Engine/CosmicEngine.cs` (a
+shared file) was touched — all three pass cleanly (see Bounded test results). `renderJelly()` (foreground
+jellyfish/tentacles, frozen per the brief — six rounds already spent, Entry 41 and addenda) and
+`abyssalGlowShape()`/its own compositing (Phase 3, Entry 46) are both untouched except for one disclosed,
+harmless line (the glow field's own pre-existing high-bloom violet nudge now also pulses slightly, still
+using only that layer's own established mechanism).
+
+### What was built
+
+**1. Distant Alien Presence (the pass's own named highest-risk element).** `monsterShape()` + `monsterCenter()`,
+composited immediately after the water gradient and before the abyssal glow field in `main()` — same
+"draw it deep in the layer stack so everything else naturally obscures it" principle Entry 46 established for
+the glow field, applied to a distinct construction. Two independent gates multiply into `presenceEnvelope`:
+`presenceArc` (rises with `uBloom`, own curve) and `presencePulse` (a slow, own-clock "appears every few
+seconds" breathing cycle derived purely from `uTime` — deliberately **not** derived from `uBloom` or audio,
+per the brief's explicit instruction). Composited as a pure **darkening** mix into the existing water color —
+never additive brightening like every other layer in this scene — specifically chosen to avoid a "pasted
+silhouette" read, since a silhouette built as a glowing shape reads as "an object placed in front of the
+water" while a soft irregular darkening reads as an absence/shadow. No rim light, no edge highlight, no
+outline anywhere in the section.
+
+**Design-correction, self-caught before reporting (not a review failure).** The first implementation
+domain-warped the sampling position using noise sampled in full-frame/world coordinates. An isolated-render
+check (Entry 46's own established technique) at high magnification showed this read as a single, smooth,
+coherent "eel/leaf/pill" shape with a gentle S-bend — exactly the "a thing"/cartoon-silhouette failure this
+pass's own brief named as highest-risk. Root cause: the warp noise's frequency was far too low relative to
+the mass's own footprint, so it bent the whole envelope coherently instead of perturbing the boundary
+independently in different places. Fixed by rebuilding around a "soft anisotropic gate bounding an irregular
+patchy noise field" architecture — noise sampled in shape-local coordinates (normalized by the mass's own
+scale) at a frequency tuned to that local scale, so several independent lobes/gaps appear across the mass's
+own extent, re-verified via the same isolated-render technique. A second correction (the darkening's own max
+mix weight, 0.60 → 0.88) followed a full-composite review showing the corrected shape nearly imperceptible
+against this scene's dark palette even at forced full envelope. Both corrections were caught and fixed within
+one implementation attempt, not a restart — the governance rule 10 two-attempt budget was not exhausted.
+
+**2. Color palette variation.** Six small, mostly zero-extra-cost nudges layered onto pre-existing brightness/
+mix terms (no new color mechanism, no full-saturation wash): green/blue caustic hue drift (reuses an
+already-computed noise sample); a violet/indigo nudge in haze shadows at high bloom; a gently pulsing
+magenta/indigo weight on the glow field's own existing high-bloom violet nudge; a cool-hue drift on the god
+rays; a rare warm bioluminescent-spark plankton variant (reuses an already-computed hash); a blue-violet-
+leaning base palette (plus a rare magenta accent) for the new background jellyfish, distinct from the hero
+jellies' teal-forward palette.
+
+**3. Background Jellyfish / depth population.** `renderBackgroundJelly()` — 4 (Safe) / 8 (High) small, cheap,
+reduced-detail organisms: a soft radial glow "bell" plus a faint ring-edge cue, explicitly **not** running
+the frozen six-round-refined SDF-bell-plus-traveling-wave-tentacle pipeline (no `fbm2`/`vnoise2` calls at
+all — `hash1`/`sin`/`exp` only). Pure shader-side hash + `uTime` placement, own parallax depth tier (0.82x,
+between haze's 0.7x and the near/hero-jellyfish layer's 1.0x), hazing/occlusion via the already-computed
+`hazeCombined`/`hazeDensity` (same values the hero jellies already read).
+
+**4. Performance.** See below.
+
+### Verification (critical self-assessment, per the brief's own instruction)
+- **Isolated-render emergence proof** (same deconfounding technique Entry 46 established): sampled the
+  presence layer's own boosted output at bloom 0.15/0.5/1.0 with `presencePulse` held at its own peak
+  throughout (isolating the arc gate specifically) — isolated luminance 0.019 → 0.114 → 0.159, a clean
+  monotonic ~8x emergence confirming "starts faint, becomes more readable" is real, not just a plausible
+  screenshot sequence.
+- **"Peak may not coincide with bloom peak" requirement**: satisfied by construction — `presencePulse` is a
+  pure function of `uTime` unrelated to `uBloom`'s own accumulator, so the two can and do diverge; the
+  Performance section's own "High Bloom" (natural pulse) vs. "Monster/Presence Peak" (forced pulse) states
+  are the direct evidence this was checked, not assumed.
+- **Not-cartoonish check**: the isolated-render crop at high magnification (see package) shows scattered,
+  irregular, soft-edged patches with no defined outline, no bilateral symmetry, no body/limb/face structure —
+  confirmed only after the design-correction above; the pre-correction version would have failed this check.
+- **Full-composite honesty**: at literal full-frame, non-boosted screenshot brightness the presence layer is
+  very subtle — a modest brightness-adaptation crop (see package, `~1.8x` boost) shows it clearly as a soft
+  irregular dark smear; disclosed as a real, deliberate trade-off (subtlety over risking "too visible → reads
+  as a thing"), not hidden.
+- **Zero regression**: rest-state luminance 0.067, identical to the pre-Phase-4 baseline (captured via
+  `git stash` back to the committed `fed7a7d` state, also 0.067). `renderJelly()`/`abyssalGlowShape()` diffs
+  confirmed byte-identical (except the one disclosed pulse-weight line) via direct code review.
+
+### Performance (mandatory 3-state check per this pass's own brief)
+Apple M4 Pro, `dotnet run -- --world Underwater --profile <X> --smoke-test`, multiple runs per governance
+rule 15:
+
+| State | Runs | avg fps |
+|---|---|---|
+| Safe, rest state | 4 | 363.0-367.5 |
+| High, Deep Calm (rest, real audio) | 6 | 77.7-79.6 |
+| High, High Bloom (forced `uBloom=1.0`, natural presence pulse) | 5 | 61.4-62.6 (mean ≈61.9) |
+| High, Monster/Presence Peak (forced `uBloom=1.0` AND forced `presencePulse=1.0`) | 5 + 5 corroborating | 62.2-62.6 (mean ≈62.5) |
+
+**High stayed ≥60fps in all three forced states across every run measured.** Margin is real but modest
+(~2-4fps/~3-7%) rather than Phase 3's wider ~65fps margin — isolated (background-jellyfish loop ~1.1-2.5fps,
+presence layer ~1-1.5fps at forced Bloom Event) and disclosed honestly, not hidden. One optimization was
+applied to the background-jellyfish loop (deferring its small vertical-wander hash/sin calls past the
+per-instance reach check, mirroring the plankton loop's own established prefix-cost-reduction technique,
+Entry 45 addendum) — measured to have negligible additional effect this time (the loop's cost appears
+dominated by per-instance branch/loop overhead across the full frame, not hash count, unlike the plankton
+loop's own case), kept anyway since harmless. Not pursued further since the mandatory floor was already met
+with real margin across 10+ runs, matching this project's own established stopping precedent (Entry 41
+addendum 6).
+
+### Regression checks (mandatory this pass, since a shared file — `Engine/CosmicEngine.cs` — was touched)
+| Command | Result |
+|---|---|
+| `dotnet build` | 0 warnings, 0 errors (final code) |
+| `--world Underwater --profile Safe --smoke-test` | avg fps 363.0-367.5 |
+| `--world Underwater --profile High --smoke-test` (rest) | avg fps 77.7-79.6 |
+| `--world StellarNursery --profile Safe --seed 777 --smoke-test` | clean pass |
+| `--world LavaLamp --profile Safe --smoke-test` | clean pass |
+| `--world WindTurbineFire --profile Safe --smoke-test` | clean pass |
+
+### Iteration honesty — temporary debug overrides, fully reverted
+This pass used the same established `TempForcedBloom`-family precedent extensively, across several rounds of
+evidence-gathering (natural-pulse states, forced-pulse "monster peak" states, isolated-render emergence
+proofs, and the design-correction's own before/after checks) — every temporary field/uniform-forcing branch
+in both `UnderwaterScene.cs` and `underwater.frag` was fully removed (not merely disabled) before this pass
+was reported done, confirmed via `grep -c "TEMP|Temp"` returning `0` in both files at every "final" checkpoint
+and a clean rebuild. `git diff --stat` on both files reflects only this pass's permanent, intentional changes.
+
+### Known limitation encountered and resolved mid-session (disclosed, not a code defect)
+Partway through performance measurement, `dotnet run` began crashing with SIGSEGV (exit 139) on every world,
+including completely untouched ones (StellarNursery) — proving it was not this pass's code. Root-caused: the
+physical display had gone to sleep during this long session (`system_profiler SPDisplaysDataType` showed
+`Display Asleep: Yes`), and macOS OpenGL window/context creation reliably crashes when the display is asleep.
+Fixed by running `caffeinate -u -di` in the background for the remainder of the session; crashes stopped
+immediately and did not recur. Flagged here for transparency and as a candidate `CLAUDE.md` note for future
+long unattended sessions on this machine.
+
+### Known limitations
+- Monster is a procedural darkening field, not a modeled creature — no Blender/Hunyuan3D assets, per this
+  pass's explicit constraint.
+- All new constants (presence arc/pulse curves, shape scale/frequency, background-jelly size/speed/color
+  ranges, color-variation weights) are first-pass eyeball/isolated-render tuning against this pass's own
+  screenshots, not validated against real sustained guitar playing or the actual show hardware.
+- No OptiPlex/target-hardware validation this pass (Mac mini/M4 Pro dev machine only, per rule 7's own
+  caveat).
+- Real song testing still needed, especially for the presence layer's subtlety at true viewing brightness —
+  the single biggest candidate for a follow-up tuning request.
+- A pre-existing gap (not introduced or fixed by this pass): `Engine/CosmicEngine.cs`'s dashboard-driven
+  live-profile-switch path mirrors `ParticleCount` but was never updated to also mirror `PlanktonCount` (a
+  gap from the "Living Water" pass) — `BackgroundJellyCount` was added only at the same site `PlanktonCount`
+  already uses, for consistency with that existing precedent, not fixed here since it's out of this pass's
+  scope.
+
+### Screenshot/package path
+`DiagnosticReports/AbyssalBloomPhase4PresenceColorDepth_20260715_215439/`, containing `screenshots/` (before
+Phase-4 reference, deep-calm/mid-bloom/high-bloom full frames, monster faint/mid/peak visibility, color-
+variation and background-jellyfish-depth closeups, a full arc-progression strip, a monster-visibility strip,
+before/after population and color comparisons, and all three other-scene regression references), `logs/`
+(build, Underwater and regression smoke-test logs, `perf_summary.md` with the full staged performance
+table and the display-sleep incident writeup, raw `Visual_*` diagnostic sub-folders), `source_context/`
+(final `underwater.frag`/`UnderwaterScene.cs`/`CosmicEngine.cs`), `git/` (status, diffstat, per-file diffs,
+zero-other-worlds-diff confirmation, zero-temp-scaffolding confirmation), `audit/` (this entry), zipped as
+`DiagnosticReports/AbyssalBloomPhase4PresenceColorDepth_20260715_215439.zip`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle, per this
+project's standing rule against self-signing audit entries or committing without explicit request.
+
+---
+
+## Entry 47 Addendum 1 — Monster/Presence Visibility Fix (direct user-review follow-up)
+
+**Date:** 2026-07-16
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### User's exact feedback
+The user reviewed the just-completed Phase 4 work live (actually running the scene, not looking at
+screenshots) and reported, verbatim: **"I didn't see the monster presence at all when I reviewed this last
+pass."** This directly contradicted Phase 4's own report, which claimed the monster's gradual emergence was
+"quantitatively verified" via isolated luminance measurements (0.019 → 0.114 → 0.159 across the bloom arc).
+
+### Root cause (found via full-composite screenshots, not isolated renders)
+Reproduced first: a bounded `--diagnostic motion` run (real render path, real audio, unforced) captures the
+actual back buffer at t=1s/5s/15s — the same conditions the user's own live review would see in the first
+15 seconds after launch. At rest (Deep Calm, `uBloom` near 0), the presence layer is correctly near-invisible
+by design — expected, not the bug. The real test is whether it becomes visible as `uBloom`/`presencePulse`
+rise. Since natural bloom accumulation takes up to `Tuning.UnderwaterEvolutionSeconds` (default 240s) and
+`presencePulse` is an independent, narrow-window cycle, a temporary env-var-driven forced-override
+mechanism (`COSMICENGINE_TEMP_FORCE_BLOOM`/`COSMICENGINE_TEMP_FORCE_PULSE`, mirroring this project's own
+established `TempForcedBloom`-family precedent) was added to `UnderwaterScene.cs`/`underwater.frag`,
+used to capture full-composite (never isolated/toggled) screenshots at deterministic bloom/pulse states,
+then fully removed before this pass was reported done (confirmed via `grep -c "TEMP|Temp"` returning 0 in
+both files, and a final clean rebuild).
+
+**Finding:** even at the literal maximum-possible-visibility state — `uBloom` forced to 1.0 **and**
+`presencePulse` forced to 1.0 simultaneously (Phase 4's own "Monster/Presence Peak" performance state,
+which in real, non-forced play barely ever coincides, since `presencePulse` is deliberately independent of
+`uBloom`) — the presence darkening was **barely perceptible** in the actual full-composite frame, visible
+only as a very faint patch after cropping/zooming, not something a viewer would register during normal
+playback (see `screenshots/02_before_fix_forced_peak_bloom1_pulse1_T15.png` and the 2x zoomed crop
+`03_before_fix_forced_peak_crop2x.png`). This is a genuinely different (and much harsher) result than
+Phase 4's own isolated-render luminance numbers suggested, confirming the user's report was correct and
+the isolated verification methodology was misleading.
+
+**Diagnosed cause:** compositing order, not magnitude alone (though magnitude also needed a small
+follow-up nudge — see below). The presence darkening (`color = mix(color, shadowTint, ...)`) was applied
+immediately after the bare three-zone water-gradient canvas, **before** the abyssal glow field, god rays,
+caustic shimmer, and haze all added their own light on top (mostly `color +=`, plus haze's own second
+`mix()`). A `mix()`-toward-near-black only darkens whatever `color` already holds at the moment it runs —
+darkening a still-dim bare gradient and then piling most of the scene's actual visible brightness on top of
+it afterward left almost nothing of that darkening in the final pixel. This is not a "later layer overwrites
+via a blend mode" bug in the strict sense (the later layers are additive, not replacing) — it's a
+compositing-order problem: the subtractive effect ran too early to touch most of the light that ends up in
+the final frame. Verified directly (not theorized): repositioning the same mix to run **after** the glow
+field/rays/caustics/haze (still before jellyfish/particles/plankton, preserving the "huge distant thing
+everything nearer still layers on top of" principle for the near-field/creature layers) made the same darkening
+technique, with no other change, visibly obvious at the same forced peak state
+(`screenshots/04_after_reorder_only_forced_peak_T15.png` vs. `02_before_fix_...png`).
+
+A secondary, smaller magnitude issue was also found and fixed: even after the reorder, full-composite
+screenshots at `uBloom=0.3` (Bioluminescent Awakening / early Current Build — meant to be "occasionally
+sensed... starting fairly early" per the original brief) with `presencePulse` forced fully open still showed
+the presence as essentially imperceptible, because `presenceArc`'s old curve
+(`smoothstep(0.05, 0.85, uBloom)`) didn't reach a meaningful contribution until well past the arc's
+midpoint. Widened to `smoothstep(0.05, 0.60, uBloom)` so the arc reaches full contribution by
+`uBloom=0.60` instead of `0.85` — verified this made `uBloom=0.3` genuinely (if still subtly) visible
+without changing peak behavior at Bloom Event (`screenshots/05_after_fix_forced_bloom0.3_early_arc_T15.png`).
+
+So: **root cause was a compositing-order bug (the dominant factor) plus a smaller, genuinely separate
+magnitude/timing issue in the arc curve** — not candidate (c) from the investigation brief (subtractive
+darkening being fundamentally the wrong technique against an already-near-black background). The technique
+itself (soft, irregular, subtractive darkening, no rim light, no outline) remains sound and was not changed;
+only where and how much of the arc it's applied across changed.
+
+### What was changed
+`Worlds/World04_Underwater/Shaders/underwater.frag` only (no other file touched this addendum):
+1. Moved the entire "Distant Alien Presence" compositing block (the `presenceArc`/`presencePulseRaw`/
+   `presencePulse`/`presenceEnvelope` computation and the `monsterShape()`/`monsterCenter()` call plus the
+   `mix(color, shadowTint, ...)` darkening) from immediately after the water-gradient canvas to immediately
+   after the haze layer — i.e. after the abyssal glow field, god rays, caustic shimmer, and haze have all
+   contributed, and still before the background/hero jellyfish and marine-snow/plankton particle layers.
+   No change to `monsterShape()`/`monsterCenter()` themselves (shape/placement logic, already verified
+   non-cartoonish in Phase 4 via isolated-render crops) or to the darkening-not-brightening technique.
+2. Widened `presenceArc` from `smoothstep(0.05, 0.85, uBloom)` to `smoothstep(0.05, 0.60, uBloom)` so
+   meaningful visibility starts earlier in the bloom arc, per the original brief's "occasionally sensed...
+   starting fairly early" requirement.
+3. Updated the section's own header comment and the call-site comment to document the new compositing
+   position and why the old position failed (avoids leaving stale documentation describing the old,
+   incorrect order).
+No change to `shadowTint`'s color, the 0.88 max mix weight, `monsterShape()`'s field/gate math, or
+`MONSTER_SCALE_X`/`MONSTER_SCALE_Y`.
+
+### Re-verification (full composite, skeptical, multiple points across the arc)
+All screenshots below are full, non-boosted, non-isolated frame captures from the real render path
+(`--diagnostic motion`), not toggled/isolated renders and not brightness-adapted crops (except the one
+explicitly-labeled 2x zoom crop used only to illustrate the before-fix near-invisibility):
+- `06_after_fix_forced_bloom0.5_T15.png` — mid-arc (Current Build), presence reads as a soft, irregular,
+  genuinely visible dark patch near the right-center of frame — not a hard shape, no outline, no symmetry.
+- `07_after_fix_forced_peak_bloom1_pulse1_T15.png` — peak state, same patch clearly and consistently visible
+  across all three capture times (T1/T5/T15) in this run, unlike the pre-fix peak state where it was barely
+  perceptible even after cropping.
+- `08_after_fix_forced_bloom1_pulse0_gating_check_T15.png` — gating check: forced `uBloom=1.0` but
+  `presencePulse` forced to `0.0` (pulse window closed) — presence correctly absent even at full bloom,
+  confirming the "appears every few seconds" gate still works and there's no always-on leak.
+- `09_after_fix_natural_rest_T15.png` and the final reverted-build rest-state motion-test run
+  (`Motion_20260716_172317`, frame-diff numbers identical to the pre-addendum rest-state baseline within
+  float noise) — zero change at Deep Calm/rest, as expected since `presenceArc` stays ~0 below
+  `uBloom≈0.05` regardless of this addendum.
+
+**Honest assessment:** the presence is now a real, if still deliberately subtle, visible element in the
+actual composited scene from roughly the Current Build portion of the arc onward, and faintly present even
+earlier (`uBloom≈0.3`). It is not a "blink and you'll miss it only at the 1% peak-alignment moment" effect
+anymore — the compositing-order fix alone made the difference between "invisible even at forced peak" and
+"consistently visible at forced peak," and the arc widening pulled meaningful visibility earlier into the
+song. It remains genuinely subtle at low-to-mid bloom, by design, matching "starts faint, gets clearer" —
+a viewer would need to be paying attention, but would plausibly notice it, which was not true of the
+pre-addendum version even at its most favorable possible state. This is a critical, first-person
+screenshot-based judgment, not a claim inferred from luminance numbers alone.
+
+### Creative intent preserved
+No change to `monsterShape()`, `monsterCenter()`, the darkening (not brightening) technique, the shadow
+tint color, or the no-rim-light/no-outline/no-symmetry construction. Full-composite screenshots at every
+tested bloom state continue to show an irregular, soft-edged, patchy dark mass with no defined boundary,
+no bilateral symmetry, and no body/limb/face structure — still reads as "distant, mysterious, background
+presence," not a creature silhouette or a cartoon.
+
+### Regression check
+- `dotnet build`: 0 warnings, 0 errors (final, reverted code).
+- `--world Underwater --profile Safe --smoke-test` (3 runs): avg fps 75.0-75.1.
+- `--world Underwater --profile High --smoke-test` (3 runs, rest): avg fps 75.0.
+- `--world Underwater --profile High --smoke-test` (5 runs, forced `uBloom=1.0`+`presencePulse=1.0` worst
+  case): avg fps 62.3-62.5 (mean ≈62.4) — matches Phase 4's own same-state number (62.2-62.6, mean ≈62.5)
+  within measurement noise; the reorder + arc-widening added no measurable per-pixel cost at the worst case.
+- Rest-state fps in this session (75.0-75.1, both profiles) is lower than Phase 4's own reported Safe-rest
+  number (363.0-367.5) because this measurement session's display is vsync-locked at 75Hz
+  (`system_profiler SPDisplaysDataType`: `75.00Hz`) — an environmental difference in this session, not a
+  regression; the forced-worst-case number (62.4fps, well under the 75Hz cap) is the one that matters for
+  the 60fps-floor rule and is unaffected.
+- Background jellyfish, color-variation nudges, hero jellyfish/tentacles, abyssal glow field, plankton, god
+  rays, and caustics all visually unchanged across every full-composite screenshot captured this addendum
+  (all clearly present, same appearance, same behavior) — confirmed by direct inspection, not just "diff
+  was small." Per the user's own standing preference (scoped regression checks — only re-test other scenes
+  when a shared file is touched), no shared/engine file was touched this addendum (only
+  `underwater.frag`), so StellarNursery/LavaLamp/WindTurbineFire were not re-run.
+- No `TEMP`/`Temp` scaffolding remains: `grep -c "TEMP|Temp"` returns `0` in both
+  `underwater.frag`/`UnderwaterScene.cs` at the final checkpoint (the temporary forced-override mechanism
+  used for reproduction/tuning/perf evidence was added and fully removed twice this addendum — once after
+  the initial reproduction+fix pass, reinstated briefly for the mandatory perf check, then removed again).
+
+### Files changed this addendum
+`Worlds/World04_Underwater/Shaders/underwater.frag` only. `UnderwaterScene.cs` and `Engine/CosmicEngine.cs`
+were not touched (the fix did not require a new uniform or profile-scaled parameter — the existing
+`uBloom`/`uTime`-derived values were sufficient once repositioned).
+
+### Screenshot/package path
+`DiagnosticReports/AbyssalBloomPhase4Addendum1_MonsterVisibility_20260716_172317/`, containing
+`screenshots/` (9 full-composite PNGs, before/after, natural rest and forced states, numbered in narrative
+order) and `logs/perf_summary.md` (full performance table and the raw `Motion_<timestamp>` run-directory
+index with what each run captured). Raw PPM screenshots and per-run REPORT.md files remain in their
+original `DiagnosticReports/Motion_<timestamp>/` directories (listed in `perf_summary.md`).
+
+### Process/environment discipline
+No pre-existing dashboard session was found on port 8080 at the start of this addendum (checked via `lsof`
+before any run). `caffeinate -u -di -t 1800` was started at the beginning of this session per the
+`CLAUDE.md` display-sleep note and stopped explicitly at the end. No Cosmic Engine process was left running
+(confirmed via `ps aux` and a repeat `lsof -i :8080` check after the final run) — every capture used a
+bounded `--smoke-test`/`--diagnostic motion` invocation, none used an unbounded `dotnet run`.
+
+**Not committed, not pushed** — folds into the same uncommitted Phase 4 working-tree state, awaiting its
+own review cycle, per this project's standing rule against self-signing audit entries or committing without
+explicit request.

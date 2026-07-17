@@ -367,6 +367,13 @@ namespace CosmicEngine.App.Engine
             // above (harmless no-op unless Underwater is the active world).
             UnderwaterScene.PlanktonCount = _profile.Name == "High" ? 90 : 50;
 
+            // Phase 4 "Presence / Color / Depth Population": profile-aware
+            // background-jellyfish count, same pattern/knob site as
+            // ParticleCount/PlanktonCount immediately above (harmless no-op
+            // unless Underwater is the active world). 4-8 per the brief's
+            // own suggested range.
+            UnderwaterScene.BackgroundJellyCount = _profile.Name == "High" ? 8 : 4;
+
             // Dashboard Show Seed Support: only fills in when the user didn't already
             // ask for a specific seed via CLI --seed - explicit intent always wins.
             if (!_explicitSeedProvided)

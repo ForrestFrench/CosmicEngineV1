@@ -30,6 +30,48 @@ out vec4 fragColor;
 // across the same uBloom arc every other gated layer in this file already
 // uses. Jellyfish/tentacle/plankton code is untouched by this pass.
 //
+// Abyssal Bloom Phase 4 "Presence / Color / Depth Population" (direct user
+// review feedback, superseding ChatGPT's originally-recommended "Phase 4:
+// Song Feel/Audio Tuning" for this pass): the user found the scene still too
+// sparse/monochromatic for a full song. Four additions, all confined to this
+// file (plus a profile-scaled count knob in UnderwaterScene.cs/CosmicEngine.
+// cs, no C#-integrated state needed): (1) "Distant Alien Presence" - a huge,
+// slow, deliberately abstract shadow/darkening mass low-frequency-drifting
+// through the water column, gated by its own independent "appears every few
+// seconds" time cycle layered on top of the existing uBloom arc (see
+// "Distant Alien Presence" section) - explicitly a DARKENING effect, not a
+// drawn/glowing silhouette, specifically to avoid a "pasted silhouette
+// sticker" or "cartoon sea creature" read; (2) several small,
+// cheap, reduced-detail background jellyfish (see "Background Jellyfish"
+// section) adding depth population without running the frozen, six-round-
+// refined foreground tentacle pipeline; (3) modest, tasteful color-variation
+// nudges (violet/indigo haze shadows, green/blue caustic drift, a pulsing
+// magenta/indigo glow-field accent, a rare warm plankton spark, a cool-hue
+// ray drift) layered onto existing brightness terms, never a new color
+// mechanism or a full-saturation wash; (4) every addition measured against
+// the existing ~65fps High-profile floor and, where a spatial early-out
+// wasn't practical (the presence layer's own necessarily large on-screen
+// footprint - see that section's perf note), kept to the cheapest noise
+// construction that still reads as intended. Foreground jellyfish/tentacles
+// and the abyssal glow field's own shape/technique are both explicitly
+// frozen/untouched by this pass - see AUDIT.md for the full brief.
+//
+// Abyssal Bloom Phase 4 Addendum 1 "Monster/Presence Visibility Fix" (direct
+// user-review follow-up: "I didn't see the monster presence at all"): the
+// Distant Alien Presence darkening above was originally composited
+// immediately after the bare water gradient, before the abyssal glow field/
+// rays/caustics/haze added their own light on top of it - full-composite
+// screenshots (not isolated renders) showed this left the effect barely
+// perceptible even at forced-peak visibility. Fixed by moving that mix to
+// run AFTER those atmosphere layers (still before the background/hero
+// jellyfish and particle/plankton layers, so near-field elements still
+// obscure it) and widening presenceArc's rise so meaningful visibility
+// starts earlier in the bloom arc - see "Distant Alien Presence" section's
+// own comments and AUDIT.md Entry 47 Addendum 1 for full root-cause detail
+// and full-composite screenshot evidence. No change to the shape/placement
+// logic (monsterShape()/monsterCenter()) or the darkening-not-brightening
+// technique itself.
+//
 // Guitar 1 (Creator) -> uLightDrive: ray/caustic/glow brightness and the
 // uBloom accumulation drive (uLightDrive itself already carries the C#-side
 // asymmetric attack/release envelope - see UnderwaterScene.cs - so it swells
@@ -96,8 +138,17 @@ uniform float uCameraOffsetY;
 // main()'s plankton section.
 uniform int uPlanktonCount;
 
+// Phase 4 "Presence / Color / Depth Population": profile-scaled background-
+// jellyfish count - see "Background Jellyfish" section below. Deliberately
+// no C#-integrated per-instance state (unlike the 3 foreground jellies') -
+// these are cheap, shader-hash-placed, and don't need audio-reactive lap
+// timing, so a new UnderwaterScene struct/uniform set would be unnecessary
+// plumbing for what's meant to be a cheap background layer.
+uniform int uBgJellyCount;
+
 const int MAX_PARTICLES = 64;
 const int MAX_PLANKTON  = 140;
+const int MAX_BG_JELLY  = 8;
 const int RAY_COUNT = 4;
 
 // Jellyfish Tentacle Rescue Pass 1 (round 6, AUDIT.md Entry 41 - see
@@ -726,6 +777,232 @@ void renderJelly(inout vec3 color, vec2 p, float idx, float phase,
     }
 }
 
+// --- Background Jellyfish (Phase 4 "Presence / Color / Depth Population") --
+//
+// User feedback: "three jellyfish floating around is not interesting enough
+// for a full song" / "add a few more jellyfish farther in the background" /
+// "the current scene feels too sparse." This adds several (profile-scaled,
+// uBgJellyCount, 4-8) small, faint, reduced-detail organisms distinct from
+// the 3 hero jellyfish above - explicitly NOT running renderJelly()'s
+// six-round-refined SDF bell + traveling-wave-tentacle pipeline (frozen this
+// pass; running it 4-8x more would also be a real, unnecessary perf risk per
+// this pass's own brief). Deliberately cheap: a soft radial glow "bell" plus
+// a faint ring-edge cue - no dome/skirt SDF construction, no tentacle field,
+// no fbm2/vnoise2 calls at all (hash1/sin/exp only).
+//
+// Placement/motion is pure shader-side hash + uTime (no C#-integrated drift
+// struct, unlike the 3 hero jellies) - these don't need audio-reactive lap
+// timing, so a simple continuous hashed drift is sufficient and considerably
+// cheaper than adding new per-instance C#/uniform plumbing, per this pass's
+// own brief ("consider whether pure shader-side hash-based placement is
+// sufficient/cheaper for background elements that don't need the same drift
+// complexity as foreground jellyfish"). The off-frame wrap bound (1.15)
+// mirrors the hero jellies' own JellyEdgeX=1.05 trick (UnderwaterScene.cs) -
+// both ends of a lap sit outside the visible ~0.89 half-width, so the wrap
+// itself is never seen.
+void renderBackgroundJelly(inout vec3 color, vec2 pBg, float idx,
+                            float hazeCombined, float hazeDensity) {
+    // Distinct hash domain from every other per-instance seed in this file
+    // (hero jellies idx*41.7+5, plankton fi*23.71+11, marine snow
+    // fi*19.61+7) so no two systems' hashes ever accidentally correlate.
+    float seed = idx * 29.3 + 71.0;
+
+    float depthNorm = hash1(seed + 1.0); // 0 (far) .. 1 (near-ish) - still a background tier, never as large/clear as the 3 hero jellies
+    float sizeScale = mix(0.32, 0.58, depthNorm); // notably smaller than the hero bell (jellySize = (0.116,0.080)*[0.50,1.15])
+    vec2  bgSize = vec2(0.044, 0.031) * sizeScale;
+
+    // Perf: prefix hash count halved (5 -> 3 unconditional hash1() calls,
+    // paid by every fragment regardless of the reach check below, so this is
+    // the part worth trimming - same "single hash, multiple sub-values"
+    // technique already established on this file's own plankton loop, Entry
+    // 45 addendum). hMotion feeds both speed and dirSign; hPos feeds both
+    // the lap-phase offset and yCenter. This introduces a mild, disclosed
+    // correlation between each pair (e.g. a jelly's drift speed and its
+    // left/right direction) - both are minor timing/placement variance, not
+    // a structural/color identity attribute, so judged low visual risk, the
+    // same standard Entry 45's addendum applied to its own analogous
+    // lifeSpeed/phase consolidation.
+    float hMotion = hash1(seed + 2.0);
+    float speed   = mix(0.0035, 0.0095, hMotion); // very slow - a full crossing takes several minutes, background pacing, not a foreground drift
+    float dirSign = fract(hMotion * 53.73) > 0.5 ? 1.0 : -1.0; // not all drifting the same direction
+    float hPos    = hash1(seed + 4.0);
+    float cyc     = fract(uTime * speed + hPos);
+    float posX    = dirSign * mix(-1.15, 1.15, cyc);
+    float yCenter = mix(-0.38, 0.32, fract(hPos * 91.71)); // spread across mid/lower water column, not clustered, not evenly spaced
+
+    // Perf (self-caught before reporting - same "coarse position, defer the
+    // rest" prefix-cost pattern already proven on this file's own plankton
+    // loop, AUDIT.md Entry 45 addendum): yWander's own hash1/sin calls are
+    // deferred until AFTER the reach check below, using yCenter alone (plus
+    // a fixed conservative pad covering yWander's own max 0.035 amplitude,
+    // added to `reach` so the check stays exact/conservative, not
+    // approximate) for the coarse position instead - saves 2 hash1 + 1 sin
+    // for every fragment the check culls, which given this layer's own
+    // necessarily-large early-out footprint (a background jelly's glow, not
+    // a tiny point like a plankton mote) still culls the large majority of
+    // the frame per instance.
+    vec2  coarsePos = vec2(posX, yCenter);
+
+    // Cheap early-out before any further math - most fragments, most
+    // instances, most frames are nowhere near a given background jelly.
+    vec2  toBgCoarse = pBg - coarsePos;
+    float reach = bgSize.x * 3.2 + 0.035;
+    if (dot(toBgCoarse, toBgCoarse) > reach * reach) return;
+
+    float yWander = 0.035 * sin(uTime * mix(0.025, 0.07, hash1(seed + 6.0)) + hash1(seed + 7.0) * 6.2831853);
+    vec2  bgPos   = vec2(posX, yCenter + yWander);
+    vec2  toBg    = pBg - bgPos;
+
+    vec2  rel    = toBg / max(bgSize, vec2(0.001));
+    float distSq = rel.x * rel.x + rel.y * rel.y * 1.5; // mild vertical elongation - a bell-like read without an SDF
+
+    // Slow, cheap pulse (brightness/size only, no shape reconstruction) - a
+    // hint of life without paying for the hero jellies' full contract/relax
+    // SDF deformation.
+    float pulseT   = 0.5 + 0.5 * sin(uTime * mix(0.12, 0.26, hash1(seed + 8.0)) + hash1(seed + 9.0) * 6.2831853);
+    float bodyGlow = exp(-distSq * 1.15) * mix(0.85, 1.15, pulseT);
+    float dist     = sqrt(distSq);
+    float rim      = exp(-abs(dist - 1.0) * 5.0) * 0.6; // the only "bell edge" suggestion - no tentacles at all, per this pass's reduced-detail requirement
+
+    float occlusion = (1.0 - hazeCombined * hazeDensity * 0.80) * mix(0.30, 0.85, depthNorm);
+
+    // Color variation (Phase 4 goal): background jellies lean more toward
+    // blue-violet than the hero jellies' teal-forward palette, adding hue
+    // variety to the scene without touching the frozen foreground rendering.
+    // A rare (tier-gated), bloom-gated magenta accent keeps this "trippy but
+    // controlled" per the brief - never a rainbow spread.
+    vec3  bgColorA    = vec3(0.30, 0.62, 0.70); // cyan-teal
+    vec3  bgColorB    = vec3(0.42, 0.40, 0.82); // blue-violet
+    vec3  bgColor     = mix(bgColorA, bgColorB, hash1(seed + 10.0));
+    float magentaTier = hash1(seed + 11.0);
+    bgColor = mix(bgColor, vec3(0.62, 0.32, 0.68), smoothstep(0.86, 1.0, magentaTier) * smoothstep(0.55, 1.0, uBloom) * 0.5);
+
+    float brightness = (0.10 + 0.30 * uLightDrive + 0.28 * uBloom) * occlusion;
+    color += bgColor * (bodyGlow + rim) * brightness;
+}
+
+// --- Distant Alien Presence (Phase 4 "Presence / Color / Depth Population") -
+//
+// Compositing position (Phase 4 Addendum 1): this field's own shape/gate
+// logic below is unchanged since Phase 4, but WHERE the resulting darkening
+// mix is applied in main() moved - see the "Distant Alien Presence" call
+// site there (now after the water gradient/glow field/rays/caustics/haze,
+// before the jellyfish/particle layers) for why the original "immediately
+// after the water gradient" position left the effect invisible in the full
+// composite.
+//
+// User feedback (verbatim, via the orchestrating session): "add the shadow/
+// presence of some alien monster appearing in the distance every few
+// seconds"; "the monster should start as a faint outline and get more clear
+// throughout the song"; "it should always remain a shadow in the background,
+// never a literal foreground creature." This is named the single highest-
+// risk element in this pass's own brief - the explicit target is a *sensed*
+// presence, not a drawn creature: huge, distant, partially obscured, slow,
+// mysterious, possibly imagined. It must NOT read as cartoonish, a literal
+// sea-monster drawing, a foreground character, a pasted silhouette sticker,
+// or a face.
+//
+// Design choice made specifically to avoid the "pasted silhouette" failure
+// mode: this is a DARKENING effect (mixes the already-composited water color
+// toward a near-black shadow tint in main()), not a brightening/glow effect
+// like every other layer in this scene (rays/caustics/jellyfish/glow-field/
+// plankton). A silhouette built as an additive glow shape reads as "an
+// object placed in front of the water"; a soft, irregular darkening diffused
+// INTO the water reads as an absence/shadow, which is the actual target. No
+// rim light, no edge highlight, no outline of any kind is added anywhere in
+// this section - an edge highlight is exactly what would turn this into the
+// rejected "silhouette sticker" look.
+//
+// Shape: one large, anisotropic (wide/low, never circular - "never an orb")
+// irregular mass. Design-correction history (self-caught before reporting,
+// not a review failure - see AUDIT.md): the first implementation built the
+// shape as a smooth exp() Gaussian envelope with the SAMPLING POSITION
+// domain-warped by noise sampled in full-frame/world coordinates. An
+// isolated-render check (same technique Entry 46 used to catch its own two
+// design corrections) showed this read as a single smooth, coherent
+// "eel/leaf/pill" shape with a gentle S-bend - exactly the "a thing" failure
+// this pass's own brief warns against - because the warp noise's frequency
+// was far too low relative to the mass's own footprint (MONSTER_SCALE_X/Y):
+// under one noise cycle spanned the entire shape, so the warp only bent the
+// whole envelope coherently instead of perturbing different parts of the
+// boundary independently. Root cause diagnosed (not guessed) via that same
+// isolated-render capture, at high magnification, boosted brightness.
+//
+// Fix: rebuilt around the same "soft gate bounding an irregular patchy noise
+// field" architecture abyssalGlowShape() already uses successfully (macro +
+// detail fbm2 layers, a core threshold for patchy internal contrast) -
+// sharing that proven principle is explicitly allowed by the brief - but
+// built as its own distinct construction, not a reuse/rename: (1) the field
+// noise here is sampled in SHAPE-LOCAL coordinates (`rel`, already
+// normalized by the mass's own scale) at a frequency tuned to that local
+// scale, not world/frame coordinates - this is the specific fix, ensuring
+// several independent lobes/gaps appear across the mass's own extent instead
+// of one smooth bend; (2) the outer gate is an anisotropic Gaussian bound
+// tied to a moving `monsterCenter`, not a static screen-space mask, so the
+// whole irregular field travels and reshapes as one drifting presence rather
+// than sitting fixed in world space; (3) composited as a darkening mix in
+// main(), never additive brightening - see that call site's own comment for
+// why. No explicit fin/tendril shape is ever drawn - the irregular field's
+// own lobes/gaps are what imply them, per the brief's "implied, not drawn"
+// instruction.
+//
+// Perf note (measured, not assumed - see AUDIT.md): unlike the glow field
+// (gated to only the bottom ~35-40% of frame via glowVMask) or the tentacle/
+// plankton loops (whose per-element reach is tiny relative to the screen),
+// this layer's own design intent - "huge" - means its on-screen footprint at
+// full visibility is comparable to the visible frame itself, so a spatial
+// early-out here provides little real pruning (see main()'s own comment at
+// the call site). Kept to two 1-octave fbm2 calls total (half the abyssal
+// glow field's own 4-vnoise2 budget) to stay within this pass's own
+// performance budget despite the necessarily large footprint.
+vec2 monsterCenter(float t) {
+    // Very slow, independent drift - NOT derived from uBloom or any audio
+    // signal, a pure internal clock (per the brief's explicit "should have
+    // its own rhythm layered on top of, not derived from, the bloom arc"
+    // instruction). Two incommensurate low-frequency sine terms per axis so
+    // the crossing never reads as a mechanical back-and-forth sweep; a full
+    // lateral crossing of the visible frame takes on the order of several
+    // minutes - "slow and massive", not a moving cinematic element.
+    float cx = 0.55 * sin(t * 0.0065 + 1.1) + 0.22 * sin(t * 0.0021 - 0.4);
+    float cy = -0.06 + 0.11 * sin(t * 0.0043 + 2.7);
+    return vec2(cx, cy);
+}
+
+const float MONSTER_SCALE_X = 0.44;
+const float MONSTER_SCALE_Y = 0.17;
+
+float monsterShape(vec2 pos, vec2 center, float t) {
+    vec2 rel = (pos - center) / vec2(MONSTER_SCALE_X, MONSTER_SCALE_Y);
+
+    // Soft anisotropic gate - bounds where the irregular field below is
+    // allowed to contribute at all (never alone sufficient to read as "a
+    // shape" on its own, same role abyssalGlowShape's own vertical mask
+    // plays for its noise field). Wide/low, never circular - "never an orb".
+    float gate = exp(-(rel.x * rel.x * 0.55 + rel.y * rel.y * 1.9));
+    if (gate < 0.004) return 0.0;
+
+    // Irregular patchy field, sampled in SHAPE-LOCAL coordinates (rel, not
+    // pos/world-space) - this is the actual fix (see the section header
+    // above): at this frequency, several independent lobes/gaps appear
+    // across the mass's own footprint instead of one smooth bend. Two
+    // independently-drifting layers (macro shape + a smaller-scale detail
+    // churn warped by the macro layer) - the same two-layer principle
+    // abyssalGlowShape() uses, applied at a different, shape-local scale.
+    vec2  fieldUV = rel * 1.55 + vec2(t * 0.050, -t * 0.036);
+    float macro   = fbm2(fieldUV, 1) * 2.0; // renormalize fbm2(.,1)'s [0,0.5] range to [0,1]
+
+    vec2  detailUV = rel * 3.3 + vec2(macro * 0.7, -macro * 0.4) + vec2(-t * 0.041, t * 0.029);
+    float detail    = fbm2(detailUV, 1) * 2.0;
+
+    float field = clamp(macro * 0.55 + detail * 0.45, 0.0, 1.0);
+    // Patchy core threshold - numerous, irregular, continuously reshaping
+    // with the field underneath, never a fixed/countable shape (same
+    // principle abyssalGlowShape's own `core` term establishes).
+    float core = smoothstep(0.30, 0.62, field);
+
+    return gate * clamp(field * 0.30 + core * 0.85, 0.0, 1.0);
+}
+
 // --- Plankton flow/pulse helpers (Phase 2 "Bloom refinement") --------------
 // Added to give the Phase 1 "Living Water" plankton bloom field real
 // structure - flow-coherent streaming and traveling brightness pulse
@@ -1071,7 +1348,13 @@ void main() {
             vec3 glowDeep      = vec3(0.055, 0.100, 0.190);
             vec3 glowBloom     = vec3(0.190, 0.320, 0.560);
             vec3 abyssalColor  = mix(glowDeep, glowBloom, core);
-            abyssalColor = mix(abyssalColor, vec3(0.36, 0.22, 0.60), smoothstep(0.80, 1.0, uBloom) * 0.30);
+            // Phase 4 color variation: the violet nudge itself now gently
+            // pulses (one extra, cheap sin call) rather than being a flat
+            // ramp - "subtle magenta/indigo in bloom pulses" per the brief,
+            // layered onto this layer's own pre-existing high-bloom
+            // violet-nudge mechanism rather than a new one.
+            float glowPulseVar = 0.85 + 0.15 * sin(uTime * 0.21 + 3.1);
+            abyssalColor = mix(abyssalColor, vec3(0.38, 0.20, 0.62), smoothstep(0.80, 1.0, uBloom) * 0.30 * glowPulseVar);
 
             color += abyssalColor * glowField * glowArc * glowVMask;
         }
@@ -1088,6 +1371,14 @@ void main() {
     vec3  rayColorDeep  = vec3(0.16, 0.48, 0.50);
     vec3  rayColorBloom = vec3(0.48, 0.90, 0.62);
     vec3  rayColor = mix(rayColorDeep, rayColorBloom, clamp(uBloom, 0.0, 1.0) * 0.55);
+    // Phase 4 color variation: a very low-frequency horizontal hue drift
+    // toward a cooler cyan-blue variant, layered onto the existing teal-green
+    // ramp - "occasional green/blue caustic variation" extended lightly to
+    // the rays themselves for cross-layer consistency. Cheap (one extra sin,
+    // no new noise call).
+    vec3  rayColorCool = vec3(0.20, 0.42, 0.62);
+    float rayHueVar = 0.5 + 0.5 * sin(pRefractRaysCaustics.x * 1.3 + uTime * 0.05);
+    rayColor = mix(rayColor, rayColorCool, rayHueVar * 0.25);
     color += rayColor * rf * rayBrightnessMul;
 
     // --- Caustic shimmer ----------------------------------------------------
@@ -1117,7 +1408,14 @@ void main() {
     float rayStrength = rayEnvelope(pRefractRaysCaustics);
     float causticLocalRay = pow(clamp(rayStrength * 1.3, 0.0, 1.35), 1.6);
     float causticMask = causticTopMask * causticLocalRay;
-    vec3  causticColor = vec3(0.30, 0.68, 0.56);
+    // Phase 4 color variation: subtle green/blue caustic hue drift, reusing
+    // cn1 (already computed above for the ridge pattern - zero extra noise
+    // cost) - "occasional green/blue caustic variation" per the brief,
+    // tasteful rather than chaotic since it's the same noise already driving
+    // the caustic shape itself, not an independent random hue.
+    vec3  causticColorA = vec3(0.30, 0.68, 0.56); // green-teal (original)
+    vec3  causticColorB = vec3(0.22, 0.56, 0.74); // cyan-blue
+    vec3  causticColor  = mix(causticColorA, causticColorB, smoothstep(0.35, 0.65, cn1));
     color += causticColor * caustic * causticMask * (0.45 + 0.55 * uLightDrive + 0.40 * uBloom) * 0.85;
 
     // --- Bloom-arc bands (Phase 1 "Living Water") -----------------------------
@@ -1170,7 +1468,121 @@ void main() {
     float hazeCombined = clamp(haze1 * 0.6 + haze2 * 0.4, 0.0, 1.0);
     float hazeDensity = mix(0.10, 0.42, depthTN);
     vec3  hazeTint = vec3(0.010, 0.018, 0.032);
+    // Phase 4 color variation: a small violet/indigo nudge in the haze
+    // shadows at higher bloom - "hints of violet/purple in shadows" per the
+    // brief, reusing this file's own established nudge rule (small
+    // uBloom-gated mix, never a hue flip) rather than a new mechanism.
+    hazeTint = mix(hazeTint, vec3(0.020, 0.014, 0.040), smoothstep(0.55, 1.0, uBloom) * 0.5);
     color = mix(color, hazeTint, hazeCombined * hazeDensity * 0.55);
+
+    // --- Distant Alien Presence (Phase 4, repositioned by Phase 4 Addendum 1) --
+    // User-review feedback: "I didn't see the monster presence at all" when
+    // actually watching the running scene, directly contradicting Phase 4's
+    // own isolated-render luminance verification (see AUDIT.md Entry 47 and
+    // this file's earlier revision history). Root-caused via full-composite
+    // (never isolated) screenshots at forced bloom/pulse states, including
+    // the literal maximum-visibility state (uBloom=1 AND presencePulse=1
+    // simultaneously, which barely ever coincides during real play since
+    // presencePulse is deliberately independent of uBloom): the darkening
+    // mix was composited immediately after the bare water-gradient canvas,
+    // BEFORE the abyssal glow field / god rays / caustic shimmer / haze all
+    // added their own (purely additive, `color +=` / a second `mix`) light
+    // on top. Since a mix-toward-near-black only darkens whatever `color`
+    // already holds at that point, darkening a bare, still-dim gradient and
+    // then piling most of the scene's actual visible brightness on top of it
+    // afterward left almost nothing of the darkening in the final pixel -
+    // confirmed by direct full-composite screenshot inspection (not just
+    // "the isolated numbers moved"), not merely theorized.
+    //
+    // Fix: this block is now composited HERE - after the water gradient, the
+    // abyssal glow field, god rays, caustics, and haze have all contributed
+    // their light, i.e. against the water column's actual near-final
+    // backdrop brightness - so the same mix-toward-shadowTint technique now
+    // visibly dims what a viewer actually sees instead of dimming a canvas
+    // that was about to be redrawn over. Still composited BEFORE the
+    // background/hero jellyfish and marine-snow/plankton particle layers
+    // below, preserving the original "huge distant thing everything nearer
+    // still naturally layers on top of and partially obscures" principle for
+    // the near-field/creature/particulate layers specifically - only the
+    // ambient atmosphere layers (which don't represent anything "in front of"
+    // the presence, just the water column's own lit density) moved ahead of
+    // it. No change to monsterCenter()/monsterShape() (the shape/placement
+    // logic - already verified non-cartoonish via isolated-render crops in
+    // Entry 47) or to the darkening-not-brightening technique itself - this
+    // is a compositing-order fix, not a new visual mechanism. Sampled against
+    // pRefractWater exactly as before (same most-distant 0.2x-parallax
+    // coordinate).
+    //
+    // Two independent gates, per this file's established "gate cost, not
+    // just visible output" pattern:
+    //   1. presenceArc - rises with uBloom (its own curve, independently
+    //      tuned from glowArc so the two layers don't necessarily peak
+    //      together) - "starts extremely faint early... becomes more
+    //      readable later."
+    //   2. presencePulse - a slow, own-clock "appears every few seconds"
+    //      breathing cycle, entirely independent of uBloom/audio, per the
+    //      brief's explicit instruction that this should NOT just track
+    //      bloom 1:1. Because presenceArc depends on accumulated bloom state
+    //      and presencePulse depends only on raw uTime, the monster's own
+    //      peak-visibility MOMENT (their product, maximized) does not in
+    //      general coincide with uBloom's own peak - verified explicitly in
+    //      this pass's performance/screenshot evidence (see AUDIT.md).
+    // Phase 4 Addendum 1: arc widened from (0.05, 0.85) to (0.05, 0.60) - the
+    // compositing-order fix above made the peak state genuinely visible, but
+    // full-composite screenshots at bloom=0.3 (Bioluminescent Awakening/
+    // early Current Build - meant to be "occasionally sensed... starting
+    // fairly early" per the original brief) still showed it as imperceptible,
+    // since the old curve didn't reach a meaningful envelope contribution
+    // until well past the midpoint of the bloom arc. Reaching full arc
+    // contribution by bloom=0.60 instead of 0.85 (still gated by presenceArc
+    // near-zero at very low bloom, and still gated by the independent
+    // presencePulse window on top) moves "occasionally sensed" earlier into
+    // the song without changing peak behavior at Bloom Event.
+    float presenceArc      = smoothstep(0.05, 0.60, uBloom);
+    float presencePulseRaw = 0.5 + 0.5 * (0.62 * sin(uTime * 0.46 + 1.7) + 0.38 * sin(uTime * 0.19 - 0.6));
+    // Narrow "appearance window" rather than a constant slow breathing glow -
+    // most of each cycle presencePulse sits near zero; it rises to visible
+    // only for a portion of the cycle, then recedes - this IS the "appears
+    // every few seconds" read, not a mask hiding something otherwise
+    // permanently on-screen.
+    float presencePulse    = smoothstep(0.40, 0.84, presencePulseRaw);
+    float presenceEnvelope = presenceArc * presencePulse;
+
+    if (presenceEnvelope > 0.004) {
+        vec2 mCenter  = monsterCenter(uTime);
+        vec2 toCenter = pRefractWater - mCenter;
+        // Cheap AABB early-out before the expensive fbm2 work below. Per the
+        // perf note in the "Distant Alien Presence" section above, this
+        // layer's own necessarily large footprint means this bound provides
+        // real but modest pruning (unlike the glow field's tight bottom-band
+        // mask) - kept anyway since it costs nothing and is never harmful.
+        if (abs(toCenter.x) < MONSTER_SCALE_X * 2.5 && abs(toCenter.y) < MONSTER_SCALE_Y * 2.8) {
+            float presenceMask = monsterShape(pRefractWater, mCenter, uTime);
+
+            // Pure darkening, no brightening - see the section header above
+            // for why. Tint leans a shade bluer/violet than the darkest
+            // water zone (zoneBottom) itself - an "alien" cue without ever
+            // becoming a saturated color.
+            vec3 shadowTint = vec3(0.003, 0.006, 0.017);
+            color = mix(color, shadowTint, presenceMask * presenceEnvelope * 0.88);
+        }
+    }
+
+    // --- Background jellyfish (Phase 4 "Presence / Color / Depth Population") -
+    // Several (profile-scaled) small, faint, reduced-detail organisms behind
+    // the 3 hero jellyfish - see renderBackgroundJelly() above for why this
+    // is a deliberately separate, much cheaper technique. Own parallax depth
+    // tier (0.82x - between haze's 0.7x and the near/hero-jellyfish layer's
+    // 1.0x, per the brief's "parallax should differ by depth" requirement),
+    // never refraction-warped (the same exclusion rule Phase 3 established
+    // for the hero jellyfish - background organisms follow the identical
+    // convention). Composited here, before the hero jellyfish below, so they
+    // sit visually farther back - matching physical depth order.
+    vec2 pBg = p - uCameraOffset * 0.82;
+    for (int bi = 0; bi < MAX_BG_JELLY; bi++) {
+        if (bi >= uBgJellyCount) break;
+        renderBackgroundJelly(color, pBg, float(bi), hazeCombined, hazeDensity);
+    }
 
     // --- Jellyfish (Phase 2, drift path added Phase 1 "Living Water") --------
     // Inserted here, after background/haze but before the nearer marine-snow
@@ -1495,6 +1907,13 @@ void main() {
             // established for rim glow/marine-snow-adjacent layers - a
             // nudge, never a hue flip.
             planktonColor = mix(planktonColor, vec3(0.55, 0.35, 0.75), smoothstep(0.85, 1.0, uBloom) * 0.12);
+            // Phase 4 color variation: a rare, subtle warm bioluminescent
+            // spark variant (reuses hLife, already computed above for
+            // lifecycle timing - no new hash1() call, zero added cost) -
+            // "warmer bioluminescent sparks only if subtle" per the brief;
+            // gated narrow (>0.93) so it stays a rare accent, not a
+            // competing color family.
+            planktonColor = mix(planktonColor, vec3(0.85, 0.62, 0.35), smoothstep(0.93, 0.99, hLife) * 0.35);
 
             color += planktonColor * brightness * smoothstep(sizePx, 0.0, dist) * 1.6;
         }

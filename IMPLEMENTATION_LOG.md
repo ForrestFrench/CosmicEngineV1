@@ -2015,3 +2015,70 @@ every other world, and every shared engine/audio/rendering file, confirmed via `
 (`abyssal_glow_analysis.py` plus raw diagnostic folders and `perf_summary.md`), `source_context/`, `git/`.
 
 **Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle.
+
+## 2026-07-15 — Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 (World04 monster shadow + background jellyfish + color variation)
+
+Direct user-review feedback on the just-committed Phase 3 abyssal glow field (`fed7a7d`), superseding
+ChatGPT's originally-recommended "Song Feel/Audio Tuning" phase: "three jellyfish floating around is not
+enough interest for a full song," scene too sparse/monochromatic. Full detail: `AUDIT.md` Entry 47.
+
+### What was built
+1. **Distant Alien Presence** (`underwater.frag`, new section, `monsterShape()`/`monsterCenter()`): a large,
+   anisotropic, irregular soft mass composited as a **darkening** mix into the water color (deliberately not
+   additive brightening like every other layer — chosen specifically to avoid a "pasted silhouette" read),
+   drawn before the abyssal glow field so every later layer obscures it. Gated by two independent, multiplied
+   terms: `presenceArc` (rises with `uBloom`) and `presencePulse` (a slow, own-clock "appears every few
+   seconds" cycle derived purely from `uTime`, deliberately not tied to bloom/audio).
+2. **Color variation**: six small nudges layered onto existing brightness/mix terms across caustics, haze,
+   the glow field's own violet nudge, rays, plankton, and the new background jellyfish's own palette — mostly
+   zero extra cost (reuse already-computed noise/hash values).
+3. **Background Jellyfish** (`renderBackgroundJelly()`): 4 (Safe) / 8 (High) small, cheap, reduced-detail
+   organisms — soft glow bell + rim cue only, explicitly not running the frozen six-round-refined
+   SDF-bell-plus-tentacle pipeline. Pure shader-side hash + `uTime` placement, own 0.82x parallax tier.
+
+### Design-correction — self-caught before reporting, not a review failure
+First `monsterShape()` implementation domain-warped world-space-frequency noise, which an isolated-render
+check (Entry 46's own technique) showed reading as a smooth "eel/leaf" shape at high magnification — the
+exact "a thing"/cartoon failure this pass's brief named as highest risk. Root cause: warp frequency too low
+relative to the mass's own footprint, so it bent the whole envelope coherently instead of perturbing the
+boundary independently. Fixed by resampling noise in shape-local coordinates at a frequency tuned to that
+local scale (a "soft gate bounding an irregular patchy field" architecture) — re-verified via the same
+isolated-render technique showing genuinely scattered, irregular, soft-edged patches. A second correction (max
+darkening mix weight 0.60 → 0.88) followed a full-composite review showing the corrected shape nearly
+imperceptible against this scene's dark palette even at forced full envelope. Both caught and fixed within one
+implementation attempt.
+
+### Performance (mandatory 3-state check)
+| State | Runs | avg fps |
+|---|---|---|
+| Safe, rest | 4 | 363.0-367.5 |
+| High, Deep Calm | 6 | 77.7-79.6 |
+| High, High Bloom (forced bloom, natural pulse) | 5 | 61.4-62.6 |
+| High, Monster/Presence Peak (forced bloom AND forced pulse) | 5+5 | 62.2-62.6 |
+
+High stayed ≥60fps in all three forced states across every run; margin real but modest (~2-4fps) versus
+Phase 3's ~65fps floor — isolated (background-jellyfish loop ~1.1-2.5fps, presence layer ~1-1.5fps) and
+disclosed, not hidden. One optimization applied to the background-jellyfish loop (prefix-hash deferral,
+mirroring the plankton loop's own Entry 45 addendum technique) — measured negligible additional effect this
+time, kept anyway since harmless. Not pursued further since the mandatory floor was already met with margin.
+
+### Regression (mandatory — `Engine/CosmicEngine.cs`, a shared file, was touched for one profile-knob line)
+StellarNursery/LavaLamp/WindTurbineFire Safe smoke-tests all pass cleanly.
+
+### Environmental incident, resolved (not a code defect)
+Mid-session, `dotnet run` began SIGSEGV-crashing on every world including untouched ones — root-caused to the
+physical display having gone to sleep (macOS OpenGL context creation crashes when the display is asleep).
+Fixed via `caffeinate -u -di` running in the background for the rest of the session.
+
+### Scope
+`Worlds/World04_Underwater/Shaders/underwater.frag` (primary), `Worlds/World04_Underwater/UnderwaterScene.cs`
+(one profile-scaled `BackgroundJellyCount` field + uniform send), `Engine/CosmicEngine.cs` (matching
+profile-knob line). Zero diff on every other world and shared engine/audio/rendering file. All temporary
+debug overrides (used extensively across this pass's evidence-gathering) fully removed — confirmed via
+`grep -c "TEMP|Temp"` returning `0` on both touched World04 files and a clean rebuild.
+
+### Screenshot/package path
+`DiagnosticReports/AbyssalBloomPhase4PresenceColorDepth_20260715_215439/`, zipped as
+`DiagnosticReports/AbyssalBloomPhase4PresenceColorDepth_20260715_215439.zip`.
+
+**Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle.

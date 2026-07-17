@@ -2,7 +2,7 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc, forced Bloom Event High holding at 63.6-65.0fps (steady-state 64.8-65.0fps) — not yet committed, see `AUDIT.md` Entry 46)
+**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc — now committed as `fed7a7d`, see `AUDIT.md` Entry 46; Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 — a distant alien-presence shadow layer, color-variation nudges, and 4-8 cheap background jellyfish, High holding ≥60fps in all three required forced states (61.4-62.6fps) — not yet committed, see `AUDIT.md` Entry 47)
 
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
@@ -231,7 +231,7 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   sign-off (pending, left blank).
   **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
 
-- **Abyssal Bloom Phase 3 "Distant Event" v0.1 (Entry 46, this pass, not yet committed):** a fresh,
+- **Abyssal Bloom Phase 3 "Distant Event" v0.1 (Entry 46, committed `fed7a7d`):** a fresh,
   ChatGPT-specified phase addressing the review that the scene "still mostly reads as jellyfish under light
   rays, with plankton as a supporting layer" — adds one new environmental element, a distant, irregular,
   domain-warped field of abyssal glow low in the water column, gated across the same `uBloom` arc every other
@@ -253,6 +253,31 @@ the Phase 2 bullet immediately below for the next pass built on top of that comm
   0.066-0.067, matching the established 0.063-0.073 range; motion diagnostic 16.65%/24.33%, matching the
   established 16.47%/24.11% baseline). See `AUDIT.md` Entry 46 for full detail, including the reviewer
   sign-off (pending, left blank).
+  **Committed as `fed7a7d` ("Add Abyssal Bloom distant glow event").**
+- **Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 (Entry 47, this pass, not yet
+  committed):** direct user-review feedback superseding ChatGPT's originally-recommended "Song
+  Feel/Audio Tuning" phase — "three jellyfish floating around is not enough interest for a full song," too
+  sparse/monochromatic. Three additions, all confined to `underwater.frag` plus a `BackgroundJellyCount`
+  profile-scaled knob (`UnderwaterScene.cs`/`CosmicEngine.cs`): (1) a distant, abstract "Distant Alien
+  Presence" — a large, anisotropic, irregular soft mass composited as a **darkening** mix (not additive
+  brightening, unlike every other layer, chosen specifically to avoid a "pasted silhouette" read), gated by
+  its own independent "appears every few seconds" `uTime`-only pulse cycle layered on top of the existing
+  `uBloom` arc; (2) six small, mostly zero-extra-cost color-variation nudges (caustic green/blue drift, haze
+  violet/indigo shadow nudge, a pulsing magenta accent on the glow field's own existing violet nudge, a
+  cool-hue ray drift, a rare warm plankton spark, a blue-violet background-jellyfish palette); (3) 4-8
+  cheap, reduced-detail background jellyfish (`hash1`/`sin`/`exp` only, no `fbm2`, no tentacle field, own
+  0.82x parallax tier) via pure shader-side hash+`uTime` placement (no C#-integrated drift state needed).
+  **One self-caught design correction** (governance rule 10 budget not exhausted): the presence layer's
+  first implementation domain-warped world-space noise at too low a frequency relative to its own footprint,
+  reading as a smooth "eel/leaf" shape on isolated-render review — rebuilt around shape-local-frequency noise
+  (a "soft gate bounding an irregular patchy field" architecture) that reads as genuinely amorphous/irregular
+  on re-verification. Performance: High stayed ≥60fps in all three required forced states across 10+ runs
+  (Deep Calm 77.7-79.6fps; High Bloom 61.4-62.6fps; Monster/Presence Peak — forced bloom AND forced pulse
+  simultaneously — 62.2-62.6fps), a real but modest (~2-4fps) margin versus Phase 3's own ~65fps floor,
+  disclosed honestly with an isolation breakdown rather than hidden. `Engine/CosmicEngine.cs` touched (one
+  profile-knob line) so, per the user's own scoped-regression preference, StellarNursery/LavaLamp/
+  WindTurbineFire were re-run this pass — all pass cleanly. See `AUDIT.md` Entry 47 for full detail,
+  including the reviewer sign-off (pending, left blank).
   **Not committed, not pushed, per explicit instruction — leave uncommitted for its own review.**
 
 ## P1 Acceptance Criteria (RenderScale + Live/Safe Profiles + FPS Variance Evidence) — STATUS: implemented, evidence gathered, awaiting review

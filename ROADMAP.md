@@ -265,13 +265,26 @@ and fixed a pre-existing sub-60fps shortfall at the scene's forced Bloom Event c
 ~65fps). Does not change the phase order above.
 
 **Update (2026-07-15, continued):** a ChatGPT-specified "Abyssal Bloom Phase 3 'Distant Event'" pass
-(`AUDIT.md` Entry 46, not yet committed) directly addressed that review's own next-step recommendation —
+(`AUDIT.md` Entry 46, committed `fed7a7d`) directly addressed that review's own next-step recommendation —
 "the next visual gain should come from stronger environmental transformation, not more jellyfish anatomy" —
 by adding a distant, irregular, domain-warped abyssal glow field low in the water column, gated across the
 same `uBloom` arc every other layer already uses, explicitly abstract/atmospheric rather than a creature
 (a hard constraint, satisfied and self-checked via an isolated-render technique — see the audit entry).
 Jellyfish/tentacle/plankton/camera/caustic/ray code is entirely untouched by this pass. Does not change the
 phase order above.
+
+**Update (2026-07-15, continued further):** a direct user-review pass, "Abyssal Bloom Phase 4 'Presence /
+Color / Depth Population'" (`AUDIT.md` Entry 47, not yet committed), superseded ChatGPT's own
+next-recommended "Song Feel/Audio Tuning" phase — the user's own review found the scene still too
+sparse/monochromatic for a full song. Added a distant, abstract "alien presence" shadow layer (a darkening,
+not a glow, with its own independent "appears every few seconds" visibility cycle layered on the bloom arc —
+one design correction self-caught and fixed via the same isolated-render technique Entry 46 established, see
+that entry for detail), several cheap reduced-detail background jellyfish (explicitly not running the frozen
+foreground tentacle pipeline), and six small color-variation nudges. High profile confirmed holding ≥60fps in
+all three required forced states (Deep Calm/High Bloom/Monster-Presence-Peak) with a real but modest margin.
+Foreground jellyfish/tentacles and the glow field's own shape/technique are both untouched. Does not change
+the phase order above; "Song Feel/Audio Tuning" remains the next recommended step after this pass's own
+review.
 
 ## Note — Scene Dashboard added (2026-07-06)
 
