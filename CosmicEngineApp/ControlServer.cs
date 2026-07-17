@@ -444,6 +444,34 @@ namespace CosmicEngine.App
                         case "HybridBlend":
                             Tuning.HybridBlend = Math.Clamp(val, 0f, 1f);
                             break;
+                        // Phase 3 Effect Stack v1 (World05 HybridTest only) - same defensive-clamp
+                        // pattern as HybridBlend above. Mirror toggles are represented as 0/1 range
+                        // sliders (not a new checkbox mechanism) so they reuse the existing generic
+                        // slider send()/init() JS wiring unchanged.
+                        case "HybridGrayscale":
+                            Tuning.HybridGrayscale = Math.Clamp(val, 0f, 1f);
+                            break;
+                        case "HybridMirrorX":
+                            Tuning.HybridMirrorX = val >= 0.5f;
+                            break;
+                        case "HybridMirrorY":
+                            Tuning.HybridMirrorY = val >= 0.5f;
+                            break;
+                        case "HybridGradeLift":
+                            Tuning.HybridGradeLift = Math.Clamp(val, -0.5f, 0.5f);
+                            break;
+                        case "HybridGradeGamma":
+                            Tuning.HybridGradeGamma = Math.Clamp(val, 0.2f, 3.0f);
+                            break;
+                        case "HybridGradeGain":
+                            Tuning.HybridGradeGain = Math.Clamp(val, 0f, 2f);
+                            break;
+                        case "HybridVignette":
+                            Tuning.HybridVignette = Math.Clamp(val, 0f, 1f);
+                            break;
+                        case "HybridPlaybackSpeed":
+                            Tuning.HybridPlaybackSpeed = Math.Clamp(val, 0.25f, 2.0f);
+                            break;
                     }
                 }
 
@@ -466,7 +494,15 @@ namespace CosmicEngine.App
                     Tuning.DimLevel,
                     Tuning.WindTurbineFireEvolutionSeconds,
                     Tuning.UnderwaterEvolutionSeconds,
-                    Tuning.HybridBlend
+                    Tuning.HybridBlend,
+                    Tuning.HybridGrayscale,
+                    HybridMirrorX = Tuning.HybridMirrorX ? 1 : 0,
+                    HybridMirrorY = Tuning.HybridMirrorY ? 1 : 0,
+                    Tuning.HybridGradeLift,
+                    Tuning.HybridGradeGamma,
+                    Tuning.HybridGradeGain,
+                    Tuning.HybridVignette,
+                    Tuning.HybridPlaybackSpeed
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -630,13 +666,24 @@ namespace CosmicEngine.App
 <p style='color:#666;font-size:12px'>How long sustained loud playing takes to fully evolve the Wind Turbine Fire scene (World03) from cold/calm to fully hot. Only affects that one scene — set it to match your song length.</p>
 <div class='row'><label>Fire Evolution Time</label><input type='range' id='WindTurbineFireEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='WindTurbineFireEvolutionSeconds_v'></span></div>
 
+<h3>UNDERWATER (COSMIC REEF) — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
+<p style='color:#666;font-size:12px'>How long sustained light drive takes to evolve the Cosmic Reef scene (World04) end-to-end - from calm/dark underwater bloom through the cosmic breach that follows it. Governs the whole visual arc, not just the initial bloom. Only affects that one scene — set it to match your song length.</p>
+<div class='row'><label>Visual Evolution Time</label><input type='range' id='UnderwaterEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='UnderwaterEvolutionSeconds_v'></span></div>
+
 <h3>HYBRID TEST (PROTOTYPE) — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
 <p style='color:#666;font-size:12px'>Phase 1 hybrid-video proof (World05). Blend between the hardcoded video clip layer (0) and the composited procedural child world (1). Only affects the Hybrid Test scene.</p>
 <div class='row'><label>Video / World Blend</label><input type='range' id='HybridBlend' min='0' max='1' step='0.01'><span class='val' id='HybridBlend_v'></span></div>
 
-<h3>UNDERWATER — SCENE-SPECIFIC (not a Deepest Space audio control)</h3>
-<p style='color:#666;font-size:12px'>How long sustained light drive takes to fully bloom the Underwater scene (World04) from calm/dark to fully bloomed. Only affects that one scene — set it to match your song length.</p>
-<div class='row'><label>Bloom Evolution Time</label><input type='range' id='UnderwaterEvolutionSeconds' min='30' max='300' step='1'><span class='val' id='UnderwaterEvolutionSeconds_v'></span></div>
+<h3>EFFECTS (PHASE 3) — HYBRID TEST ONLY</h3>
+<p style='color:#666;font-size:12px'>Effect Stack v1, applied in the composite shader after the video/world blend above. Only affects the Hybrid Test scene (World05).</p>
+<div class='row'><label>Grayscale</label><input type='range' id='HybridGrayscale' min='0' max='1' step='0.01'><span class='val' id='HybridGrayscale_v'></span></div>
+<div class='row'><label>Mirror X</label><input type='range' id='HybridMirrorX' min='0' max='1' step='1'><span class='val' id='HybridMirrorX_v'></span></div>
+<div class='row'><label>Mirror Y</label><input type='range' id='HybridMirrorY' min='0' max='1' step='1'><span class='val' id='HybridMirrorY_v'></span></div>
+<div class='row'><label>Grade Lift</label><input type='range' id='HybridGradeLift' min='-0.5' max='0.5' step='0.01'><span class='val' id='HybridGradeLift_v'></span></div>
+<div class='row'><label>Grade Gamma</label><input type='range' id='HybridGradeGamma' min='0.2' max='3' step='0.01'><span class='val' id='HybridGradeGamma_v'></span></div>
+<div class='row'><label>Grade Gain</label><input type='range' id='HybridGradeGain' min='0' max='2' step='0.01'><span class='val' id='HybridGradeGain_v'></span></div>
+<div class='row'><label>Vignette</label><input type='range' id='HybridVignette' min='0' max='1' step='0.01'><span class='val' id='HybridVignette_v'></span></div>
+<div class='row'><label>Playback Speed</label><input type='range' id='HybridPlaybackSpeed' min='0.25' max='2' step='0.01'><span class='val' id='HybridPlaybackSpeed_v'></span></div>
 
 </div>
 
@@ -762,7 +809,10 @@ const defaults = {
   BassBrightness: 1.20, DimLevel: 0.20,
   WindTurbineFireEvolutionSeconds: 240,
   UnderwaterEvolutionSeconds: 240,
-  HybridBlend: 0.5
+  HybridBlend: 0.5,
+  HybridGrayscale: 0.0, HybridMirrorX: 0, HybridMirrorY: 0,
+  HybridGradeLift: 0.0, HybridGradeGamma: 1.0, HybridGradeGain: 1.0,
+  HybridVignette: 0.0, HybridPlaybackSpeed: 1.0
 };
 
 const sliders = document.querySelectorAll('input[type=range]');

@@ -51,5 +51,21 @@ namespace CosmicEngine.App
         // and again in HybridTestScene.Render(), matching the WindTurbineFireEvolutionSeconds/
         // UnderwaterEvolutionSeconds defensive-clamp pattern. Harmless no-op for every other scene.
         public static float HybridBlend = 0.5f;
+
+        // Phase 3 Effect Stack v1 (MILESTONE_BREAKDOWN.md Phase 3, video-atoms). All World05
+        // HybridTest-only, harmless no-ops for every other scene - same convention as
+        // WindTurbineFireEvolutionSeconds/UnderwaterEvolutionSeconds/HybridBlend above. Applied in
+        // hybrid.frag AFTER the existing mix(video, child, uBlend), which is unchanged.
+        public static float HybridGrayscale = 0.0f;   // 0 = full color, 1 = full luminance
+        public static bool  HybridMirrorX = false;
+        public static bool  HybridMirrorY = false;
+        public static float HybridGradeLift = 0.0f;   // -0.5..0.5
+        public static float HybridGradeGamma = 1.0f;  // 0.2..3.0
+        public static float HybridGradeGain = 1.0f;   // 0..2
+        public static float HybridVignette = 0.0f;    // 0..1
+        // Decode-rate pacing multiplier (FfmpegPipeDecoder reader thread), NOT a shader uniform -
+        // per VIDEO_SYSTEM_ARCHITECTURE.md §2.2, playback speed lives in the decoder, not the
+        // composite shader. 0.25x-2x, defensively clamped again at the decoder.
+        public static float HybridPlaybackSpeed = 1.0f;
     }
 }
