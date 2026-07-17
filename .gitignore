@@ -13,3 +13,8 @@ DiagnosticReports/
 # (Audio/CalibrationPresetStore.cs) - runtime user data, not source. Built-in
 # defaults are seeded automatically on first run if this file doesn't exist.
 CosmicEngineApp/Config/calibration-presets.json
+
+# VisionBoard: local reference video assets (1.2GB) used for the video-atoms
+# planning pass - reference/runtime data, not source, not needed to build or
+# run the engine.
+VisionBoard/
