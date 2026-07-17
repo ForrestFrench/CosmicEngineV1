@@ -286,6 +286,25 @@ Foreground jellyfish/tentacles and the glow field's own shape/technique are both
 the phase order above; "Song Feel/Audio Tuning" remains the next recommended step after this pass's own
 review.
 
+**Update (2026-07-16):** direct user-review follow-up, "Monster/Presence Visibility Fix" (`AUDIT.md` Entry 47
+Addendum 1, committed `28f3e43`) — user reported not seeing the Phase 4 presence layer at all during live
+review; root-caused to a compositing-order bug (the darkening mix ran before the glow field/rays/caustics/
+haze added their own light on top, leaving almost nothing of the darkening in the final pixel) plus a
+secondary arc-timing issue. Fixed by moving the compositing position later in the stack and widening the arc.
+
+**Update (2026-07-17):** an approved Fable-authored architect plan, "Cosmic Reef Pivot Phase 1" (`AUDIT.md`
+Entry 48, not yet committed, **not ready for review**), pivots World04 from "Abyssal Bloom" toward "Cosmic
+Reef" — a psychedelic underwater-to-cosmic transformation over the length of a song (starfield, nebula
+retint, a scene-level color-bloom wave, drifting ribbon organisms, hero-jellyfish demotion as the breach
+opens), with a user amendment tying the existing evolution-length slider to the whole arc rather than just
+the bloom portion. A prior agent session's work on this same pass was interrupted mid-task (API session
+limit) and resumed; the resumed pass fixed a genuine ribbon-undulation defect (too-low traveling-wave
+frequency, reading as a rigid arc rather than multiple bends) but **did not clear the mandatory 60fps floor**
+at sustained high bloom after two optimization rounds — see Entry 48's own options memo. This phase does not
+change the phase order above and is explicitly gated: not to be treated as complete/shippable until the
+performance question is resolved (either a follow-up perf pass or explicit user acceptance of the current
+floor).
+
 ## Note — Scene Dashboard added (2026-07-06)
 
 A local Scene Dashboard (Scene Dashboard v0.1, see `AUDIT.md` Entry 15), served by the existing
@@ -304,3 +323,23 @@ to expose whichever scenes P3/P6 eventually add without further roadmap changes.
   (Intel Iris Graphics 6100), which is not the OptiPlex 5070 Micro stage target.
 - **No real-audio validation exists yet.** Audio logs confirm only that the capture device opened, not
   that a real guitar signal has driven the visuals.
+
+## Update (2026-07-17) — Video Atoms Phase 3: Effect Stack v1 + manual controls
+
+Built on the proven Phase 1 hybrid composite (`HybridTestScene`, World05): grayscale, mirror X/Y, a
+lift/gamma/gain color grade, and vignette added as uniforms in the existing `hybrid.frag` composite
+shader (no new passes/framebuffers, per `MILESTONE_BREAKDOWN.md` Phase 3 scope), applied after the
+Phase 1 `mix(video, child, uBlend)`, which is unchanged. Playback speed (0.25x-2x) lives in
+`FfmpegPipeDecoder`'s reader thread as decode-rate pacing, not the shader, per
+`VIDEO_SYSTEM_ARCHITECTURE.md` §2.2. All eight new parameters are wired to the dashboard via the
+existing `Tuning.cs`/`ControlServer.cs` slider pattern under a new "Effects" section, scoped to World05
+only. Audio-reactive hooks (optional per the Phase 3 brief) were deferred — see `AUDIT.md` Entry 50 for
+the reasoning; the manual dashboard controls, not audio-reactivity, were the acceptance bar. This phase
+does not change the phase order above.
+
+Also folds in an explicit, user-directed sequencing change to this roadmap's own philosophy: Mac-side
+development may continue through Phase 4, 5, and beyond without waiting for Phase 2 (OptiPlex
+first-light) to complete. Phase 2 is now framed as a hardware gate before live-deployment/stage
+readiness, not a blocker on further Mac-side development — see `IMPLEMENTATION_ROADMAP.md` §1 rule 6 for
+the precise revised language. Every major rendering feature is still expected to be profiled on the
+OptiPlex before being treated as production-ready; it simply no longer has to happen first.
