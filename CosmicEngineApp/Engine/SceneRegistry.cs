@@ -2,6 +2,7 @@ using CosmicEngine.App.Worlds.World01;
 using CosmicEngine.App.Worlds.World02;
 using CosmicEngine.App.Worlds.World03;
 using CosmicEngine.App.Worlds.World04;
+using CosmicEngine.App.Worlds.World05;
 using System;
 
 namespace CosmicEngine.App.Engine
@@ -94,8 +95,24 @@ namespace CosmicEngine.App.Engine
             Factory        = camera => new UnderwaterScene(camera)
         };
 
+        // Phase 1 "Hybrid Proof" (video-atoms MILESTONE_BREAKDOWN.md): prototype-only, hardcoded
+        // single-clip + single-child-world composite. Not part of the Cosmic Reef pivot; append-only
+        // addition to this file, staged independently of the uncommitted Cosmic Reef hunks above.
+        public static readonly SceneDefinition HybridTest = new()
+        {
+            Id             = "HybridTest",
+            DisplayName    = "Hybrid Test (prototype)",
+            Description    = "Phase 1 hybrid-video proof: one hardcoded VisionBoard clip composited with Stellar Nursery via an adjustable blend. Prototype only - not a finished scene.",
+            Status         = "Prototype v0.1 (Phase 1 proof)",
+            DefaultProfile = "Safe",
+            Showable       = true,
+            ThumbnailPath  = null,
+            ShowSeed       = null,
+            Factory        = camera => new HybridTestScene(camera)
+        };
+
         /// <summary>Every registered scene, in display order. First entry is the default.</summary>
-        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire, Underwater };
+        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire, Underwater, HybridTest };
 
         public const string DefaultSceneId = "StellarNursery";
 
