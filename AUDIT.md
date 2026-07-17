@@ -5581,3 +5581,96 @@ bounded `--smoke-test`/`--diagnostic motion` invocation, none used an unbounded 
 **Not committed, not pushed** — folds into the same uncommitted Phase 4 working-tree state, awaiting its
 own review cycle, per this project's standing rule against self-signing audit entries or committing without
 explicit request.
+
+---
+
+## Phase 1 Hybrid Proof (video-atoms MILESTONE_BREAKDOWN.md) — implemented, honest gap disclosed, NOT ready for full sign-off
+
+**Implementer:** Claude Sonnet 5 (Claude Code). **Reviewer sign-off: _______________ (blank — never self-signed)**
+
+### What was built
+`IVideoDecoder` (`CosmicEngineApp/Rendering/Video/IVideoDecoder.cs`) — the mandatory ffmpeg-agnostic
+decode seam; `FfmpegPipeDecoder` — subprocess + raw-BGRA pipe + background reader thread + 3-frame
+ring buffer, mirroring `AudioEngine.CaptureLoop`'s idiom, with a loud actionable missing-ffmpeg error
+and guaranteed process cleanup on `Dispose()`; `VideoTexture` — ≤1 `glTexSubImage2D` upload/frame;
+`HybridTestScene` (World05, `Id: "HybridTest"`) — composites a hardcoded VisionBoard clip with a
+StellarNursery child world (rendered into a private `RenderTarget`) via `mix(video, child, uBlend)`;
+`Tuning.HybridBlend` wired end-to-end through the existing dashboard slider pattern;
+`RenderTarget.ColorTextureId` (one new read-only accessor). Commits `380614d`/`454392e`/`58ffac6`,
+each line-level staged around the uncommitted Cosmic Reef hunks in `ControlServer.cs`/
+`SceneRegistry.cs` — verified via `git diff --cached` before each commit that zero Cosmic Reef
+content was included.
+
+### Critical environment finding
+**`ffmpeg` is not installed on this dev Mac mini, and Homebrew itself is not present** (`which
+ffmpeg`/`which brew` both fail; no binary found via `mdfind` or common install paths). Discovered
+before any clip probing or runtime testing began. Per rule-10 discipline, this was treated as a
+stop-and-document environmental blocker rather than something to work around by installing new
+system software mid-session without explicit sign-off. Every objective that requires an actual
+decoded video frame (loads/displays-as-texture/decode-CPU%/real orphan-ffmpeg-process torture) could
+not be genuinely evidenced this pass — `FfmpegPipeDecoder.Open()` correctly fails loudly and
+`HybridTestScene` correctly continues non-fatally with a synthetic fallback-color video layer, and
+every screenshot/perf number in the evidence package reflects that fallback path, not real footage.
+
+### Existing-scene regression (shared files touched: `ControlServer.cs`, `SceneRegistry.cs`,
+`RenderTarget.cs`, `Tuning.cs` — full scoped-regression set applies)
+| Command | Result |
+|---|---|
+| `--world StellarNursery --profile Safe --smoke-test` | avg fps 75.0, clean exit |
+| `--world LavaLamp --profile Safe --smoke-test` | avg fps 75.1, clean exit |
+| `--world WindTurbineFire --profile Safe --smoke-test` | avg fps 75.0, clean exit |
+| `--world Underwater --profile Safe --smoke-test` | avg fps 75.0, clean exit |
+
+All four pass cleanly, unchanged behavior, no errors, no orphan processes.
+
+### 8 objectives — honest per-objective verdicts
+1. Existing scenes unchanged — **met**.
+2. Hardcoded local video loads — **not met** (ffmpeg unavailable; error path verified instead).
+3. Video displays as texture — **not evidenced** (no real frame ever decoded).
+4. Child world composites at operator blend — **partially met** (mechanism/blend verified via 4
+   screenshots at 0.0/0.3/0.7/1.0; the "video" layer in each is the fallback color, not footage).
+5. Bloom/arc behavior in child intact — **met** (documented mapping: child renders/animates
+   identically inside the composite, motion diagnostic 73-93% pixel change between captures).
+6. Audio reactivity live in composite — **met** (`calibratedA` 0 → 0.9 during a live test pulse
+   while HybridTest is active, confirming the child's `Update()` runs every frame in the composite).
+7. Blend adjustable live from dashboard — **met** (`POST /set` demonstrably changes the rendered
+   composite).
+8. Mac mini perf recorded + OptiPlex runbook delivered — **partially met** (5-run distributions
+   recorded for HybridTest/StellarNursery x Safe/High, but every run hit an identical ~75fps
+   ceiling consistent with a vsync cap rather than genuine GPU-bound measurement; OptiPlex runbook
+   written but entirely unexecuted).
+
+### Performance
+See `PERFORMANCE_NOTES.md` in the package — headline: 60fps holds in every run measured (min
+observed fps 74.3-74.9 across all configurations), but the measurement is very likely vsync-capped
+rather than GPU-bound (near-zero variance across baseline and hybrid, Safe and High), so this is weak
+evidence for the real hybrid-video workload once ffmpeg is actually decoding frames. Decode-thread
+CPU% is entirely unmeasured (no ffmpeg process ever ran).
+
+### Orphan-process torture
+Bounded self-exit runs (10 total across regression + perf sweeps): clean, no orphans, every time.
+Unbounded run + `kill -9`: engine process terminated, no orphan `ffmpeg` found — but **no real
+ffmpeg process was ever running to begin with**, so this scenario did not genuinely exercise
+`FfmpegPipeDecoder.Dispose()`'s process-tree-kill path. World-switch-mid-playback torture case was
+not run this pass (deferred once the kill-9 case revealed there was nothing real to test cleanup
+against).
+
+### Known limitations
+See `KNOWN_LIMITATIONS.md` in the package for the full list — headline items: no real video played
+this pass (the central gap); hardcoded clip chosen by file size alone, never watched/probed; no
+seek/no clip audio; loop-by-restart-process (no crossfade); no post-process bloom exists in the
+engine at all (pre-existing, documented mapping only); `kill -9` orphan-ffmpeg gap is a real
+unmitigated code-level limitation, not just an untested case this pass; OptiPlex entirely
+unmeasured; perf distributions likely vsync-limited rather than GPU-bound.
+
+### Screenshot/package path
+`DiagnosticReports/Phase1HybridProof_20260717_133653/`, containing `PHASE1_SUMMARY.md`,
+`ARCHITECTURE_CHANGES.md`, `PERFORMANCE_NOTES.md`, `TESTING_RESULTS.md`, `KNOWN_LIMITATIONS.md`,
+`OPTIPLEX_RUNBOOK.md`, `screenshots/` (4 full-composite blend screenshots + motion-diagnostic
+frames), `logs/` (all smoke-test/regression/perf-sweep/calibration-pulse logs), `git/` (commit
+list, per-commit diffstat, status, phase-1-scoped diff vs. pre-pivot HEAD).
+
+**Committed** (`380614d`, `454392e`, `58ffac6`) — **not pushed**. **Ready for review: NO** — the
+missing-ffmpeg gap means objectives 2, 3, and half of 8 are not genuinely evidenced; recommend
+installing ffmpeg and re-running this exact code before treating Phase 1 as complete. See
+`PHASE1_SUMMARY.md`'s options memo.

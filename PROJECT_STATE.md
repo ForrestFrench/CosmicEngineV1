@@ -55,6 +55,13 @@ investigation.
 ## Branch / status
 
 - **Branch:** `cosmicos`
+- **Phase 1 Hybrid Proof (video-atoms MILESTONE_BREAKDOWN.md): implemented, NOT ready for review** —
+  committed (`380614d`/`454392e`/`58ffac6`), not pushed. `IVideoDecoder`/`FfmpegPipeDecoder`/
+  `VideoTexture` + new `HybridTestScene` (World05) compositing a hardcoded VisionBoard clip with a
+  StellarNursery child world. **Critical gap: no ffmpeg installed on the dev machine, so no real
+  video was ever decoded/displayed this pass** — see `AUDIT.md`'s entry and
+  `DiagnosticReports/Phase1HybridProof_20260717_133653/PHASE1_SUMMARY.md` for the full honest
+  breakdown before treating this as a completed milestone.
 - **Star Artifact Fix (Entry 7): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `1051e27`. Remains intact and unmodified — see below.
 - **Visual Recovery Pass 1 (Entry 8): reviewed and ACCEPTED by ChatGPT** on 2026-07-05, committed as `3cf74ea`. Accepted as a visual recovery baseline, not final art.
 - **Visual Detail Pass 1 (Entry 9): reviewed and REJECTED by ChatGPT** on 2026-07-05 — hard-edged/posterized/masked artifacts from a `step()` density gate.

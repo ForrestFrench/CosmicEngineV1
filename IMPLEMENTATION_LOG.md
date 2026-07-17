@@ -2082,3 +2082,20 @@ debug overrides (used extensively across this pass's evidence-gathering) fully r
 `DiagnosticReports/AbyssalBloomPhase4PresenceColorDepth_20260715_215439.zip`.
 
 **Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle.
+
+## Phase 1 Hybrid Proof (video-atoms MILESTONE_BREAKDOWN.md) — implemented, NOT clean, honest gap disclosed
+
+Added `IVideoDecoder`/`FfmpegPipeDecoder`/`VideoTexture` (`CosmicEngineApp/Rendering/Video/`) and a
+new registered scene `HybridTestScene` (World05, Id `"HybridTest"`) that composites a hardcoded
+VisionBoard clip with a StellarNursery child world via `mix(video, child, uBlend)`, plus
+`Tuning.HybridBlend` wired end-to-end through `ControlServer.cs`'s existing slider pattern. Commits
+`380614d`/`454392e`/`58ffac6` (line-level staged around the uncommitted Cosmic Reef hunks in
+`ControlServer.cs`/`SceneRegistry.cs` — verified zero Cosmic Reef content per commit).
+
+**Critical gap: `ffmpeg` (and Homebrew) is not installed on the dev Mac mini.** No real video frame
+was ever decoded or displayed this pass — every screenshot/perf number reflects
+`HybridTestScene`'s non-fatal fallback-color path, not actual footage. The composite mechanism,
+`RenderTarget` nesting, blend control, and audio-reactivity plumbing are all evidenced and working;
+"video loads"/"video displays as texture" are not. Full detail, evidence, and the honest
+per-objective breakdown: `AUDIT.md` (this pass's entry) and
+`DiagnosticReports/Phase1HybridProof_20260717_133653/PHASE1_SUMMARY.md`.
