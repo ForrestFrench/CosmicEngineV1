@@ -5674,3 +5674,63 @@ list, per-commit diffstat, status, phase-1-scoped diff vs. pre-pivot HEAD).
 missing-ffmpeg gap means objectives 2, 3, and half of 8 are not genuinely evidenced; recommend
 installing ffmpeg and re-running this exact code before treating Phase 1 as complete. See
 `PHASE1_SUMMARY.md`'s options memo.
+## Entry 49 (Addendum) — Phase 1 Hybrid Proof: Real-Decode Re-Validation
+
+ffmpeg (`~/.local/bin/ffmpeg`, static build, v8.1.2-tessus) was installed on this Mac mini since
+Entry 48/the Phase 1 package above was written. This addendum re-runs the same Phase 1 evidence
+program against **real decode**, no architecture changes made — the existing `IVideoDecoder`/
+`FfmpegPipeDecoder`/`VideoTexture`/`HybridTestScene`/`Tuning.HybridBlend` seam works against real
+ffmpeg output exactly as designed.
+
+**Clip**: kept the prior session's hardcoded choice (`VisionBoard/140733-775596128.mp4`, a
+binary-black-hole accretion-disk render, 1920x1080/25fps/58.4s) — this time verified by real
+`ffmpeg -i` inspection and 3-frame previews across 5 candidates, not inherited on faith. Reasoning
+and preview frames in `PHASE1_SUMMARY.md`/`clip_selection/`.
+
+**Real decode: confirmed.** `[FfmpegPipeDecoder] Opened '.../140733-775596128.mp4' ... decoderOk=True`
+on the large majority of attempts; real per-frame motion evidenced (63-100% pixels changed between
+captures depending on blend, vs. the prior fallback-color session's motion being purely the child
+world animating); full blend sweep (0.0/0.25/0.5/0.75/1.0) screenshots show a clean crossfade between
+sharp real video and StellarNursery, both pure endpoints reached correctly. Aspect ratio correct
+(16:9 clip into 16:9 target, no stretch). Audio-reactivity-during-real-playback concurrently
+confirmed via a live calibration test pulse while ffmpeg was actively decoding.
+
+**VSync finding**: the prior package's flat ~75fps-everywhere numbers were a vsync cap, not real
+cost — confirmed by a temporary, fully-reverted `VSyncMode.Off` toggle (see this addendum's
+`ARCHITECTURE_CHANGES.md`) showing StellarNursery-alone at 163-170fps uncapped on this hardware.
+
+**Open items, disclosed not hidden** (full detail in the addendum package's `KNOWN_LIMITATIONS.md`):
+an intermittent silent startup hang (5 of 7 attempts clean, 2 hung and recovered on immediate retry);
+an unresolved performance anomaly where HybridTest's own uncapped fps came out *higher* than
+StellarNursery alone in 3 of 4 clean runs (not physically expected, not root-caused this session);
+loop-seam quality inferred rather than directly screenshot-evidenced; "video alone" not measured as
+a formal 5-run distribution; 72s memory-growth sample (~12%) inconclusive for leak detection; no
+OptiPlex claim made (rule 7) — refined runbook delivered instead.
+
+**Both-directions compositing**: not applicable to the current architecture — Phase 1's single
+`mix(video, child, uBlend)` crossfade has no front/back layer concept by design (that's explicitly
+`CinematicScene`/`LayerCompositor`, Phase 3+ scope per `VIDEO_SYSTEM_ARCHITECTURE.md`). No code
+added; documented rather than treated as a gap to close.
+
+**Architecture changes**: none, beyond the temporary vsync diagnostic toggle described above, fully
+reverted before this entry was written (`git diff` on the touched file shows zero net change on that
+line; verified).
+
+**Artistic self-assessment (implementer opinion, explicitly not the final word — see philosophy
+doc)**: at blend ≈0.3-0.5 the crossfade reads as the black hole dissolving into/emerging from
+nebula, which is close to the intended "third thing." At the pure extremes it reads as exactly what
+it is (clip or procedural alone), which is expected for a Phase 1 proof but is a much blunter tool
+than the philosophy doc's "seen through this engine's water/smoke/light" framing implies is the
+eventual target — that refinement is Phase 3 scope (EffectStack, layer opacity/blend modes), not a
+Phase 1 defect.
+
+### Package path
+`DiagnosticReports/Phase1HybridProofRealDecode_20260717_142312/` (zipped) — updated
+`PHASE1_SUMMARY.md`/`ARCHITECTURE_CHANGES.md`/`PERFORMANCE_NOTES.md`/`TESTING_RESULTS.md`/
+`KNOWN_LIMITATIONS.md`, refined `OPTIPLEX_RUNBOOK.md`, `screenshots/` (5 blend-sweep + 2
+motion-diagnostic frames), `clip_selection/` (3 candidate preview frames), `logs/` (calibration
+pulse/status JSON, RSS samples, run logs).
+
+**Not committed as new code** (no architecture changes to commit) — only this AUDIT.md addendum and
+the (already-reverted, no-op) vsync line touch this session's diff. **Not pushed. Ready for review:
+[BLANK — reviewer sign-off pending, not self-signed].**
