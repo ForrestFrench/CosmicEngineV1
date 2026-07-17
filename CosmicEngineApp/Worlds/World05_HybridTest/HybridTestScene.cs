@@ -94,6 +94,12 @@ namespace CosmicEngine.App.Worlds.World05
             _childCamera.Update(deltaTime, audio.Bass1);
             _childWorld?.Update(deltaTime, audio);
 
+            // Phase 3 Effect Stack v1: playback speed lives in the decoder (decode-rate pacing),
+            // not the shader - set live every frame from the dashboard-tunable value so it applies
+            // without a scene/decoder restart.
+            if (_decoder != null)
+                _decoder.PlaybackSpeed = Tuning.HybridPlaybackSpeed;
+
             _videoTexture?.Update(); // at most one glTexSubImage2D upload per frame
         }
 
@@ -123,6 +129,16 @@ namespace CosmicEngine.App.Worlds.World05
             _compositeShader.Use();
             _compositeShader.SetFloat("uTime", _time);
             _compositeShader.SetFloat("uBlend", Math.Clamp(Tuning.HybridBlend, 0f, 1f));
+
+            // Phase 3 Effect Stack v1: uniform-driven effects, applied after the existing blend
+            // inside the composite shader (see hybrid.frag). Phase 1 behavior above is unchanged.
+            _compositeShader.SetFloat("uGrayscale", Math.Clamp(Tuning.HybridGrayscale, 0f, 1f));
+            _compositeShader.SetInt("uMirrorX", Tuning.HybridMirrorX ? 1 : 0);
+            _compositeShader.SetInt("uMirrorY", Tuning.HybridMirrorY ? 1 : 0);
+            _compositeShader.SetFloat("uGradeLift", Math.Clamp(Tuning.HybridGradeLift, -0.5f, 0.5f));
+            _compositeShader.SetFloat("uGradeGamma", Math.Clamp(Tuning.HybridGradeGamma, 0.2f, 3.0f));
+            _compositeShader.SetFloat("uGradeGain", Math.Clamp(Tuning.HybridGradeGain, 0f, 2f));
+            _compositeShader.SetFloat("uVignette", Math.Clamp(Tuning.HybridVignette, 0f, 1f));
 
             bool videoReady = _videoTexture != null;
             _compositeShader.SetInt("uVideoReady", videoReady ? 1 : 0);
