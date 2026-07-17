@@ -18,6 +18,15 @@ namespace CosmicEngine.App.Rendering
         public int Width  { get; }
         public int Height { get; }
 
+        /// <summary>
+        /// GL texture id of this target's color attachment - added for Hybrid Proof (Phase 1,
+        /// video-atoms) so a scene (HybridTestScene) can render a child IWorld into a private
+        /// RenderTarget and then sample the result as a texture in its own composite shader,
+        /// instead of blitting to the screen. Pre-existing usages (CosmicEngineApp's own main
+        /// target) are unaffected - this is an additive read-only accessor.
+        /// </summary>
+        public int ColorTextureId => _texture;
+
         public RenderTarget(int width, int height)
         {
             Width  = width;
