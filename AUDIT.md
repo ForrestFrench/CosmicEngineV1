@@ -5844,3 +5844,92 @@ honest evidence of the environment issue). **No screenshots this pass** — see 
 above.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+## Entry 51
+
+**Visual Composer Sandbox (World06) — artistic-exploration pass, NOT an infra pass.** Per rules
+11/12, this entry is explicitly not held to infra-pass rigor (single-run fps sanity checks, not
+distributions; no formal regression sweep beyond a scoped shared-file check).
+
+Per direct user instruction, this pass deliberately does **not** continue Phase 3/4/5 of the
+video-atoms roadmap (no Scene Director, no AI selection, no runtime automation, no clip
+library/database). It builds a throwaway-quality Visual Composer Sandbox (`Worlds/World06_VisualComposer/`,
+scene Id `VisualComposer`) whose only purpose is rapid artistic experimentation: nine hardcoded
+compositions, each pairing one approved `VisionBoard/` video atom (trimmed to a hero window) with a
+`StellarNursery` child world rendered into a private `RenderTarget`, composited by
+`Shaders/composer.frag`. Reuses World05 HybridTest's proven video/child-world/composite seam
+unchanged; adds two small, composition-specific inline shader techniques (luminance-gated drifting
+motes, an independent raking-light sweep) rather than a new generalized particle/lighting system.
+`Rendering/Video/IVideoDecoder.cs`/`FfmpegPipeDecoder.cs` gained an optional trim window
+(`startSec`/`durationSec` on `Open()`) so a composition can loop a hero window of a longer source
+file — the one interface change this pass required, backward compatible (both new params default
+to 0 = no trim, matching Phase 1 behavior).
+
+**Compositions built (9/9, none dropped):** Cosmos (stillness), Deep Ocean (storm-breath), Fire
+(generative ignition — dissolve-at-tail into the procedural layer, the strongest result this pass),
+Humanity (solemn parallax, deliberately minimal), Forests (reverent immensity), Machinery (archival
+exploration — landed on an animated diagram at the hardcoded trim point rather than live footage,
+disclosed honestly, not re-cut this pass), Skies (spectral observation), Abstract Textures
+(restless microscopy), Conflict (catastrophic overwhelm). Full per-composition rationale in
+`COMPOSITION_NOTES.md`.
+
+**Dashboard wiring**: `Tuning.cs` gained a `Composer*` field set (`ComposerIndex` selects the active
+composition 0-8; `ComposerBlend`/`ComposerVolumetricDensity`/`ComposerParticleDensity`/
+`ComposerLighting`/`ComposerAudioReactivity` plus the full Phase-3-style effect stack
+grayscale/mirror/grade/vignette/playback-speed), wired through `ControlServer.cs` `/set`/`/values`
+and new dashboard sliders under a "VISUAL COMPOSER SANDBOX (World06)" section — same convention as
+every existing `Hybrid*`/`WindTurbineFireEvolutionSeconds`/etc. field. All fields are harmless
+no-ops for every other scene. `VisualComposerScene.Update()` hot-swaps the active composition (new
+decoder open/close, no full scene reload) whenever `Tuning.ComposerIndex` changes.
+
+**Audio reactivity**: reuses the existing `CalibrationEngine.InputA/InputB.CurveOutput` additive-
+nudge convention (Creator=Guitar1/InputA, Sculptor=Guitar2/InputB), averaged and capped, scaled by
+`ComposerAudioReactivity`, feeding the motes/light layers' brightness — zero effect under silence.
+
+**Evidence**: 18 full-composite screenshots (2 per composition, t=1s/t=15s of a bounded
+`--diagnostic motion` run per composition, selected via a new `COSMICENGINE_COMPOSER_INDEX` env var
+— evidence-capture convenience only, mirrors the existing `COSMICENGINE_SEED` precedent; the
+dashboard slider is the live in-process way to switch compositions during normal use). Never
+isolated-layer renders, per Entry 47's binding lesson. Basic fps sanity check via `--smoke-test`:
+~70-75fps at High profile with composition 0 loaded, well above the 60fps floor other scenes have
+struggled with — not a formal distribution, per this pass's artistic-pass scope. Zero orphan
+ffmpeg/engine processes verified via `ps aux` after all 9 bounded diagnostic runs plus the smoke
+test. No screen recordings — this repo has no existing screen-video-capture diagnostic tooling to
+reuse, and building one was judged out of scope for a throwaway sandbox per the task's own
+guidance; screenshots + honest documentation stand in.
+
+**Honest artistic verdict** (full writeup in `VISUAL_EXPERIMENTS.md`): only one composition (Fire)
+clearly achieves a genuinely renderer-only visual trick — a video plate visually dissolving into a
+fully procedural volumetric object at the loop tail, tied to the plate's own motion, something a
+camera or a simple crossfade could not produce. The other eight range from solid to unremarkable
+"video with a procedural glaze." This is read honestly as a scope reality, not a craft failure: nine
+compositions built from one shared procedural child-world (`StellarNursery`) plus two small inline
+techniques are nine tunings of one visual language, not nine different languages. Reaching "never
+seen before" more consistently would need either more reusable procedural child-world options per
+composition (Lava Lamp/Wind Turbine Fire/Underwater exist in this codebase but were not used this
+pass, for time reasons) or more per-pixel-aware techniques (depth-gated blends, optical-flow-driven
+particle seeding) than this pass's time budget allowed. Full limitations disclosed in
+`KNOWN_LIMITATIONS.md`, including the Machinery clip-content mismatch and the unverified loop-seam
+visibility on the three shortest-trim compositions.
+
+**Regression check** (scoped, per this project's convention — `AUDIT.md`/`MEMORY.md` "only test
+other scenes when a shared file is touched"): `ControlServer.cs`/`Tuning.cs`/
+`Rendering/Video/FfmpegPipeDecoder.cs`/`IVideoDecoder.cs` are shared files this pass touched;
+`StellarNursery` smoke-tested clean (used as VisualComposer's own child world, so implicitly
+re-verified 9x this pass) and `HybridTestScene` (the other consumer of `FfmpegPipeDecoder.Open()`)
+was not touched by the trim-parameter signature change beyond adding optional parameters with
+Phase-1-matching defaults — not independently re-smoke-tested this pass, flagged here rather than
+silently assumed.
+
+**Commits**: line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunks (`AUDIT.md`
+Entry 48) in `CLAUDE.md`, `Engine/SceneRegistry.cs`, `IMPLEMENTATION_LOG.md`, `PROJECT_STATE.md` —
+verified via `git diff --cached` before every commit that none of Entry 48's hunks were included.
+`ControlServer.cs`/`Tuning.cs`/`Rendering/Video/*` had no pre-existing uncommitted hunks and were
+staged whole. `AUDIT.md` itself (this entry) is a pure append at file end.
+
+### Package path
+`DiagnosticReports/VisualComposerSandbox_20260717_182508/` (zipped) — `COMPOSITION_NOTES.md`,
+`VISUAL_EXPERIMENTS.md`, `KNOWN_LIMITATIONS.md`, `screenshots/` (18 PNGs). Not committed to git
+(`DiagnosticReports/` is gitignored, consistent with every prior evidence package in this repo).
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
