@@ -50,7 +50,7 @@ namespace CosmicEngine.App.Rendering.Video
 
         private int _frameSize; // Width * Height * 4
 
-        public void Open(string path)
+        public void Open(string path, float startSec = 0f, float durationSec = 0f)
         {
             if (!File.Exists(path))
                 throw new FileNotFoundException($"FfmpegPipeDecoder: video file not found: {path}");
@@ -83,7 +83,13 @@ namespace CosmicEngine.App.Rendering.Video
                 // the live-adjustable 0.25x-2x PlaybackSpeed multiplier is now applied entirely on
                 // our own reader thread below (VIDEO_SYSTEM_ARCHITECTURE.md §2.2 "Playback speed =
                 // frame-release pacing on the reader thread").
-                Arguments = $"-stream_loop -1 -i \"{path}\" -f rawvideo -pix_fmt bgra -an pipe:1",
+                // Visual Composer Sandbox trim support: when durationSec > 0, seek to startSec and
+                // limit each loop iteration to durationSec via -ss/-t placed BEFORE -i (fast input
+                // seek) - "-stream_loop -1" then re-applies the same trimmed window on every loop,
+                // so the decoder plays only the requested hero window rather than the whole file.
+                Arguments = durationSec > 0f
+                    ? $"-stream_loop -1 -ss {startSec.ToString(System.Globalization.CultureInfo.InvariantCulture)} -t {durationSec.ToString(System.Globalization.CultureInfo.InvariantCulture)} -i \"{path}\" -f rawvideo -pix_fmt bgra -an pipe:1"
+                    : $"-stream_loop -1 -i \"{path}\" -f rawvideo -pix_fmt bgra -an pipe:1",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

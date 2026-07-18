@@ -472,6 +472,50 @@ namespace CosmicEngine.App
                         case "HybridPlaybackSpeed":
                             Tuning.HybridPlaybackSpeed = Math.Clamp(val, 0.25f, 2.0f);
                             break;
+                        // World06 Visual Composer Sandbox (artistic-exploration pass) - same
+                        // defensive-clamp pattern as World05 Hybrid above.
+                        case "ComposerIndex":
+                            Tuning.ComposerIndex = (int)Math.Round(val);
+                            break;
+                        case "ComposerBlend":
+                            Tuning.ComposerBlend = Math.Clamp(val, 0f, 1f);
+                            break;
+                        case "ComposerVolumetricDensity":
+                            Tuning.ComposerVolumetricDensity = Math.Clamp(val, 0f, 2f);
+                            break;
+                        case "ComposerParticleDensity":
+                            Tuning.ComposerParticleDensity = Math.Clamp(val, 0f, 2f);
+                            break;
+                        case "ComposerLighting":
+                            Tuning.ComposerLighting = Math.Clamp(val, 0f, 2f);
+                            break;
+                        case "ComposerAudioReactivity":
+                            Tuning.ComposerAudioReactivity = Math.Clamp(val, 0f, 2f);
+                            break;
+                        case "ComposerGrayscale":
+                            Tuning.ComposerGrayscale = Math.Clamp(val, 0f, 1f);
+                            break;
+                        case "ComposerMirrorX":
+                            Tuning.ComposerMirrorX = val >= 0.5f;
+                            break;
+                        case "ComposerMirrorY":
+                            Tuning.ComposerMirrorY = val >= 0.5f;
+                            break;
+                        case "ComposerGradeLift":
+                            Tuning.ComposerGradeLift = Math.Clamp(val, -0.5f, 0.5f);
+                            break;
+                        case "ComposerGradeGamma":
+                            Tuning.ComposerGradeGamma = Math.Clamp(val, 0.2f, 3.0f);
+                            break;
+                        case "ComposerGradeGain":
+                            Tuning.ComposerGradeGain = Math.Clamp(val, 0f, 2f);
+                            break;
+                        case "ComposerVignette":
+                            Tuning.ComposerVignette = Math.Clamp(val, 0f, 1f);
+                            break;
+                        case "ComposerPlaybackSpeed":
+                            Tuning.ComposerPlaybackSpeed = Math.Clamp(val, 0.25f, 2.0f);
+                            break;
                     }
                 }
 
@@ -502,7 +546,21 @@ namespace CosmicEngine.App
                     Tuning.HybridGradeGamma,
                     Tuning.HybridGradeGain,
                     Tuning.HybridVignette,
-                    Tuning.HybridPlaybackSpeed
+                    Tuning.HybridPlaybackSpeed,
+                    Tuning.ComposerIndex,
+                    Tuning.ComposerBlend,
+                    Tuning.ComposerVolumetricDensity,
+                    Tuning.ComposerParticleDensity,
+                    Tuning.ComposerLighting,
+                    Tuning.ComposerAudioReactivity,
+                    Tuning.ComposerGrayscale,
+                    ComposerMirrorX = Tuning.ComposerMirrorX ? 1 : 0,
+                    ComposerMirrorY = Tuning.ComposerMirrorY ? 1 : 0,
+                    Tuning.ComposerGradeLift,
+                    Tuning.ComposerGradeGamma,
+                    Tuning.ComposerGradeGain,
+                    Tuning.ComposerVignette,
+                    Tuning.ComposerPlaybackSpeed
                 });
                 Respond(ctx, 200, json, "application/json");
                 return;
@@ -685,6 +743,23 @@ namespace CosmicEngine.App
 <div class='row'><label>Vignette</label><input type='range' id='HybridVignette' min='0' max='1' step='0.01'><span class='val' id='HybridVignette_v'></span></div>
 <div class='row'><label>Playback Speed</label><input type='range' id='HybridPlaybackSpeed' min='0.25' max='2' step='0.01'><span class='val' id='HybridPlaybackSpeed_v'></span></div>
 
+<h3>VISUAL COMPOSER SANDBOX (World06)</h3>
+<p style='color:#666;font-size:12px'>Artistic-exploration sandbox, not a phased-roadmap scene. Cycle through hardcoded compositions and tune each layer independently. Only affects the Visual Composer scene (World06).</p>
+<div class='row'><label>Composition Index</label><input type='range' id='ComposerIndex' min='0' max='8' step='1'><span class='val' id='ComposerIndex_v'></span></div>
+<div class='row'><label>Video / Procedural Blend</label><input type='range' id='ComposerBlend' min='0' max='1' step='0.01'><span class='val' id='ComposerBlend_v'></span></div>
+<div class='row'><label>Volumetric Density</label><input type='range' id='ComposerVolumetricDensity' min='0' max='2' step='0.01'><span class='val' id='ComposerVolumetricDensity_v'></span></div>
+<div class='row'><label>Particle Density</label><input type='range' id='ComposerParticleDensity' min='0' max='2' step='0.01'><span class='val' id='ComposerParticleDensity_v'></span></div>
+<div class='row'><label>Lighting</label><input type='range' id='ComposerLighting' min='0' max='2' step='0.01'><span class='val' id='ComposerLighting_v'></span></div>
+<div class='row'><label>Audio Reactivity</label><input type='range' id='ComposerAudioReactivity' min='0' max='2' step='0.01'><span class='val' id='ComposerAudioReactivity_v'></span></div>
+<div class='row'><label>Grayscale</label><input type='range' id='ComposerGrayscale' min='0' max='1' step='0.01'><span class='val' id='ComposerGrayscale_v'></span></div>
+<div class='row'><label>Mirror X</label><input type='range' id='ComposerMirrorX' min='0' max='1' step='1'><span class='val' id='ComposerMirrorX_v'></span></div>
+<div class='row'><label>Mirror Y</label><input type='range' id='ComposerMirrorY' min='0' max='1' step='1'><span class='val' id='ComposerMirrorY_v'></span></div>
+<div class='row'><label>Grade Lift</label><input type='range' id='ComposerGradeLift' min='-0.5' max='0.5' step='0.01'><span class='val' id='ComposerGradeLift_v'></span></div>
+<div class='row'><label>Grade Gamma</label><input type='range' id='ComposerGradeGamma' min='0.2' max='3' step='0.01'><span class='val' id='ComposerGradeGamma_v'></span></div>
+<div class='row'><label>Grade Gain</label><input type='range' id='ComposerGradeGain' min='0' max='2' step='0.01'><span class='val' id='ComposerGradeGain_v'></span></div>
+<div class='row'><label>Vignette</label><input type='range' id='ComposerVignette' min='0' max='1' step='0.01'><span class='val' id='ComposerVignette_v'></span></div>
+<div class='row'><label>Playback Speed</label><input type='range' id='ComposerPlaybackSpeed' min='0.25' max='2' step='0.01'><span class='val' id='ComposerPlaybackSpeed_v'></span></div>
+
 </div>
 
 <div id='tab-calibration' class='tab-panel'>
@@ -812,7 +887,13 @@ const defaults = {
   HybridBlend: 0.5,
   HybridGrayscale: 0.0, HybridMirrorX: 0, HybridMirrorY: 0,
   HybridGradeLift: 0.0, HybridGradeGamma: 1.0, HybridGradeGain: 1.0,
-  HybridVignette: 0.0, HybridPlaybackSpeed: 1.0
+  HybridVignette: 0.0, HybridPlaybackSpeed: 1.0,
+  ComposerIndex: 0, ComposerBlend: 0.5,
+  ComposerVolumetricDensity: 1.0, ComposerParticleDensity: 1.0,
+  ComposerLighting: 1.0, ComposerAudioReactivity: 1.0,
+  ComposerGrayscale: 0.0, ComposerMirrorX: 0, ComposerMirrorY: 0,
+  ComposerGradeLift: 0.0, ComposerGradeGamma: 1.0, ComposerGradeGain: 1.0,
+  ComposerVignette: 0.0, ComposerPlaybackSpeed: 1.0
 };
 
 const sliders = document.querySelectorAll('input[type=range]');

@@ -14,7 +14,14 @@ namespace CosmicEngine.App.Rendering.Video
     {
         /// <summary>Open (and begin decoding) the given video file. Throws a loud, actionable
         /// exception if the file or the underlying decode transport is unavailable.</summary>
-        void Open(string path);
+        /// <summary>
+        /// Visual Composer Sandbox addition: optional trim window. startSec/durationSec of 0 means
+        /// "no trim" (full-file looping decode, unchanged Phase 1 behavior). When durationSec > 0,
+        /// implementations should loop only the [startSec, startSec+durationSec) window rather than
+        /// the whole file - lets a scene pick a specific hero window out of a long source clip
+        /// without pre-cutting a new file on disk.
+        /// </summary>
+        void Open(string path, float startSec = 0f, float durationSec = 0f);
 
         int Width { get; }
         int Height { get; }

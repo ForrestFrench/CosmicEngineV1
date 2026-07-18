@@ -67,5 +67,26 @@ namespace CosmicEngine.App
         // per VIDEO_SYSTEM_ARCHITECTURE.md §2.2, playback speed lives in the decoder, not the
         // composite shader. 0.25x-2x, defensively clamped again at the decoder.
         public static float HybridPlaybackSpeed = 1.0f;
+
+        // World06 Visual Composer Sandbox (artistic-exploration pass, not a phased-roadmap
+        // milestone - see AUDIT.md). Same "Tuning field -> ControlServer /set + /values -> HTML
+        // slider" convention as every field above; all World06-only, harmless no-ops for every
+        // other scene. ComposerIndex selects which of the hardcoded compositions is active
+        // (VisualComposerScene.Compositions[]), so the dashboard can cycle compositions without a
+        // recompile.
+        public static int   ComposerIndex = 0;
+        public static float ComposerBlend = 0.5f;              // 0 = pure video, 1 = pure procedural layer
+        public static float ComposerVolumetricDensity = 1.0f;  // 0..2, scales the raymarched/volumetric child layer
+        public static float ComposerParticleDensity = 1.0f;    // 0..2, scales the inline particle/motes field
+        public static float ComposerLighting = 1.0f;           // 0..2, scales the independent raking-light layer
+        public static float ComposerAudioReactivity = 1.0f;    // 0..2, scales the additive calibrated-audio nudge
+        public static float ComposerGrayscale = 0.0f;
+        public static bool  ComposerMirrorX = false;
+        public static bool  ComposerMirrorY = false;
+        public static float ComposerGradeLift = 0.0f;
+        public static float ComposerGradeGamma = 1.0f;
+        public static float ComposerGradeGain = 1.0f;
+        public static float ComposerVignette = 0.0f;
+        public static float ComposerPlaybackSpeed = 1.0f;
     }
 }

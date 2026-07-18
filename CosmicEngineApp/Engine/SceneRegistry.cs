@@ -3,6 +3,7 @@ using CosmicEngine.App.Worlds.World02;
 using CosmicEngine.App.Worlds.World03;
 using CosmicEngine.App.Worlds.World04;
 using CosmicEngine.App.Worlds.World05;
+using CosmicEngine.App.Worlds.World06;
 using System;
 
 namespace CosmicEngine.App.Engine
@@ -111,8 +112,25 @@ namespace CosmicEngine.App.Engine
             Factory        = camera => new HybridTestScene(camera)
         };
 
+        // Visual Composer Sandbox (artistic-exploration pass, not part of the phased roadmap -
+        // see AUDIT.md). Nine hardcoded compositions cycled via Tuning.ComposerIndex from the
+        // dashboard; append-only addition, staged independently of the uncommitted Cosmic Reef
+        // hunks above.
+        public static readonly SceneDefinition VisualComposer = new()
+        {
+            Id             = "VisualComposer",
+            DisplayName    = "Visual Composer Sandbox",
+            Description    = "Artistic-exploration sandbox: nine hardcoded video+procedural compositions (cosmos, ocean, fire, humanity, forests, machinery, skies, abstract textures, conflict), cycled from the dashboard. Throwaway-quality by design - not a finished scene.",
+            Status         = "Artistic exploration pass - not held to infra-pass rigor",
+            DefaultProfile = "Safe",
+            Showable       = true,
+            ThumbnailPath  = null,
+            ShowSeed       = null,
+            Factory        = camera => new VisualComposerScene(camera)
+        };
+
         /// <summary>Every registered scene, in display order. First entry is the default.</summary>
-        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire, Underwater, HybridTest };
+        public static readonly SceneDefinition[] All = { StellarNursery, LavaLamp, WindTurbineFire, Underwater, HybridTest, VisualComposer };
 
         public const string DefaultSceneId = "StellarNursery";
 
