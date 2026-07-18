@@ -5734,3 +5734,113 @@ pulse/status JSON, RSS samples, run logs).
 **Not committed as new code** (no architecture changes to commit) — only this AUDIT.md addendum and
 the (already-reverted, no-op) vsync line touch this session's diff. **Not pushed. Ready for review:
 [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 50 — Video Atoms Phase 3: Effect Stack v1 + Manual Performance Controls (World05 HybridTest)
+
+Implemented `MILESTONE_BREAKDOWN.md` Phase 3 on top of the Phase 1 hybrid composite (Entry 49's
+real-decode validation confirmed ffmpeg is now installed and working on this machine). Scope per the
+brief: uniform-driven effects in the existing composite shader (no new passes/framebuffers), decode-rate
+playback-speed pacing in the decoder (not the shader), and matching dashboard controls.
+
+**Effects implemented** (`Worlds/World05_HybridTest/Shaders/hybrid.frag`, applied in a fixed order —
+mirror → grade → grayscale → vignette — after the existing, unmodified `mix(video, child, uBlend)`):
+- **Grayscale**: `mix(color, vec3(luma), uGrayscale)` using Rec.709 luma weights.
+- **Mirror X/Y**: UV flip applied before both texture() sample calls, so video and child layers mirror
+  together as one composite, not independently.
+- **Color grade**: a 3-param lift/gamma/gain — `color = pow(max(color*gain + lift, 0), 1/gamma)` — the
+  simplest standard grade primitive that covers "brighten/darken shadows" (lift), "brighten/darken
+  highlights" (gain), and "reshape midtones" (gamma) with 3 sliders, per the brief's "reasonably
+  equivalent simple 3-param grade" allowance.
+- **Vignette**: radial `smoothstep`-based darkening from screen center, computed in pre-mirror UV so it
+  always frames the visible composite regardless of mirror state.
+- **Playback speed**: deliberately NOT a shader uniform. `IVideoDecoder` gained a `PlaybackSpeed`
+  property; `FfmpegPipeDecoder` dropped its `-re` flag (which pinned ffmpeg's own output to fixed 1x
+  real time) and now paces frame *release* itself on the reader thread via a stopwatch-timed sleep keyed
+  to `(1/Fps)/PlaybackSpeed`, clamped 0.25x-2x — matches
+  `VIDEO_SYSTEM_ARCHITECTURE.md` §2.2's "playback speed = frame-release pacing on the reader thread."
+
+**Dashboard wiring**: eight new `Tuning.cs` fields (`HybridGrayscale`, `HybridMirrorX/Y`,
+`HybridGradeLift/Gamma/Gain`, `HybridVignette`, `HybridPlaybackSpeed`), matching `/set` switch cases,
+`/values` fields, and a new "EFFECTS (PHASE 3) — HYBRID TEST ONLY" HTML section inserted directly under
+the existing `HybridBlend` slider, mirroring that slider's exact pattern per the brief. Mirror toggles
+are implemented as 0/1-step range sliders rather than a new checkbox mechanism, so they reuse the page's
+existing generic slider `send()`/init() JS unchanged — deliberately minimal, no new UI machinery.
+
+**Audio-reactive hooks: skipped, explicitly.** The brief scoped these as optional with the manual
+dashboard controls as the actual acceptance bar. Given this pass's environment instability (see below)
+consumed significant time on perf/regression verification, audio-reactive nudges were cut to keep the
+change surface reviewable rather than rushed. Documented as deferred, not silently dropped.
+
+**Performance evidence** (Mac mini, `--world HybridTest`, `dotnet bin/Debug/net8.0/CosmicEngine.App.dll
+--smoke-test`, logs in `DiagnosticReports/Phase3EffectStack_20260717_150727/logs/`):
+
+| Config | Profile | Runs (n) | avg fps range | Notes |
+|---|---|---|---|---|
+| Baseline (effects off, defaults) | Safe | 5 (incl. earlier session runs) | 73.7-74.9 | vsync-capped ~75fps ceiling (Entry 49 finding), effect stack irrelevant to this number since it's off |
+| Baseline (effects off, defaults) | High | 5/5 clean | 74.8-74.9 | tight distribution |
+| Effects forced ON (grayscale 0.4, mirror X+Y, lift 0.1/gamma 1.4/gain 1.2, vignette 0.6) | High | 4/5 clean (1 hung, see below) | 74.8-74.9 | statistically indistinguishable from baseline |
+
+**Result: the mandatory ≥60fps High-profile floor is held with effects fully active, by a wide margin**
+(~75fps vs. the vsync ceiling both with and without effects) — the added per-pixel shader math (a mix,
+a pow, a dot product, a smoothstep) is far below the threshold where it would show up against this
+hardware's vsync cap. No perf regression from Phase 3.
+
+**Known environment limitation, disclosed not hidden — NOT a Phase 3 code defect:** this session hit a
+higher rate of the intermittent silent-startup hang Entry 49 already documented ("5 of 7 attempts clean,
+2 hung and recovered on immediate retry") — in this session's sandboxed/background bash execution
+context the hang rate was closer to 50% across `--smoke-test` runs and effectively 100% (every attempt,
+including long waits up to 90s) for `--diagnostic motion`/`--diagnostic visual`, which never completed
+this session despite multiple retries and a `caffeinate` mitigation for the known display-sleep segfault
+issue (`CLAUDE.md`'s macOS display-sleep note) — the hangs observed here were silent stalls, not
+segfaults, so that specific documented cause does not fully explain them. `--smoke-test` eventually
+succeeded reliably enough to gather the perf table above (retry-on-hang, never more than 2 attempts
+needed); the two diagnostic screenshot modes did not succeed even once this session. **Consequence: no
+full-composite screenshots were captured this pass** — the required visual evidence (effects on/off,
+grayscale, mirror, grade, vignette, combined, at multiple blend values) is **not included** in this
+entry's package. This is a real gap against the acceptance bar (rule 5, "no visual pass accepted without
+screenshots") and should be treated as such: the code change is evidenced as correct by direct GLSL
+review + the perf/regression data above, but is **not yet visually evidenced** and should not be
+signed off as visually complete until a follow-up session captures screenshots in a more stable
+environment (interactive terminal / not backgrounded, or after investigating the hang itself, which
+affects Phase 1 code untouched by this session too — see Entry 49's own note on the same symptom).
+
+**Regression check**: `StellarNursery` (shared file: `ControlServer.cs` touched this pass) smoke-tested
+clean at High profile (74.9fps avg) after the dashboard changes — no shared-file regression. Per this
+project's scoped-regression convention, other worlds were not additionally tested since only
+`ControlServer.cs` (among shared files) was touched, and `HybridTestScene`/`Tuning.cs` are
+Phase-3-owned.
+
+**Zero orphan ffmpeg/engine processes**: verified via `ps aux`/`lsof -i :8080` after every run this
+session, including after `kill -9` of hung processes (one case did leave an orphaned ffmpeg process
+after a `kill -9` of the parent .NET process — expected and already documented as an unmitigated gap in
+`FfmpegPipeDecoder.Dispose()`'s own comments: "there is no managed-code hook that survives SIGKILL";
+cleaned up manually, not a Phase 3 regression).
+
+**Roadmap documentation** (`IMPLEMENTATION_ROADMAP.md`): per explicit user direction this pass, revised
+§1 rule 6 ("Hardware honesty") and the phase table so Mac-side development may proceed through Phase 4,
+5, and beyond without waiting for Phase 2 (OptiPlex first-light) to complete. Phase 2 is now framed as a
+hardware gate before live-deployment/stage readiness rather than a blocker on further Mac-side
+development; every major rendering feature is still expected to be profiled on the OptiPlex before being
+treated as production-ready, it simply no longer has to happen first. `ROADMAP.md` got a matching
+"Update (2026-07-17)" note folding this into the existing roadmap-history convention.
+
+**Architecture changes**: `Rendering/Video/IVideoDecoder.cs` interface gained one new member
+(`PlaybackSpeed`, get/set) — the one addition to the "mandatory decode seam" this pass required, per
+spec ("playback speed lives in the decoder"). No other interface changes; `FfmpegPipeDecoder` remains
+the only class that knows ffmpeg exists.
+
+**Commits**: line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunks (`AUDIT.md`
+Entry 48) in `ControlServer.cs`, `CLAUDE.md`, `IMPLEMENTATION_LOG.md`, `PROJECT_STATE.md`,
+`ROADMAP.md` — verified via `git diff --cached` before every commit that none of Entry 48's hunks were
+included. `AUDIT.md` itself (this entry) is a pure append at file end, non-overlapping with Entry 48's
+mid-file hunks.
+
+### Package path
+`DiagnosticReports/Phase3EffectStack_20260717_150727/` (zipped) — `PHASE3_SUMMARY.md`, this AUDIT entry (excerpted),
+`logs/` (smoke-test run logs for the perf table above, including the hung/incomplete runs, kept as
+honest evidence of the environment issue). **No screenshots this pass** — see the disclosed limitation
+above.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

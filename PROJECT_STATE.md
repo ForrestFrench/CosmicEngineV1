@@ -4,6 +4,13 @@ Point-in-time snapshot of the actual repo state. Update this file when the state
 
 **Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc — now committed as `fed7a7d`, see `AUDIT.md` Entry 46; Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 — a distant alien-presence shadow layer, color-variation nudges, and 4-8 cheap background jellyfish, High holding ≥60fps in all three required forced states (61.4-62.6fps) — not yet committed, see `AUDIT.md` Entry 47)
 
+**Video Atoms Phase 3 "Effect Stack v1" (World05 HybridTest):** uniform-driven grayscale/mirror-X/
+mirror-Y/lift-gamma-gain grade/vignette added to the existing `hybrid.frag` composite shader after the
+Phase 1 `mix(video, child, uBlend)`, plus decode-rate playback-speed pacing (0.25x-2x) in
+`FfmpegPipeDecoder`'s reader thread, and matching `Tuning.cs`/`ControlServer.cs` dashboard sliders under
+a new "Effects" section — see `AUDIT.md` Entry 50. Not committed as of this note without the paired
+commit hash; check `git log` for the actual commit once landed.
+
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
 selected the real interface as the default input, matching Entry 38's own recommended fix. Not re-verified

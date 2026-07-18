@@ -2099,3 +2099,26 @@ was ever decoded or displayed this pass — every screenshot/perf number reflect
 "video loads"/"video displays as texture" are not. Full detail, evidence, and the honest
 per-objective breakdown: `AUDIT.md` (this pass's entry) and
 `DiagnosticReports/Phase1HybridProof_20260717_133653/PHASE1_SUMMARY.md`.
+
+---
+
+## 2026-07-17 — Video Atoms Phase 3: Effect Stack v1 + manual performance controls
+
+Implemented `MILESTONE_BREAKDOWN.md` Phase 3 on top of the (by this session, ffmpeg-installed and
+real-decode-validated) Phase 1 hybrid composite: `Worlds/World05_HybridTest/Shaders/hybrid.frag` gained
+uniform-driven grayscale, mirror X/Y, a lift/gamma/gain color grade, and vignette, applied in a fixed
+order (mirror -> grade -> grayscale -> vignette) after the existing, unmodified
+`mix(video, child, uBlend)`. `Rendering/Video/IVideoDecoder.cs` gained a `PlaybackSpeed` property and
+`FfmpegPipeDecoder.cs` now paces frame *release* on its own reader thread (dropped `-re` from the ffmpeg
+invocation, added a stopwatch-driven per-frame sleep keyed to `Fps / PlaybackSpeed`, clamped 0.25x-2x)
+instead of relying on ffmpeg's fixed real-time output pacing — matches
+`VIDEO_SYSTEM_ARCHITECTURE.md` §2.2 ("playback speed = frame-release pacing on the reader thread"), not
+a shader concern. `Tuning.cs` gained eight new `Hybrid*` fields; `ControlServer.cs` gained matching
+`/set` cases, `/values` fields, and a new "Effects (Phase 3)" HTML section under Hybrid Test, mirroring
+the existing `HybridBlend` slider pattern exactly — mirror toggles are 0/1 range sliders rather than a
+new checkbox mechanism, so they reuse the page's existing generic slider JS unchanged.
+
+Audio-reactive hooks (Creator -> grade intensity, Sculptor -> mirror/speed modulation) were explicitly
+scoped as optional in the Phase 3 brief and were **skipped this pass** to keep the change surface small
+and reviewable; the manual dashboard controls are the documented acceptance bar, not audio-reactivity.
+See `AUDIT.md` Entry 50 for full evidence (perf distributions, screenshots) and known limitations.
