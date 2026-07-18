@@ -403,3 +403,13 @@ Follow-up to the accepted, soft Revision baseline. Three additions to `stellar_n
 - **Dead top-level `Shaders/` folder has been removed** (commit `99f40dc`) — no longer a concern.
 - **No live mid-session screenshot capture yet (Entry 15).** The engine's `GL.ReadPixels` capture is only wired into the bounded `--diagnostic visual` path; there is no `POST /screenshot`-style hook for capturing what's actually on screen during a live show-mode/dashboard session. Recommended next action for Entry 15.
 - **Scene Dashboard has no thumbnails yet** (`SceneDefinition.ThumbnailPath` is `null` for both scenes) and no experimental scenes exist yet to exercise the "Show experimental scenes" checkbox (implemented, unused).
+
+## Visual Composer Sandbox (World06, 2026-07-17)
+
+A ninth scene, `Worlds/World06_VisualComposer/` (Id `VisualComposer`), was added as a throwaway-
+quality artistic-exploration sandbox — explicitly outside the phased video-atoms roadmap (no Scene
+Director, no AI selection, no clip database). Nine hardcoded compositions pair one approved
+`VisionBoard/` atom with a `StellarNursery` child world via the same video/child/composite seam
+World05 HybridTest proved, plus two small inline shader techniques (motes, raking light). Cycled
+from the dashboard via `Tuning.ComposerIndex`, no recompile required. See `AUDIT.md` Entry 51 for
+the full evidence package and an honest artistic verdict.

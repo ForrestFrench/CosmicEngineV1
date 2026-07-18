@@ -2122,3 +2122,17 @@ Audio-reactive hooks (Creator -> grade intensity, Sculptor -> mirror/speed modul
 scoped as optional in the Phase 3 brief and were **skipped this pass** to keep the change surface small
 and reviewable; the manual dashboard controls are the documented acceptance bar, not audio-reactivity.
 See `AUDIT.md` Entry 50 for full evidence (perf distributions, screenshots) and known limitations.
+
+## 2026-07-17 — Visual Composer Sandbox (World06, artistic-exploration pass)
+
+Built a throwaway-quality Visual Composer Sandbox (`Worlds/World06_VisualComposer/`, scene Id
+`VisualComposer`) per direct user instruction to deliberately not continue Phase 3/4/5 of the
+video-atoms roadmap. Nine hardcoded compositions pair one approved `VisionBoard/` atom (trimmed to
+a hero window) with a `StellarNursery` child world, reusing World05 HybridTest's video/child/
+composite seam unchanged plus two small inline shader techniques (luminance-gated motes, an
+independent raking light) in `Shaders/composer.frag`. `Rendering/Video/IVideoDecoder.cs`/
+`FfmpegPipeDecoder.cs` gained an optional trim window (`startSec`/`durationSec` on `Open()`,
+backward compatible, defaults to no-trim). `Tuning.cs`/`ControlServer.cs` gained a `Composer*`
+field set mirroring the existing `Hybrid*` pattern, including `ComposerIndex` to cycle compositions
+from the dashboard without recompiling. See `AUDIT.md` Entry 51 for full evidence and an honest
+artistic verdict (only one of nine compositions clearly reaches "renderer-only" territory).
