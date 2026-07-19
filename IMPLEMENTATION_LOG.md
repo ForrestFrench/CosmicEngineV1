@@ -2153,3 +2153,38 @@ Verified via direct API race reproduction and a synthetic-signal sensitivity tes
 test-pulse driving a sustained Guitar A level, confirming a 3x sensitivity/2.7x max-contribution
 change produced a proportional live effect response, 0.02 -> 0.55). See `AUDIT.md` Entry 52 for full
 investigation, evidence, and known limitations.
+
+## 2026-07-18 — Media Console: overnight redesign pass (tab-visibility fix, mapping simplification, layout, band logo fade)
+
+Four independently-committed changes, all scoped to `MediaConsole/CosmicEngineMediaConsole_20260718_102125/`:
+
+1. **Tab-visibility fix** (`0d1f3ff`): the Live Guitar Control panel was unconditionally in
+   `exploration.html`'s DOM and rendered on both the Visual Exploration and Audio Tuning tabs since
+   both load that same file. Gated via CSS behind the existing `.audio-tuning-view` body class.
+2. **Audio-mapping simplification** (`413a12a`): removed the Liquid Warp/Edge Glow/Mirror
+   audio-mapping entries per user direction, leaving only Color/Saturation, defaulted to source
+   `attack` (was `combined_energy`). `sanitize_audio_tuning()`/`patch_audio_tuning_field()` naturally
+   shrank with the smaller `DEFAULT_AUDIO_TUNING["effect_mappings"]` dict they iterate over. The
+   underlying manual (non-audio-reactive) `liquidIntensity`/`edgeGlow`/`mirrorH`/`mirrorV` sliders in
+   `DEFAULT_EFFECTS` were left untouched. Also added `console_store.py`'s
+   `DEFAULT_BAND_LOGO`/`sanitize_band_logo()`/`patch_band_logo_field()` data-layer plumbing ahead of
+   its own UI landing in commit 4.
+3. **Layout redesign** (`ca5cc43`): the ~25 manual-effect sliders in the Visual Exploration tab now
+   render inside collapsible `<details>`/`<summary>` groups (only "Color" open by default); the Audio
+   Tuning tab's now-single-mapping layout dropped its collapsible wrapper (nothing left to collapse)
+   and the dead 3-of-4 Live Effect Response readouts. Dark psychedelic palette unchanged.
+4. **Band logo fade-in on silence** (`a32a8c2`): a new "Queen Cosmic" text wordmark overlay (Cinzel
+   Decorative font, gold-to-pink gradient fill, pulsing halo, twinkling star field — no image assets)
+   fades in above `#stage` after a 2s silence dwell, with the stage visuals fading down in tandem;
+   reverses immediately when signal returns. Two new sliders (visuals/logo fade duration, 0.3-8s,
+   defaults 1.5s/2.5s) and an enable toggle (default off) persist via a new per-field patch endpoint
+   (`POST /api/audio/tuning/logo/field`), mirroring the safe-save pattern Entry 52 established for
+   the mapping fields. Fixed a latent stale-overwrite bug found while wiring this up:
+   `sanitize_audio_tuning()` previously reset `band_logo` to package defaults whenever a caller's
+   payload omitted it (every existing full-object caller does, since they predate this feature) —
+   would have silently wiped fade settings on every preset load. Fixed by falling back to the
+   currently-held value instead of the package default when a payload doesn't explicitly include one.
+
+See `AUDIT.md` Entry 53 for full evidence (screenshots, verification method, judgment calls flagged
+for user review) and an evidence package under
+`CosmicEngineApp/DiagnosticReports/MediaConsoleRedesign_20260718_231628/`.

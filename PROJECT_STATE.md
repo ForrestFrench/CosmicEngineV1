@@ -421,3 +421,16 @@ Director, no AI selection, no clip database). Nine hardcoded compositions pair o
 World05 HybridTest proved, plus two small inline shader techniques (motes, raking light). Cycled
 from the dashboard via `Tuning.ComposerIndex`, no recompile required. See `AUDIT.md` Entry 51 for
 the full evidence package and an honest artistic verdict.
+
+## Media Console redesign pass (2026-07-18)
+
+Four independently-committed changes to `MediaConsole/CosmicEngineMediaConsole_20260718_102125/`,
+each verified working before the next started (commits `0d1f3ff`, `413a12a`, `ca5cc43`, `a32a8c2`):
+the Live Guitar Control panel no longer leaks onto the Visual Exploration tab; the Audio Tuning
+panel's mapping list is now Color/Saturation only (defaulting to source "attack", per the user's own
+finding that it was the only audio parameter with a noticeable effect) — the Liquid Warp/Edge
+Glow/Mirror mappings referenced in the Entry 52 note above no longer exist; the Visual
+Exploration/Audio Tuning tabs got a general layout cleanup (collapsible effect groups, dead readouts
+removed); and a new toggleable "Queen Cosmic" band-logo fade-in-on-silence feature was added (Cinzel
+Decorative wordmark, gold gradient, halo/shimmer/twinkle CSS effects, two fade-duration sliders,
+2s dwell). Full detail, evidence, and judgment calls flagged for user review: `AUDIT.md` Entry 53.

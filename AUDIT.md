@@ -5981,3 +5981,251 @@ state. `AUDIT.md` itself (this entry) is a pure append at file end, non-overlapp
 uncommitted Cosmic Reef Entry 48 hunk.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 53 — Media Console: four user-requested fixes/features + layout redesign (overnight autonomous pass)
+
+**Date:** 2026-07-18
+**Executor:** Claude Code / Sonnet (autonomous overnight pass, user asleep, no live review during the pass)
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+Five user-requested items against `MediaConsole/CosmicEngineMediaConsole_20260718_102125/` (the
+Media Console's video-curation/audio-tuning tool, separate from the C# engine), landed as four
+small, verified, independently-committed changes plus this documentation pass. No `CosmicEngineApp/`
+files were touched. The standing uncommitted Cosmic Reef Pivot Phase 1 hunks (Entry 48, in
+`AUDIT.md`/`CosmicEngineApp/CLAUDE.md`/`CosmicEngineApp/Engine/CosmicEngine.cs`/
+`CosmicEngineApp/Engine/SceneRegistry.cs`/`CosmicEngineApp/Worlds/World04_Underwater/*`) were never
+touched, staged, or committed — verified via `git diff --cached` before every commit in this pass.
+
+### Item 1 — Live Guitar Control panel appearing on both tabs (fixed)
+The user: *"live guitar control features are on both the visual and audio tabs. It should only be on
+the audio tab as it's audio."* Root cause: `.audio-tuning-panel` (the guitar meters + mapping
+controls block) was unconditionally present in `exploration.html`'s DOM, and both the Visual
+Exploration tab and the Audio Tuning tab load that same file (the Audio Tuning tab appends
+`?mode=audio-tuning`, gated in JS as `isAudioTuningView`/the `.audio-tuning-view` body class, but
+CSS never hid the panel outside that mode). Fixed with a two-line CSS gate (`display:none` by
+default, `display:block` under `.audio-tuning-view`), matching the pattern already used for the
+other tab-specific sections in the same stylesheet. Commit `0d1f3ff`.
+
+**Evidence:** `screenshots/item1_visual_tab_no_panel.png` (panel absent on `/exploration.html`),
+`screenshots/item1_audio_tab_panel_present.png` (panel present and functional on
+`/exploration.html?mode=audio-tuning`).
+
+### Item 2 — Audio-reactivity simplification: Color/Saturation only, default source Attack
+The user: *"'attack' is really the only audio parameter that made a significant difference... I only
+want the color/saturation setting to be used for audio reactivity... you can delete [the others]."*
+Removed the Liquid Warp, Edge Glow, and Mirror entries from `DEFAULT_AUDIO_TUNING["effect_mappings"]`
+and `AUDIO_MAPPING_LEGACY` (`console_store.py`) and the matching `EFFECT_MAPPING_DEFS`/
+`DEFAULT_AUDIO_TUNING` (`static/exploration.js`), leaving only Color/Saturation. Its default
+`source` changed from `combined_energy` to `attack`; the source dropdown itself is untouched (a
+different source is still selectable) — this interpretation ("only the default changes, the picker
+stays") was the reading taken for an otherwise-ambiguous instruction, flagged for the user to
+confirm. `sanitize_audio_tuning()`/`patch_audio_tuning_field()` already iterate
+`DEFAULT_AUDIO_TUNING["effect_mappings"]`, so both naturally shrank to the single mapping and cleanly
+drop the three retired mappings from an existing on-disk `AUDIO_TUNING_STATE.json` (verified: a
+payload built from the old 4-mapping shape sanitizes down to just `color_saturation` with no error).
+`modulateEffects()` no longer computes the now-always-zero liquid/edge/mirror contributions; the
+manual, non-audio-reactive `liquidIntensity`/`edgeGlow`/`mirrorH`/`mirrorV` sliders in
+`DEFAULT_EFFECTS` (the regular Visual Exploration effect presets) were deliberately left untouched —
+the user asked only for the audio-mapping layer to go, not the underlying manual effects. The three
+now-dead "Liquid Warp"/"Edge Glow"/"Mirror blend" readouts in the Live Effect Response panel were
+removed since they no longer had a live value to show; "Saturation" remains. Commit `413a12a`.
+
+**Verification:** `python3 -m py_compile console_store.py media_console.py` clean. Loaded the Audio
+Tuning tab and confirmed exactly one mapping ("Color / Saturation") with source defaulted to
+"Attack". Drove a synthetic attack signal on the C# audio core (`POST /calibration/testinput
+{"input":"A","value":0.85}` after a preceding null-reset, matching the pattern this project has used
+since Entry 52 — a bare value change with no preceding reset does not register as a rising edge in
+the core's own envelope follower) and, pumping the render loop against real polled data (the same
+rAF-backgrounding workaround Entry 52 documented for automation tabs), observed the live mapping
+contribution rise from 0 to a peak of 0.31 with the raw attack signal itself peaking at 0.17, then
+decay back toward 0 as the test signal cleared.
+
+**Evidence:** `screenshots/item2_audio_tuning_single_mapping.png`.
+
+### Item 3 — Streamlined dashboard redesign
+The user: *"It's gotten messy over the iterations. Redesign it in a simpler, more streamlined
+fashion."* Deliberately open-ended; scoped to the Visual Exploration and Audio Tuning tabs (both
+served by `exploration.html`), leaving the Atom Ingestion tab alone per instruction. No manual
+effect controls were removed — presentation/grouping only:
+- `buildControls()` (`static/exploration.js`) now renders the ~25 manual-effect sliders inside
+  collapsible `<details>`/`<summary>` groups (Color/Temporal/Spatial/Style/Experimental×3) instead of
+  always-expanded sections — the same collapsible convention this file already used for
+  `.mapping-tuner`/`.audio-test-workflow`. Only "Color" opens by default, cutting the always-visible
+  slider count from ~25 to 8; every other group is one click away.
+- With item 2 shrinking the Audio Tuning panel from 4 mappings to 1, the "Effect mapping controls"
+  `<details>` wrapper (built for 4 mappings needing to collapse) was replaced with a plain,
+  always-visible "Color / Saturation Mapping" section — nothing left to collapse. The "Live Effect
+  Response" readout grid went from a 4-column grid (3 of 4 cells permanently reading 0.00 since item
+  2) to a single-column card for the one real value. "Guided input test" now collapses by default
+  (was forced open) — a one-time onboarding aid, not something that needs to stay expanded every
+  session.
+- The existing dark psychedelic palette (`--violet`/`--rose`/`--cyan`/`--gold` custom properties) was
+  kept unchanged throughout, per instruction — this is an established brand feel, not something to
+  genericize.
+
+Commit `ca5cc43`.
+
+**Evidence (before/after):** `screenshots/item3_visual_tab_collapsed_groups.png` (Color group open,
+Temporal collapsed with a "+" indicator — direct visual proof the collapse mechanism works);
+`screenshots/item3_audio_tuning_redesigned.png` (simplified single-mapping Audio Tuning layout).
+Item 1's screenshots serve as the "before" reference for the panel-visibility half of this redesign;
+this project's own AUDIT.md history (Entry 51/52) serves as the "before" reference for general
+Audio Tuning tab density, since no dedicated before-shot of the un-redesigned 4-mapping layout was
+taken prior to item 2 removing it (item 2 and item 3 were both scoped and executed in the same pass,
+back to back).
+
+### Item 4 — Band logo fade-in on silence ("Queen Cosmic")
+The user asked for the stage visuals to fade out and a "Queen Cosmic" band-logo wordmark (text, not
+the reference photos verbatim) to fade in when no audio signal is present, with user-controlled fade
+speeds for both, "cool effects" on the logo rather than a plain static wordmark, and an enable/
+disable toggle for testing without audio.
+
+**Design:** a new `#bandLogoOverlay` layer sits above `#stage` inside `#stageWrap` (so it applies
+identically wherever the stage renders — Visual Exploration and Audio Tuning share the same markup).
+"Queen Cosmic" is rendered as literal text (no image assets), in **Cinzel Decorative** (Google Fonts
+`@import`) — an ornate, bold display serif in the art-deco/psychedelic-prog-rock family the shared
+reference-image description called for (gold-dominant, ornate, celestial). Chosen over a
+blackletter/gothic alternative (e.g. Pirata One, closer to the third "darker alternate cover"
+reference) because it reads cleanly at both large and small sizes and its wide, capital-heavy
+letterforms suit a gradient fill better across the range of references described. **This choice was
+made without being able to see the three attached reference images directly — only a text
+description of their shared design language was available — and should be confirmed by the user.**
+The wordmark fill is a gold-to-pink linear gradient via `background-clip:text` (matching the
+bubble-gradient reference) with a slow shimmer sweep. "Cool effects, not a plain photo": a pulsing
+radial gold/rose halo behind the text (sun-crown glow), a slow breathing scale on the whole wordmark,
+and a sparse CSS-only twinkling star field (8 absolutely-positioned dots with staggered
+`animation-delay`) — all cheap decorative CSS, no new render pipeline, and all disabled under
+`prefers-reduced-motion`.
+
+**Behavior:** "no audio signal" = `audioConnectionState !== 'live'` OR both guitars' smoothed
+`.silent` flags are true. A **2-second dwell** (a hardcoded JS constant,
+`BAND_LOGO_SILENCE_DWELL_MS`, not exposed as a slider — only the two fade durations were explicitly
+requested as user-facing controls; whether the dwell also deserves one is left for the user to
+weigh in on) must elapse before the fade starts, so brief pauses between phrases don't flicker the
+logo; when signal returns, the reversal is immediate (no dwell on the way back). Two new sliders —
+**visuals fade duration** and **logo fade duration**, each 0.3-8s, defaulting to **1.5s** and **2.5s**
+respectively (picked so the stage dims noticeably faster than the logo blooms in, reading as a
+deliberate reveal rather than a simultaneous cut) — each governs both the in and out transition for
+its element, per instruction. The **enable/disable toggle** defaults to **off**, so upgrading this
+build does not change existing silent-testing behavior until the user opts in; when off, the class
+driving both the visuals dim and the logo fade is never applied, full stop, regardless of signal
+state.
+
+**Persistence:** stored as a new `"band_logo"` key inside the existing `AUDIO_TUNING_STATE.json`
+(not a new sibling file — it's conceptually part of the same audio-reactive tuning session and
+reuses that file's existing atomic-write/quarantine-on-load handling). Each of the three fields
+(enable toggle, two fade sliders) saves via a new per-field patch endpoint
+(`POST /api/audio/tuning/logo/field` → `patch_band_logo_field()`), the same
+safe-against-stale-tab-overwrite pattern `patch_audio_tuning_field()` established in Entry 52, per
+this pass's own standing instruction to prefer per-field patches over whole-object last-write-wins
+saves for anything editable via a slider/toggle.
+
+**A latent stale-overwrite bug found and fixed while wiring this up:** `sanitize_audio_tuning()`
+(both the Python and JS copies) originally reset `band_logo` to package defaults whenever a payload
+omitted it — and every *existing* full-object caller (preset save/load, the master audio-tuning
+enable toggle, `beforeunload`) builds its payload from fields it actually knows about, none of which
+include `band_logo` (they all predate this feature). Left unfixed, loading a saved audio-tuning
+preset would have silently wiped the user's chosen fade durations back to 1.5s/2.5s/disabled — the
+exact stale-object-overwrite bug class Entry 52 fixed for the mapping fields, just in a new corner
+of the same file. Fixed by having both `sanitize_audio_tuning()` implementations fall back to the
+*currently-held* `band_logo` (an explicit `existing_band_logo` parameter server-side, the global
+`audioTuning.band_logo` client-side) rather than the package default when a payload doesn't
+explicitly include one. A payload that genuinely does include `band_logo` (the per-field patch path)
+is still fully honored.
+
+**Verification (against the live C# audio core, not simulated):** with the toggle enabled and the
+core genuinely silent, pumping the render loop through real `/api/audio/reactivity` fetches (the
+Entry-52-established workaround for automation tabs not ticking `requestAnimationFrame` on their
+own) showed `bandLogoSilenceElapsed` crossing the 2000ms dwell and the `.audio-silent` class engaging
+exactly once — reproduced twice independently. A real sustained non-silent signal via
+`/calibration/testinput` immediately reversed it (class removed, elapsed reset to 0) once the fetched
+state genuinely reflected non-silence. Disabling the toggle and forcing silence again confirmed the
+class never engages regardless of signal state (unconditional early-return in `updateBandLogo()`,
+also confirmed by direct code inspection). The wordmark/halo/shimmer/twinkle CSS was additionally
+verified in an isolated static-HTML harness (identical markup/CSS, `.audio-silent` class
+force-applied, no video/network dependency) to confirm the visual design itself renders as intended,
+independent of the live app's async audio-polling timing. `python3 -m py_compile` clean; zero
+console errors observed across every test in this item.
+
+**A test-methodology pitfall worth recording for future sessions:** an early attempt to verify the
+"signal returns" reversal manually overrode `audioTarget` in the page's JS without also updating
+`audioLastReceivedAt`. `updateAudioSignals()` resets `audioTarget` to neutral/silent whenever more
+than 500ms has passed since `audioLastReceivedAt` — since that variable is normally only written by
+the real (independently-running, background-throttled) `pollAudio()` loop, a manual test override
+that doesn't also set it races against that loop and produces misleading, inconsistent results (this
+cost real time chasing a phantom "reversal doesn't work" result before the actual cause — a test
+harness gap, not a product bug — was found). The fix for future verification: when manually driving
+`audioTarget` in a test script, also set `audioLastReceivedAt` to the same simulated timestamp each
+iteration, exactly mirroring what `pollAudio()` itself does.
+
+**Evidence:** `screenshots/item4_audio_tuning_bandlogo_panel.png` (new panel: toggle + two sliders);
+`screenshots/item4_logo_wordmark_isolated_css_proof.png` (isolated visual-design proof: gold-to-pink
+gradient "Queen Cosmic" wordmark, flourish glyphs, halo, twinkling stars, all rendering as intended).
+
+### An incident during evidence-gathering, disclosed in full
+While chasing a full-page screenshot of the live silence-fade behavior, one command
+(`open -a "Google Chrome" <url>`) was run against the real desktop's actual Chrome application
+instead of the sandboxed headless/automation tooling used for every other screenshot in this pass.
+This was recognized as a mistake immediately (it touches the user's live session rather than an
+isolated tool) and abandoned — no further real-desktop automation was attempted, and all subsequent
+evidence in this pass came from either a self-contained headless Chrome subprocess (spawned and
+exited entirely by this pass) or the tool-provided sandboxed browser pane. A best-effort attempt to
+script-close the one resulting `127.0.0.1:8140` tab via AppleEvents timed out (Chrome did not
+respond to the scripting request) rather than being forced closed. **The user should check for and
+close a stray `127.0.0.1:8140` tab in their own Chrome.** No credentials, files, or other tabs were
+touched.
+
+### Item 5 — Documentation + review package
+This entry; brief factual updates to `IMPLEMENTATION_LOG.md` and `PROJECT_STATE.md` (same
+line-level-staging discipline, verified via `git diff --cached` to exclude the standing Entry 48
+hunks); evidence package zipped under
+`CosmicEngineApp/DiagnosticReports/MediaConsoleRedesign_20260718_231628/` (screenshots +
+`EVIDENCE_NOTES.md`), path copied to clipboard.
+
+### Judgment calls flagged for the user to weigh in on
+1. **Font choice (item 4).** Cinzel Decorative was picked from a text description of the reference
+   images, not the images themselves — please confirm it matches the intended look, particularly
+   against the third ("darker alternate cover", gothic-script) reference.
+2. **Silence dwell (item 4).** 2 seconds, hardcoded, not user-exposed. If a real show reveals this
+   should be tunable (e.g. for songs with longer natural pauses), it's a small follow-up to promote
+   to a slider using the same per-field-patch pattern already in place.
+3. **Default fade values (item 4).** 1.5s visuals / 2.5s logo / toggle off by default — a starting
+   point, not a measured-against-real-performance value (no live show has exercised this yet).
+4. **Band-logo settings excluded from audio-tuning presets (item 4).** Saving/loading a "response
+   tuning" preset does not touch the fade settings — treated as a standing display preference rather
+   than part of a per-song response snapshot. Worth confirming this matches the user's mental model.
+5. **"Default source only" interpretation (item 2).** The source dropdown for Color/Saturation
+   remains fully populated (Guitar A/B, Combined energy, Attack, Sustain) even though only Attack is
+   the new default — read from "I only want color/saturation... to be used" as "simplify which
+   *mapping* exists, not which *sources* are selectable within it." Flagged in case the user meant
+   to restrict the dropdown itself.
+
+### Servers / process hygiene
+Both servers (C# audio core `--dashboard-only` on 8080, Media Console on 8140) were restarted after
+each Python code change (required — `media_console.py` is a long-running process holding old code in
+memory) and left running and healthy at the end of this pass. `pgrep -fl
+"CosmicEngine.App.dll|media_console.py"` confirmed exactly one of each with no orphans. Synthetic
+test-pulse overrides on the C# core (`/calibration/testinput`) were cleared after every use.
+
+### Commits
+Four small, independently-verified commits, each ending with `Co-Authored-By: Claude Sonnet 5
+<noreply@anthropic.com>`:
+- `0d1f3ff` — item 1 (CSS gate for the Live Guitar Control panel)
+- `413a12a` — item 2 (mapping simplification) + the band-logo data-layer plumbing landing ahead of
+  its own UI wiring
+- `ca5cc43` — item 3 (collapsible effect groups, simplified Audio Tuning layout)
+- `a32a8c2` — item 4 (band logo fade feature + the stale-overwrite fix described above)
+
+All four used the line-level-staging technique (`git hash-object -w --stdin` +
+`git update-index --cacheinfo`) for `AUDIT.md`/`IMPLEMENTATION_LOG.md`/`PROJECT_STATE.md` where those
+files were touched, verified via `git diff --cached` before each commit that none of Entry 48's
+hunks were included; the Media Console source files themselves (`console_store.py`,
+`media_console.py`, `static/exploration.{html,css,js}`) had no pre-existing dirty content and were
+staged normally. Runtime data files (`data/AUDIO_TUNING_STATE.json`, `data/EXPLORATION_STATE.json`)
+were left out of every commit, consistent with this project's established convention of not
+committing ephemeral session state (Entry 52).
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
