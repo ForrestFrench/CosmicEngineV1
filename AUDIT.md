@@ -6593,3 +6593,70 @@ around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48
 `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 60 — Media Console: chromatic aberration - the real fix (Entry 59 was incomplete) (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+User reported Entry 59's fix did not work: chromatic aberration still jumped from full color to
+completely blown out going from 1% to 2% on the slider. This entry documents the honest root cause
+Entry 59 missed, verified by direct controlled testing rather than reasoning about the numbers alone.
+
+### Why Entry 59's fix looked right but wasn't
+Entry 59 correctly identified that the ghost-copy saturation was hardcoded (`saturate(3)`) instead of
+scaling with the slider, and fixed that specific line. The computed numbers at low `chromatic` values
+were genuinely tiny (e.g. at 2%: alpha 0.0026, saturation 1.04x) and *should* have been imperceptible.
+Trusting that math without a real before/after screenshot comparison was the mistake - Entry 59's own
+verification screenshots at 1% and 100% were real, but nothing was checked at the actual 1%-to-2%
+boundary the user was describing, and a first same-clip comparison attempt in this entry's own
+investigation was invalidated by the clip crossfading mid-test (the "before" and "after" screenshots
+were two different atoms, not the same atom at two chromatic values) - a mistake caught and corrected
+before drawing any conclusion from it.
+
+### Actual root cause
+`drawSingle()`'s chromatic-aberration branch set `ctx.globalAlpha = chromatic*.13*alpha` on the shared
+canvas context, then called `drawBasic(video, 1, offset, fx)` to draw each ghost copy - passing the
+literal number `1` as drawBasic's own alpha argument. `drawBasic()` immediately does its own
+`ctx.save(); ctx.globalAlpha = alpha (its own parameter, "1" here); ...; ctx.restore()` - which silently
+clobbers whatever `ctx.globalAlpha` the caller had just set, back to fully opaque. The intended
+near-invisible low-alpha ghost layer has **never actually been low-alpha** - both hue-rotated,
+saturated, screen-blended ghost copies have always rendered at 100% opacity, for as long as this
+effect has existed. Only the pixel offset (`chromatic*13`) was ever genuinely scaling with the slider;
+the saturation (before Entry 59) and the alpha (still, after Entry 59) were not. This is exactly why
+`chromatic>.01` reads as a hard cliff rather than a gradual fade-in: crossing that threshold jumps from
+"no ghost layers at all" straight to "two full-opacity `screen`-blended ghost layers," and after that
+point only a fractional-pixel offset and (post-Entry-59) a mild saturation bump continue to change -
+neither of which is the dominant visual factor next to two full-strength screen composites.
+
+### Fix
+Pass the intended alpha directly as `drawBasic()`'s own alpha parameter (`ghostAlpha =
+chromatic*.13*alpha`) instead of setting `ctx.globalAlpha` on the outer context beforehand, since the
+outer value was never actually consulted. No other logic changed.
+
+### Verification
+Controlled, same-frozen-frame, same-atom A/B comparisons (paused `currentVideo`/`incomingVideo` and set
+`clipPlaying=false` first, to eliminate the crossfade-changed-the-clip confound that invalidated the
+first attempt in this same investigation):
+- `chromatic=0.01` vs `chromatic=0.02` on the identical frame: now visually indistinguishable (both
+  screenshots show the same forest/leaf image, no perceptible aberration) - this is the exact
+  before/after the user reported, now fixed.
+- `chromatic=0.15`: still barely visible, appropriately subtle.
+- `chromatic=0.6`: visible, tasteful color fringing around edges - a real but restrained effect,
+  confirming the fix produces a genuine gradient across the range rather than just suppressing the
+  effect entirely.
+- `chromatic=1.0` (re-confirmed from Entry 59): still reaches the full dramatic wash-to-white originally
+  designed for maximum setting.
+- Test state (`effects.chromatic`, `clipPlaying`, video pause state) was reset to the active preset's
+  authored values and playback resumed after verification; nothing was left in a test-only state.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/static/exploration.js` only. Line-level staged
+around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48) - verified via
+`git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

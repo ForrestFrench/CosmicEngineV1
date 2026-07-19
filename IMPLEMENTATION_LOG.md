@@ -2249,3 +2249,15 @@ Entry 57's audio-reactive hue modulation entirely (base hue never shifts now, on
 motion-trail layer introduces color) and pulled back its brightness/saturation coefficients as a
 precaution, though the chromatic aberration bug was the actual root cause the user identified. See
 `AUDIT.md` Entries 58-59.
+
+## 2026-07-19 — Media Console: chromatic aberration, the real fix
+
+User reported Entry 59's fix didn't work - still blew out from 1% to 2%. Found the actual cause:
+`drawSingle()` set `ctx.globalAlpha` before calling `drawBasic(video, 1, ...)`, but `drawBasic()` does
+its own `ctx.save()`/`ctx.globalAlpha=<its own param>`, silently overriding the caller's value back to
+full opacity. The chromatic-aberration ghost layers have always rendered at 100% alpha regardless of
+the slider - only the pixel offset (and, after Entry 59, saturation) ever actually scaled. Fixed by
+passing the intended alpha as `drawBasic()`'s own parameter instead. Verified with a controlled
+same-frozen-frame A/B test (paused playback to eliminate a crossfade-changed-the-clip confound that
+invalidated an earlier comparison attempt): 1% and 2% are now visually indistinguishable, while 60%
+shows tasteful fringing and 100% still reaches the full dramatic wash. See `AUDIT.md` Entry 60.

@@ -462,3 +462,9 @@ library, now 280 approved atoms. Chromatic Aberration's ghost-copy saturation wa
 regardless of the slider - fixed to scale with it, so low settings are now actually subtle. Audio
 reactivity no longer touches hue at all (Entry 57's hue modulation removed); brightness/saturation
 coefficients pulled back. See `AUDIT.md` Entries 58-59.
+
+**Chromatic aberration - real fix (2026-07-19):** Entry 59's fix was incomplete. The actual bug: ghost
+layers always rendered at 100% opacity regardless of the slider, because `drawBasic()`'s own alpha
+parameter (hardcoded to `1` at the call site) silently overrode the caller's `ctx.globalAlpha`. Fixed by
+passing the real alpha into `drawBasic()` directly. Verified with a controlled same-frame A/B test:
+1% and 2% are now indistinguishable. See `AUDIT.md` Entry 60.
