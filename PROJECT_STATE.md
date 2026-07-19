@@ -468,3 +468,7 @@ layers always rendered at 100% opacity regardless of the slider, because `drawBa
 parameter (hardcoded to `1` at the call site) silently overrode the caller's `ctx.globalAlpha`. Fixed by
 passing the real alpha into `drawBasic()` directly. Verified with a controlled same-frame A/B test:
 1% and 2% are now indistinguishable. See `AUDIT.md` Entry 60.
+
+**Second frozen atom removed (2026-07-19):** `ce-va2-31d431bc872464` (explosion/mushroom-cloud, 99%
+frozen), user-recognized from Entry 58's flagged-but-untouched list. Now 279 approved atoms. See
+`AUDIT.md` Entry 61.

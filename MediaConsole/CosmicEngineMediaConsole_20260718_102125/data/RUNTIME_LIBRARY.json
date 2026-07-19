@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-07-19T12:03:42-06:00",
-  "review_state_last_saved_at": "2026-07-19T12:03:33-06:00",
-  "approved_count": 280,
+  "generated_at": "2026-07-19T12:52:04-06:00",
+  "review_state_last_saved_at": "2026-07-19T12:52:04-06:00",
+  "approved_count": 279,
   "atoms": [
     {
       "atom_id": "ce-va2-841301ed9c12af",
@@ -290,103 +290,6 @@
       "representative_thumbnail": "thumbnails/ce-va2-bdd8bb8301d990.jpg",
       "contact_sheet": null,
       "preview_clip": "previews/ce-va2-bdd8bb8301d990.mp4",
-      "media_source": "base"
-    },
-    {
-      "atom_id": "ce-va2-31d431bc872464",
-      "review_status": "needs review",
-      "review_notes": "",
-      "revised_start_timestamp": null,
-      "revised_end_timestamp": null,
-      "source_filename": "184061-872413614_medium.mp4",
-      "source_relative_path": "184061-872413614_medium.mp4",
-      "source_full_path": "/Volumes/External Hard Drive FCF/CosmicEngine/VisionBoard/184061-872413614_medium.mp4",
-      "start_timestamp": "00:00:08.618",
-      "end_timestamp": "00:00:17.130",
-      "start_seconds": 8.618,
-      "end_seconds": 17.13,
-      "duration_seconds": 8.512,
-      "tier": "Tier 2",
-      "description": "A horizon flash grows into a towering explosive cloud. Supporting environmental or visual-layer sequence.",
-      "primary_subject": "horizon explosion and mushroom cloud",
-      "content_tags": [
-        "explosion",
-        "mushroom cloud",
-        "fire",
-        "shockwave",
-        "plume",
-        "tier-2"
-      ],
-      "motif_category": "conflict",
-      "mood": "catastrophic, overwhelming",
-      "energy_level": 0.837,
-      "motion_intensity": 0.923,
-      "camera_movement": "locked wide shot",
-      "dominant_colors": [
-        "#7b4a33",
-        "#1d1a1b",
-        "#c09a64"
-      ],
-      "brightness": {
-        "label": "low",
-        "sampled_luma_0_1": 0.315
-      },
-      "contrast": {
-        "label": "medium",
-        "sampled_contrast_0_1": 0.44
-      },
-      "loopability_assessment": "event-driven or editorial motion; use as a one-shot or transition",
-      "quality_confidence_score": 0.714,
-      "suggested_procedural_enhancements": [
-        "volumetric depth or fog",
-        "particle seeding from luminance",
-        "bloom and color-phase modulation",
-        "displacement or feedback trails"
-      ],
-      "suggested_audio_reactive_mappings": [
-        "bass -> displacement or scale",
-        "midrange -> color-phase and volumetric density",
-        "treble/onsets -> bloom, particles, or strobe accents"
-      ],
-      "allowed_effects": [
-        "color grading",
-        "luma keying",
-        "displacement",
-        "feedback",
-        "bloom",
-        "particles",
-        "volumetrics",
-        "time remapping"
-      ],
-      "effects_to_avoid": [
-        "heavy sharpening",
-        "large opaque typography",
-        "destructive denoising",
-        "glamorizing treatment without editorial review"
-      ],
-      "preferred_transition_in": [
-        "luma dissolve",
-        "color wash",
-        "layered opacity build"
-      ],
-      "preferred_transition_out": [
-        "texture dissolve",
-        "feedback decay",
-        "shape or motion match"
-      ],
-      "visible_logos_text_watermarks_or_licensing_concerns": "No automated OCR or rights lookup performed; verify visible text, marks, and source rights before use.",
-      "visual_complexity": 0.499,
-      "loop_quality": 0.12,
-      "camera_stability": 0.96,
-      "texture_density": 0.576,
-      "foreground_motion": 0.72,
-      "background_motion": 0.56,
-      "layering_potential": 0.701,
-      "procedural_synergy_score": 0.578,
-      "notes": "High-recall v2 primary candidate; thumbnail/proxy review required. Overlap with neighboring atoms is intentional.",
-      "representative_thumbnail": "thumbnails/ce-va2-31d431bc872464.jpg",
-      "contact_sheet": null,
-      "preview_clip": "previews/ce-va2-31d431bc872464.mp4",
       "media_source": "base"
     },
     {

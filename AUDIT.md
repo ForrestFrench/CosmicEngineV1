@@ -6660,3 +6660,37 @@ around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48
 `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 61 — Media Console: remove a second frozen atom (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+User recognized one of the seven atoms flagged (but explicitly left untouched) in Entry 58 as the same
+still-frame problem, from its own screenshot - `ce-va2-31d431bc872464`, an archival explosion/mushroom-
+cloud atom, 99% frozen across its 8.5s duration per the Entry 58 `ffmpeg freezedetect` scan. Downloaded
+and visually compared the atom's thumbnail against the user's screenshot before acting - same mushroom-
+cloud silhouette and layered smoke-ring structure (the color difference between the user's teal-tinted
+screenshot and the thumbnail's warm orange is just whatever effect preset was active, not a different
+atom).
+
+### Action taken
+Same reversible process as Entry 58: `POST /api/review/update` (status `rejected`) -> `POST
+/api/library/save` (280 -> 279 approved) -> `POST /api/library/refresh`. Confirmed absent from the live
+`/api/exploration/bootstrap` atom list afterward. Only `data/REVIEW_STATE.json`/
+`data/RUNTIME_LIBRARY.json`/`data/INGESTION_STATE.json` changed; source media untouched.
+
+The remaining six atoms flagged in Entry 58 (0.96-0.99 frozen ratio) are still untouched, awaiting the
+user's own recognition of each one the same way, rather than being bulk-removed on the frozen-ratio
+number alone.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/data/{REVIEW_STATE,RUNTIME_LIBRARY,INGESTION_STATE}.json`
+only. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md`
+(Entry 48) - verified via `git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

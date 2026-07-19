@@ -2261,3 +2261,10 @@ passing the intended alpha as `drawBasic()`'s own parameter instead. Verified wi
 same-frozen-frame A/B test (paused playback to eliminate a crossfade-changed-the-clip confound that
 invalidated an earlier comparison attempt): 1% and 2% are now visually indistinguishable, while 60%
 shows tasteful fringing and 100% still reaches the full dramatic wash. See `AUDIT.md` Entry 60.
+
+## 2026-07-19 — Media Console: remove second frozen atom
+
+User recognized `ce-va2-31d431bc872464` (an explosion/mushroom-cloud atom, 99% frozen per the Entry 58
+scan) from its own screenshot as one of the seven atoms flagged-but-untouched in Entry 58. Confirmed via
+thumbnail comparison, then removed the same way (review status -> rejected, library saved/refreshed,
+280 -> 279 approved). Six flagged atoms remain untouched. See `AUDIT.md` Entry 61.
