@@ -20,11 +20,12 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:18px;padding:18p
 .fade-control{grid-template-columns:1fr 130px 46px}
 .band-logo-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity var(--logo-fade-seconds) ease;z-index:3;overflow:hidden}
 .stage-wrap.audio-silent .band-logo-overlay{opacity:1}
-.band-logo-backdrop{position:absolute;inset:0;background:rgba(0,0,0,var(--band-logo-backdrop-opacity));z-index:0}
+.band-logo-backdrop{position:absolute;inset:0;background:rgba(0,0,0,var(--band-logo-backdrop-opacity));z-index:0;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 12%,#000 88%,transparent 100%);mask-image:linear-gradient(90deg,transparent 0,#000 12%,#000 88%,transparent 100%)}
 .band-logo-halo{position:absolute;width:66%;aspect-ratio:1/1;border-radius:50%;background:radial-gradient(circle,rgba(255,201,107,.38) 0%,rgba(255,110,168,.16) 45%,transparent 72%);filter:blur(7px);animation:bandLogoHalo 6s ease-in-out infinite}
 .band-logo-stars{position:absolute;inset:0}
 .band-logo-stars i{position:absolute;left:var(--sx);top:var(--sy);width:3px;height:3px;border-radius:50%;background:#fff9ec;box-shadow:0 0 7px 1.5px #fff2c9;animation:bandLogoTwinkle 2.8s ease-in-out infinite;animation-delay:var(--sd)}
 .band-logo-wordmark{position:relative;display:flex;align-items:center;gap:16px;animation:bandLogoBreathe 5.2s ease-in-out infinite;padding:0 8cqw;text-align:center}
+.band-logo-lines{display:flex;flex-direction:column;align-items:center;gap:.04em}
 .band-logo-text{font-family:'Cinzel Decorative','Didot',Georgia,serif;font-size:clamp(26px,5.6cqw,120px);font-weight:700;letter-spacing:.045em;line-height:1;background:linear-gradient(100deg,#ffe6ad 0%,#ffc96b 24%,#ff9ecb 50%,#ffc96b 76%,#ffe6ad 100%);background-size:240% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 22px rgba(255,201,107,.55));animation:bandLogoShimmer 5s linear infinite}
 .flourish{font-size:clamp(15px,2.2vw,26px);color:var(--gold);opacity:.85;filter:drop-shadow(0 0 8px rgba(255,201,107,.6))}
 @keyframes bandLogoHalo{0%,100%{opacity:.55;transform:scale(1)}50%{opacity:1;transform:scale(1.09)}}

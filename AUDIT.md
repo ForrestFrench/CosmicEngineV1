@@ -6310,3 +6310,52 @@ data files touched incidentally while testing (`data/AUDIO_TUNING_STATE.json`,
 `data/EXPLORATION_STATE.json`) were left out of the commit per this project's established convention.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 55 — Media Console: band-logo edge fade + two-line stacked wordmark (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+Follow-up to Entry 54. Reviewing the fullscreen band-logo view, the user reported a visible hard
+rectangular cutoff at the left/right edges of the stage (the `.band-logo-backdrop` scrim from Entry 54
+meeting the pillarboxed black bars around the 16:9 stage on a wider-than-16:9 screen), and asked for
+the left/right edges to fade to black instead, explicitly excluding the two edge-adjacent twinkle
+stars from that fade. Separately, the user preferred the originally-referenced two-line stacked
+wordmark ("QUEEN" over "COSMIC") over the single-line version shipped in Entry 53.
+
+### Issue 1 — hard rectangular edge on the backdrop
+**Fix:** applied a horizontal fade mask to `.band-logo-backdrop` only:
+`mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%)` (with the
+`-webkit-` prefix for Safari). The eight twinkle stars live in `.band-logo-stars`, a sibling element
+entirely outside `.band-logo-backdrop`, so none of them are affected by the mask regardless of their
+`--sx` position — this was the simplest way to guarantee the two edge-adjacent stars (`--sx:9%`/`89%`
+and `--sx:14%`/`86%`) stay fully visible without special-casing specific star indices.
+
+**Verification:** confirmed via `getComputedStyle` that `.band-logo-backdrop`'s `mask-image` resolves
+to the expected gradient string, and via screenshot that the backdrop now fades smoothly into the
+pillarbox black at both edges while the flanking flourish/star elements remain crisp.
+
+### Issue 2 — single-line to two-line stacked wordmark
+**Fix:** restructured the wordmark markup from one `<span class="band-logo-text">Queen Cosmic</span>`
+into a `.band-logo-lines` flex column containing two independent `<span class="band-logo-text">`
+elements ("Queen" / "Cosmic"), each keeping the existing gradient/shimmer/drop-shadow treatment
+independently rather than attempting one continuous gradient sweep across both lines (simpler, and
+avoids gradient-stretching artifacts across two differently-sized words). The flanking flourish stars
+remain vertically centered against the whole two-line block via the existing flex layout on
+`.band-logo-wordmark`. No JS changes were needed — nothing in `exploration.js` reads or writes the
+wordmark's text content.
+
+**Verification:** confirmed via `querySelectorAll('.band-logo-text')` that exactly two line elements
+render with text content `"Queen"` and `"Cosmic"`, and via screenshot that they stack correctly with
+the flourishes centered alongside both lines.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/static/exploration.{css,html}` only — no
+Python or JS changes this pass. Line-level staged around the standing uncommitted Cosmic Reef Phase 1
+hunk in `AUDIT.md` (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

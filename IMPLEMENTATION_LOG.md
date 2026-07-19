@@ -2202,3 +2202,12 @@ scrim layer (new `backdrop_opacity` field on `band_logo`, default 0.6, 0-1 range
 silence-dimmed video's residual 12% opacity was still showing through the wordmark - the new backdrop
 fades in/out with the rest of the overlay automatically since it's a child of the already-animating
 `.band-logo-overlay`. See `AUDIT.md` Entry 54 for full verification evidence.
+
+## 2026-07-19 — Media Console: band-logo edge fade + two-line stacked wordmark
+
+Two more band-logo polish fixes. Applied a horizontal `mask-image` fade to `.band-logo-backdrop` so
+its left/right edges fade to black instead of showing a hard rectangle against the pillarboxed
+fullscreen frame - the twinkle stars live in a separate, unmasked sibling element so they're
+unaffected. Restructured the wordmark from a single `Queen Cosmic` span into two stacked
+`.band-logo-text` lines ("Queen" / "Cosmic") inside a `.band-logo-lines` flex column, matching the
+originally-referenced two-line cover art. See `AUDIT.md` Entry 55.

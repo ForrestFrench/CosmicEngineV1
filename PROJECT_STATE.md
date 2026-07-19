@@ -440,3 +440,8 @@ scaling correctly between the small preview card and true fullscreen (was using 
 `vw` units instead of scaling with the actual stage element - now a CSS container-query fix), and
 added a "Backdrop darkness" slider (0-100%, default 60%) so the dimmed video behind the wordmark can
 be pushed closer to solid black. See `AUDIT.md` Entry 54.
+
+**Band-logo edge fade + two-line stacked wordmark (2026-07-19):** the backdrop's left/right edges now
+fade to black via a mask-image instead of showing a hard rectangle in fullscreen; the wordmark is now
+stacked "Queen" / "Cosmic" on two lines instead of one, matching the originally-referenced cover art.
+See `AUDIT.md` Entry 55.
