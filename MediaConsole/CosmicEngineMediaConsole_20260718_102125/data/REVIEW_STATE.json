@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "package_id": "VideoCurationReview_v2_20260717_163426",
   "created_at": "2026-07-17T20:43:14-06:00",
-  "last_saved_at": "2026-07-18T12:46:03-06:00",
+  "last_saved_at": "2026-07-19T12:03:33-06:00",
   "atoms": {
     "ce-va2-cf141ebe5a5645": {
       "status": "rejected",
@@ -895,7 +895,7 @@
       "last_modified": "2026-07-17T21:47:58-06:00"
     },
     "ce-va2-a2be6a90a2b63f": {
-      "status": "approved",
+      "status": "rejected",
       "assigned_collections": [
         "Fire",
         "Abstract",
@@ -906,8 +906,8 @@
         "Loopable",
         "Locked / Stable"
       ],
-      "notes": "",
-      "last_modified": "2026-07-17T21:47:56-06:00"
+      "notes": "Confirmed via ffmpeg freezedetect: frozen for 100% of its 11.8s duration (still-frame, not moving video). Reported by user as repeatedly showing up as a static frame.",
+      "last_modified": "2026-07-19T12:03:33-06:00"
     },
     "ce-va2-237de5001cf39c": {
       "status": "rejected",

@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-07-18T12:46:03-06:00",
-  "review_state_last_saved_at": "2026-07-18T12:46:03-06:00",
-  "approved_count": 281,
+  "generated_at": "2026-07-19T12:03:42-06:00",
+  "review_state_last_saved_at": "2026-07-19T12:03:33-06:00",
+  "approved_count": 280,
   "atoms": [
     {
       "atom_id": "ce-va2-841301ed9c12af",
@@ -387,102 +387,6 @@
       "representative_thumbnail": "thumbnails/ce-va2-31d431bc872464.jpg",
       "contact_sheet": null,
       "preview_clip": "previews/ce-va2-31d431bc872464.mp4",
-      "media_source": "base"
-    },
-    {
-      "atom_id": "ce-va2-a2be6a90a2b63f",
-      "review_status": "needs review",
-      "review_notes": "",
-      "revised_start_timestamp": null,
-      "revised_end_timestamp": null,
-      "source_filename": "191325-890894257.mp4",
-      "source_relative_path": "191325-890894257.mp4",
-      "source_full_path": "/Volumes/External Hard Drive FCF/CosmicEngine/VisionBoard/191325-890894257.mp4",
-      "start_timestamp": "00:00:07.932",
-      "end_timestamp": "00:00:19.750",
-      "start_seconds": 7.932,
-      "end_seconds": 19.75,
-      "duration_seconds": 11.818,
-      "tier": "Tier 2",
-      "description": "A fiery stellar form condenses inside colored plasma. Supporting environmental or visual-layer sequence.",
-      "primary_subject": "stellar core and turbulent plasma",
-      "content_tags": [
-        "star",
-        "plasma",
-        "solar",
-        "energy",
-        "particles",
-        "tier-2"
-      ],
-      "motif_category": "fire",
-      "mood": "intense, generative",
-      "energy_level": 0.688,
-      "motion_intensity": 0.742,
-      "camera_movement": "synthetic push",
-      "dominant_colors": [
-        "#401f14",
-        "#2f1710",
-        "#25120d"
-      ],
-      "brightness": {
-        "label": "low",
-        "sampled_luma_0_1": 0.197
-      },
-      "contrast": {
-        "label": "medium",
-        "sampled_contrast_0_1": 0.341
-      },
-      "loopability_assessment": "strong micro-loop candidate; test a short dissolve or ping-pong seam",
-      "quality_confidence_score": 0.712,
-      "suggested_procedural_enhancements": [
-        "volumetric depth or fog",
-        "particle seeding from luminance",
-        "bloom and color-phase modulation",
-        "displacement or feedback trails"
-      ],
-      "suggested_audio_reactive_mappings": [
-        "bass -> displacement or scale",
-        "midrange -> color-phase and volumetric density",
-        "treble/onsets -> bloom, particles, or strobe accents"
-      ],
-      "allowed_effects": [
-        "color grading",
-        "luma keying",
-        "displacement",
-        "feedback",
-        "bloom",
-        "particles",
-        "volumetrics",
-        "time remapping"
-      ],
-      "effects_to_avoid": [
-        "heavy sharpening",
-        "large opaque typography",
-        "destructive denoising"
-      ],
-      "preferred_transition_in": [
-        "luma dissolve",
-        "color wash",
-        "layered opacity build"
-      ],
-      "preferred_transition_out": [
-        "texture dissolve",
-        "feedback decay",
-        "shape or motion match"
-      ],
-      "visible_logos_text_watermarks_or_licensing_concerns": "No automated OCR or rights lookup performed; verify visible text, marks, and source rights before use.",
-      "visual_complexity": 0.413,
-      "loop_quality": 0.78,
-      "camera_stability": 0.94,
-      "texture_density": 0.484,
-      "foreground_motion": 0.42,
-      "background_motion": 0.72,
-      "layering_potential": 0.806,
-      "procedural_synergy_score": 0.713,
-      "notes": "High-recall v2 primary candidate; thumbnail/proxy review required. Overlap with neighboring atoms is intentional.",
-      "representative_thumbnail": "thumbnails/ce-va2-a2be6a90a2b63f.jpg",
-      "contact_sheet": null,
-      "preview_clip": "previews/ce-va2-a2be6a90a2b63f.mp4",
       "media_source": "base"
     },
     {

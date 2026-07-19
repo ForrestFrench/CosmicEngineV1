@@ -6480,3 +6480,56 @@ Python changes this pass. Line-level staged around the standing uncommitted Cosm
 `AUDIT.md` (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 58 — Media Console: remove a fully-frozen approved atom (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+User reported a specific approved atom repeatedly appearing as a static, non-moving frame during
+playback and asked how to find and remove it.
+
+### Investigation
+Pre-computed curation metadata (`motion_intensity`, `duration_seconds` in the atom catalog) did not
+surface an obvious candidate - the lowest `motion_intensity` values in the 281-atom approved set were
+all >=0.22, and direct `ffmpeg freezedetect` verification of the ten lowest-motion candidates found only
+brief (1-4s) freeze segments within otherwise-normal clips, not full-clip freezes. This ruled out
+"genuinely low-motion source footage" as the cause and pointed instead at a possible per-clip
+decode/playback failure not reflected in ingestion-time metadata at all.
+
+Ran `ffmpeg freezedetect` directly against all 281 approved atoms' preview files (streamed from the
+Media Console's own `/media/preview/<id>` endpoint, no local downloads needed - each check completed in
+well under a second) and computed each atom's total frozen duration as a fraction of its total clip
+duration. One atom came back at exactly 1.00: `ce-va2-a2be6a90a2b63f`, a 11.818s trim of
+`VisionBoard/191325-890894257.mp4` (the same fire/plasma source used in the Entry 51 Visual Composer
+Sandbox "Fire" composition) - frozen for its entire duration, despite being tagged `Loopable` and
+`Locked / Stable` in its collections. Seven more atoms came back at 0.96-0.99 frozen ratio and were
+flagged to the user as likely-also-broken but explicitly **not touched**, per the user's
+"don't action the rest of those atoms" instruction after visual confirmation.
+
+### Verification before removal
+Generated a labeled screenshot gallery (Claude Artifact, not part of this repo) showing the removed
+atom's thumbnail alongside the seven flagged-but-untouched candidates, so the user could visually
+confirm identity before/after the action rather than trusting the automated frozen-ratio number alone.
+User confirmed the correct atom via the gallery.
+
+### Action taken
+`POST /api/review/update {"atom_id":"ce-va2-a2be6a90a2b63f","status":"rejected", "notes": "..."}`
+followed by `POST /api/library/save` (281 -> 280 approved) and `POST /api/library/refresh` (live session
+picks up the change with no restart). This only mutates `data/REVIEW_STATE.json`/
+`data/RUNTIME_LIBRARY.json`/`data/INGESTION_STATE.json` - the original source file in `VisionBoard/` was
+never touched, read-only per this project's established media-safety model, and the removal is fully
+reversible (flip the review status back to `approved` and re-save) if ever needed.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/data/{REVIEW_STATE,RUNTIME_LIBRARY,INGESTION_STATE}.json`
+only - curated content-review state, not ephemeral session/UI config, so (unlike
+`AUDIO_TUNING_STATE.json`/`EXPLORATION_STATE.json`) this is committed rather than left out. Line-level
+staged around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48) - verified via
+`git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
