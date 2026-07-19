@@ -76,7 +76,7 @@ namespace CosmicEngine.App.Audio
             /// </summary>
             public void ApplyTo(InputCalibration c)
             {
-                c.Gain = Clamp(Gain, 0f, 4f);
+                c.Gain = Clamp(Gain, 0f, InputCalibration.MaxGain);
                 c.GateThreshold = Clamp(GateThreshold, 0f, 0.3f);
                 c.Smoothing = Clamp(Smoothing, 0f, 0.95f);
                 c.OutputCeiling = Clamp(OutputCeiling, 0.1f, 1f);

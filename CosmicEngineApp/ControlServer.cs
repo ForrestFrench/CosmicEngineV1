@@ -139,6 +139,15 @@ namespace CosmicEngine.App
                 return;
             }
 
+            // Read-only bridge for external visual instruments such as the Video
+            // Exploration Media Console. This exposes normalized control intent,
+            // never PCM audio, and does not own or restart audio capture.
+            if (path == "/audio/reactivity")
+            {
+                Respond(ctx, 200, JsonSerializer.Serialize(GuitarIntentResponse.Snapshot()), "application/json");
+                return;
+            }
+
             if (path == "/scenes")
             {
                 var scenes = Array.ConvertAll(SceneRegistry.All, s => new
@@ -235,7 +244,7 @@ namespace CosmicEngine.App
                     float val = vv.GetSingle();
                     switch (fv.GetString())
                     {
-                        case "gain":          input.Gain = val; break;
+                        case "gain":          input.Gain = Math.Clamp(val, 0f, InputCalibration.MaxGain); break;
                         case "gateThreshold": input.GateThreshold = val; break;
                         case "smoothing":     input.Smoothing = val; break;
                         case "outputCeiling": input.OutputCeiling = val; break;
@@ -848,7 +857,7 @@ namespace CosmicEngine.App
       <button class='preset-btn' data-input='A' data-preset='S-Curve'>S-Curve</button>
     </div>
     <h4 style='margin-top:18px'>INPUT A MANUAL CONTROLS</h4>
-    <div class='manual-row'><label>Gain</label><input type='range' id='gainA' min='0' max='4' step='0.01'><span class='val' id='gainA_v'></span></div>
+    <div class='manual-row'><label>Visual-control gain</label><input type='range' id='gainA' min='0' max='32' step='0.25'><span class='val' id='gainA_v'></span></div>
     <div class='manual-row'><label>Gate Threshold</label><input type='range' id='gateA' min='0' max='0.3' step='0.005'><span class='val' id='gateA_v'></span></div>
     <div class='manual-row'><label>Smoothing</label><input type='range' id='smoothingA' min='0' max='0.95' step='0.01'><span class='val' id='smoothingA_v'></span></div>
     <div class='manual-row'><label>Output Ceiling</label><input type='range' id='ceilA' min='0.1' max='1' step='0.01'><span class='val' id='ceilA_v'></span></div>
@@ -865,7 +874,7 @@ namespace CosmicEngine.App
       <button class='preset-btn' data-input='B' data-preset='S-Curve'>S-Curve</button>
     </div>
     <h4 style='margin-top:18px'>INPUT B MANUAL CONTROLS</h4>
-    <div class='manual-row'><label>Gain</label><input type='range' id='gainB' min='0' max='4' step='0.01'><span class='val' id='gainB_v'></span></div>
+    <div class='manual-row'><label>Visual-control gain</label><input type='range' id='gainB' min='0' max='32' step='0.25'><span class='val' id='gainB_v'></span></div>
     <div class='manual-row'><label>Gate Threshold</label><input type='range' id='gateB' min='0' max='0.3' step='0.005'><span class='val' id='gateB_v'></span></div>
     <div class='manual-row'><label>Smoothing</label><input type='range' id='smoothingB' min='0' max='0.95' step='0.01'><span class='val' id='smoothingB_v'></span></div>
     <div class='manual-row'><label>Output Ceiling</label><input type='range' id='ceilB' min='0.1' max='1' step='0.01'><span class='val' id='ceilB_v'></span></div>

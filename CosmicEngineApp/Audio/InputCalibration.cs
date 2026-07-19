@@ -14,6 +14,8 @@ namespace CosmicEngine.App.Audio
     /// </summary>
     public class InputCalibration
     {
+        public const float MaxGain = 32.0f;
+
         // --- Manual calibration controls ---
         public float Gain = 1.0f;           // multiplies raw level before the gate/curve
         public float GateThreshold = 0.02f; // gated level below this reads as 0 (noise gate)
