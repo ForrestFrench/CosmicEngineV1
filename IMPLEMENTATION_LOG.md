@@ -2211,3 +2211,10 @@ fullscreen frame - the twinkle stars live in a separate, unmasked sibling elemen
 unaffected. Restructured the wordmark from a single `Queen Cosmic` span into two stacked
 `.band-logo-text` lines ("Queen" / "Cosmic") inside a `.band-logo-lines` flex column, matching the
 originally-referenced two-line cover art. See `AUDIT.md` Entry 55.
+
+## 2026-07-19 — Media Console: band-logo wordmark sized up
+
+User picked a larger size (8.8% of stage width) from three Claude-Artifact-rendered options built
+with the exact shipped font/gradient/glow. `.band-logo-text`'s clamp changed from
+`clamp(26px, 5.6cqw, 120px)` to `clamp(26px, 8.8cqw, 220px)` - the ceiling was raised proportionally
+so it doesn't become a new binding constraint at realistic fullscreen widths. See `AUDIT.md` Entry 56.

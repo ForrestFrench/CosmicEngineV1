@@ -445,3 +445,6 @@ be pushed closer to solid black. See `AUDIT.md` Entry 54.
 fade to black via a mask-image instead of showing a hard rectangle in fullscreen; the wordmark is now
 stacked "Queen" / "Cosmic" on two lines instead of one, matching the originally-referenced cover art.
 See `AUDIT.md` Entry 55.
+
+**Band-logo wordmark sized up (2026-07-19):** now 8.8% of stage width (was 5.6%), picked by the user
+from three Artifact-rendered size options. See `AUDIT.md` Entry 56.

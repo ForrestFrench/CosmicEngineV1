@@ -6359,3 +6359,42 @@ Python or JS changes this pass. Line-level staged around the standing uncommitte
 hunk in `AUDIT.md` (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 56 — Media Console: band-logo wordmark sized up (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+User asked for the wordmark bigger and requested three concrete size options before choosing, rather
+than iterating blind. Built a Claude Artifact rendering all three at the exact shipped font
+(Cinzel Decorative), gradient, and glow, each labeled by its percentage of stage width so the
+comparison holds regardless of preview/fullscreen size (the scale-invariant `cqw` mechanism from
+Entry 54 made this framing possible - a plain-pixel comparison would not have transferred cleanly
+between the artifact preview and the real fullscreen stage). Options were 5.6% (current), 7.2%, and
+8.8% of stage width. User picked 8.8% ("C").
+
+### Change
+`.band-logo-text`'s `font-size` clamp changed from `clamp(26px, 5.6cqw, 120px)` to
+`clamp(26px, 8.8cqw, 220px)`. The ceiling was raised proportionally (120px -> 220px), not left as-is
+- at the old 120px ceiling, 8.8cqw would already exceed it at a stage width around 1364px, reintroducing
+the exact "ceiling becomes the binding constraint on a large stage" bug fixed in Entry 54. The new
+220px ceiling keeps the wordmark truly proportional up to roughly a 2500px-wide stage before capping,
+covering realistic fullscreen sizes; it only exists at all as a guard against absurd sizes on very
+large/high-resolution displays.
+
+### Verification
+Programmatically resized `#stageWrap` to 700px/1400px/1920px and read `getComputedStyle` on
+`.band-logo-text`: font-size was 61.4px/123.0px/168.8px respectively - a constant 0.0877-0.0879 ratio
+to stage width at every size (matching the intended 8.8%), confirming the ceiling is not binding at
+any of these realistic sizes. Confirmed visually via screenshot.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/static/exploration.css` only. Line-level staged
+around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48) - verified via
+`git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
