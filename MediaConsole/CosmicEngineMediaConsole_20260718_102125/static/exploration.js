@@ -8,8 +8,8 @@ const MAPPING_FIELDS={sensitivity:['Sensitivity',.1,4,.05],response_speed:['Resp
 const AUDIO_SOURCES={guitar_a:'Guitar A',guitar_b:'Guitar B',combined_energy:'Combined energy',attack:'Attack',sustain:'Sustain'};
 const EFFECT_MAPPING_DEFS={color_saturation:{label:'Color / Saturation',description:'Shapes atmosphere through saturation, brightness, and hue.',default_source:'attack',legacy:'intensity'}};
 const DEFAULT_AUDIO_TUNING={enabled:true,active_preset:'Gentle Instrument',effect_mappings:{color_saturation:{enabled:true,source:'attack',sensitivity:1,response_speed:.22,smoothing:.48,max_contribution:.16,decay_time:1.2,dead_zone:.06}}};
-const DEFAULT_BAND_LOGO={enabled:false,visuals_fade_seconds:1.5,logo_fade_seconds:2.5};
-const BAND_LOGO_RANGES={visuals_fade_seconds:[.3,8],logo_fade_seconds:[.3,8]};
+const DEFAULT_BAND_LOGO={enabled:false,visuals_fade_seconds:1.5,logo_fade_seconds:2.5,backdrop_opacity:.6};
+const BAND_LOGO_RANGES={visuals_fade_seconds:[.3,8],logo_fade_seconds:[.3,8],backdrop_opacity:[0,1]};
 const BAND_LOGO_SILENCE_DWELL_MS=2000;
 const BOOL_KEYS=['posterize','duotone','mirrorH','mirrorV','mirrorOverlay','kaleidoscope','hueCycle'];
 const SPATIAL_BOOL_KEYS=['mirrorH','mirrorV','mirrorOverlay','kaleidoscope'];
@@ -123,8 +123,11 @@ function syncBandLogoUI(){
   els('visualsFadeSecondsValue').textContent=`${Number(audioTuning.band_logo.visuals_fade_seconds).toFixed(1)}s`;
   els('logoFadeSeconds').value=audioTuning.band_logo.logo_fade_seconds;
   els('logoFadeSecondsValue').textContent=`${Number(audioTuning.band_logo.logo_fade_seconds).toFixed(1)}s`;
+  els('bandLogoBackdropOpacity').value=audioTuning.band_logo.backdrop_opacity;
+  els('bandLogoBackdropOpacityValue').textContent=`${Math.round(Number(audioTuning.band_logo.backdrop_opacity)*100)}%`;
   document.documentElement.style.setProperty('--visuals-fade-seconds',`${audioTuning.band_logo.visuals_fade_seconds}s`);
   document.documentElement.style.setProperty('--logo-fade-seconds',`${audioTuning.band_logo.logo_fade_seconds}s`);
+  document.documentElement.style.setProperty('--band-logo-backdrop-opacity',audioTuning.band_logo.backdrop_opacity);
 }
 function updateBandLogo(delta){
   // "No audio signal present" = the core isn't live, or it is live but both
@@ -239,6 +242,7 @@ els('audioTuningEnabled').addEventListener('change',event=>{audioTuning.enabled=
 els('bandLogoEnabled').addEventListener('change',event=>{audioTuning.band_logo.enabled=event.target.checked;patchBandLogoField('enabled',audioTuning.band_logo.enabled)});
 els('visualsFadeSeconds').addEventListener('input',()=>{const value=+els('visualsFadeSeconds').value;audioTuning.band_logo.visuals_fade_seconds=value;els('visualsFadeSecondsValue').textContent=`${value.toFixed(1)}s`;document.documentElement.style.setProperty('--visuals-fade-seconds',`${value}s`);patchBandLogoField('visuals_fade_seconds',value)});
 els('logoFadeSeconds').addEventListener('input',()=>{const value=+els('logoFadeSeconds').value;audioTuning.band_logo.logo_fade_seconds=value;els('logoFadeSecondsValue').textContent=`${value.toFixed(1)}s`;document.documentElement.style.setProperty('--logo-fade-seconds',`${value}s`);patchBandLogoField('logo_fade_seconds',value)});
+els('bandLogoBackdropOpacity').addEventListener('input',()=>{const value=+els('bandLogoBackdropOpacity').value;audioTuning.band_logo.backdrop_opacity=value;els('bandLogoBackdropOpacityValue').textContent=`${Math.round(value*100)}%`;document.documentElement.style.setProperty('--band-logo-backdrop-opacity',value);patchBandLogoField('backdrop_opacity',value)});
 for(const prefix of ['A','B'])els(`audioGain${prefix}`).addEventListener('input',event=>queueCalibrationGain(prefix,event.target.value));
 els('loadAudioTuningPreset').addEventListener('click',loadAudioTuningPreset);els('saveAudioTuningPreset').addEventListener('click',saveNamedAudioTuningPreset);els('resetAudioTest').addEventListener('click',resetAudioTest);
 for(const id of ['effectDurationMin','effectDurationMax','morphDurationMin','morphDurationMax']){els(id).addEventListener('input',debounceSession);els(id).addEventListener('change',()=>{scheduleHold();debounceSession()})}els('deterministicSeed').addEventListener('input',()=>{seed=Number(els('deterministicSeed').value)||1337;debounceSession()});els('deterministicSeed').addEventListener('change',restartSeededTimelines);window.addEventListener('resize',resizeCanvas);window.addEventListener('keydown',event=>{if(['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName))return;if(event.code==='Space'){event.preventDefault();toggleClips()}else if(event.key==='ArrowRight')goNext();else if(event.key==='ArrowLeft')goPrevious();else if(event.key.toLowerCase()==='e')toggleEffects();else if(event.key.toLowerCase()==='f')toggleFullscreen();else if(event.key.toLowerCase()==='m')beginNextMorph()});window.addEventListener('beforeunload',()=>{navigator.sendBeacon('/api/exploration/session',new Blob([JSON.stringify(sessionPayload())],{type:'application/json'}));navigator.sendBeacon('/api/audio/tuning',new Blob([JSON.stringify(audioTuningPayload())],{type:'application/json'}))});

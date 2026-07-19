@@ -40,10 +40,12 @@ DEFAULT_BAND_LOGO = {
     "enabled": False,
     "visuals_fade_seconds": 1.5,
     "logo_fade_seconds": 2.5,
+    "backdrop_opacity": 0.6,
 }
 BAND_LOGO_FIELD_RANGES = {
     "visuals_fade_seconds": (0.3, 8.0),
     "logo_fade_seconds": (0.3, 8.0),
+    "backdrop_opacity": (0.0, 1.0),
 }
 
 

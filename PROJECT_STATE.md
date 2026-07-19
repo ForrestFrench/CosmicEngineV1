@@ -434,3 +434,9 @@ Exploration/Audio Tuning tabs got a general layout cleanup (collapsible effect g
 removed); and a new toggleable "Queen Cosmic" band-logo fade-in-on-silence feature was added (Cinzel
 Decorative wordmark, gold gradient, halo/shimmer/twinkle CSS effects, two fade-duration sliders,
 2s dwell). Full detail, evidence, and judgment calls flagged for user review: `AUDIT.md` Entry 53.
+
+**Band-logo scale-to-stage fix + backdrop darkness control (2026-07-19):** fixed the wordmark not
+scaling correctly between the small preview card and true fullscreen (was using viewport-relative
+`vw` units instead of scaling with the actual stage element - now a CSS container-query fix), and
+added a "Backdrop darkness" slider (0-100%, default 60%) so the dimmed video behind the wordmark can
+be pushed closer to solid black. See `AUDIT.md` Entry 54.

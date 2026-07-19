@@ -6229,3 +6229,84 @@ were left out of every commit, consistent with this project's established conven
 committing ephemeral session state (Entry 52).
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 54 — Media Console: band-logo scale-to-stage fix + backdrop darkness control (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+Follow-up to Entry 53's band-logo silence-fade feature. The user reviewed the shipped "Eclipse Court"
+gold/Cinzel-Decorative wordmark against several fresh design alternatives (built as a Claude Artifact,
+not committed to this repo), then changed their mind and asked to keep the already-shipped design as-is,
+with two concrete fixes based on side-by-side preview/fullscreen screenshots they provided.
+
+### Issue 1 — wordmark did not scale consistently between preview and fullscreen
+**Root cause:** `.band-logo-text`'s `font-size: clamp(26px, 5.6vw, 60px)` used `vw`, which is relative to
+the *browser viewport*, not the `#stageWrap` element the wordmark actually renders over. `#stageWrap` is
+also the exact element `toggleFullscreen()` passes to `requestFullscreen()` (`static/exploration.js`).
+In the normal dashboard layout, `#stageWrap` is a modest card well under full window width, so
+`5.6vw` landed within the clamp's range and could render close to its `60px` ceiling relative to that
+small box - looking appropriately large. In real fullscreen, the viewport becomes the entire screen, so
+`5.6vw` of e.g. 1920px is ~107px, which the `60px` ceiling clamps down hard - producing a wordmark that
+is numerically similar in size but now looks tiny against a stage that has grown dramatically. This
+matches the user's screenshots exactly (large in the preview card, small and centered in the fullscreen
+frame).
+
+**Fix:** `.stage-wrap` now declares `container-type: inline-size; container-name: stage`, and
+`.band-logo-text`/`.band-logo-wordmark` were switched from `vw` to `cqw` (container query width) units,
+with the clamp ceiling raised from `60px` to `120px` (the old ceiling was sized for the small-preview
+case and would otherwise become the new binding constraint at large stage widths, reintroducing the same
+class of bug at a different threshold). `cqw` resolves against the stage element's own rendered width in
+both contexts, so the wordmark now holds a constant ~5.6% ratio to the stage's actual width whether that
+stage is a small preview card or the full physical screen.
+
+**Verification:** programmatically resized `#stageWrap` to 700px/1400px/1920px and read
+`getComputedStyle` on `.band-logo-text` at each width: font-size was 39.09px/78.29px/107.41px
+respectively - a constant 0.0558-0.0559 ratio to stage width at every size, confirming true
+container-relative scaling rather than viewport-relative scaling. (True `requestFullscreen()` could not
+be exercised from the automation pane - it requires a user gesture in a real browser context - so this
+was verified via direct container-size manipulation instead, which exercises the same CSS mechanism.)
+
+### Issue 2 — too much of the dimmed video showing through behind the wordmark
+**Root cause:** the existing silence-fade only reduces the video/canvas itself to `opacity: .12` (see
+`.stage-wrap.audio-silent #stage`); there was no separate solid backdrop layer between the dimmed video
+and the wordmark, so 12% of the raw footage's brightness/color/detail always showed through no matter how
+dark or busy the underlying clip was - visible in the user's screenshots as visible plaster texture and
+warm bloom bleeding through behind the text.
+
+**Fix:** added a new `.band-logo-backdrop` layer (`position: absolute; inset: 0; background: rgba(0,0,0,
+var(--band-logo-backdrop-opacity))`) as the first child inside `#bandLogoOverlay`, sitting between the
+dimmed video and the halo/stars/wordmark. Its opacity is a new `backdrop_opacity` field on `band_logo`
+(default `0.6`, range `0.0-1.0`), added to `DEFAULT_BAND_LOGO`/`BAND_LOGO_FIELD_RANGES` in
+`console_store.py` - the existing `_clamp_band_logo_value`/`sanitize_band_logo`/`patch_band_logo_field`
+all iterate these dicts generically, so no other Python code changed. A new "Backdrop darkness" slider
+(0-100%, step 5%) was added to the Band Logo Fade panel, wired through the same per-field-patch pattern
+established in Entry 52/53 (`patchBandLogoField('backdrop_opacity', value)` -> `POST
+/api/audio/tuning/logo/field`). Because `.band-logo-backdrop` is a child of `.band-logo-overlay` (whose
+own `opacity` is what actually animates 0->1 on silence), the backdrop's darkness fades in and out in
+lockstep with the rest of the logo moment automatically - no separate fade timing was needed for it.
+
+**Verification:** live-tested via the running Media Console - dragging the new slider from its default
+60% to 90% visibly darkened the stage behind the wordmark to near-black in a screenshot, with the
+underlying video becoming effectively invisible; `getComputedStyle` confirmed the backdrop's
+`background-color` tracked the slider (`rgba(0,0,0,0.6)` -> `rgba(0,0,0,0.9)`) and the readout updated
+(`60%` -> `90%`) in real time. Reset to the `0.6` default before finishing.
+
+### What was deliberately not changed
+The Artifact-based "Eclipse Court" (white text / elliptical orbit / distant starfield) design explored
+earlier this session was **not** adopted and **not** committed anywhere in this repo - the user reverted
+to the originally shipped Cinzel Decorative gold wordmark and asked only for these two fixes on top of
+it. That artifact exists solely as a claude.ai-hosted preview outside this repository.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/static/exploration.{css,html,js}`,
+`console_store.py`. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk in
+`AUDIT.md` (Entry 48) - verified via `git diff --cached` that none of that hunk was included. Runtime
+data files touched incidentally while testing (`data/AUDIO_TUNING_STATE.json`,
+`data/EXPLORATION_STATE.json`) were left out of the commit per this project's established convention.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

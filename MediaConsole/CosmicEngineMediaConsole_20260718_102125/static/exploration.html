@@ -43,6 +43,7 @@
         <img id="fallback" alt="Preview unavailable; representative thumbnail shown">
         <div id="grain" class="grain"></div><div id="vhs" class="vhs"></div><div id="vignette" class="vignette"></div>
         <div id="bandLogoOverlay" class="band-logo-overlay" aria-hidden="true">
+          <div class="band-logo-backdrop"></div>
           <div class="band-logo-halo"></div>
           <div class="band-logo-stars">
             <i style="--sx:9%;--sy:22%;--sd:.2s"></i><i style="--sx:89%;--sy:16%;--sd:1.1s"></i>
@@ -135,6 +136,7 @@
           <p class="gain-note">When no guitar signal has been present for a couple of seconds, the visuals dim and the "Queen Cosmic" wordmark fades in over the stage. Signal returning reverses it. Disable this while testing without an audio signal.</p>
           <label class="mapping-control fade-control"><span>Visuals fade duration</span><input id="visualsFadeSeconds" type="range" min="0.3" max="8" step="0.1"><output id="visualsFadeSecondsValue">1.5s</output></label>
           <label class="mapping-control fade-control"><span>Logo fade duration</span><input id="logoFadeSeconds" type="range" min="0.3" max="8" step="0.1"><output id="logoFadeSecondsValue">2.5s</output></label>
+          <label class="mapping-control fade-control"><span>Backdrop darkness</span><input id="bandLogoBackdropOpacity" type="range" min="0" max="1" step="0.05"><output id="bandLogoBackdropOpacityValue">60%</output></label>
         </section>
         <details class="audio-test-workflow">
           <summary>Guided input test</summary>

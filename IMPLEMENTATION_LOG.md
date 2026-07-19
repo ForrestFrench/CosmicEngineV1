@@ -2188,3 +2188,17 @@ Four independently-committed changes, all scoped to `MediaConsole/CosmicEngineMe
 See `AUDIT.md` Entry 53 for full evidence (screenshots, verification method, judgment calls flagged
 for user review) and an evidence package under
 `CosmicEngineApp/DiagnosticReports/MediaConsoleRedesign_20260718_231628/`.
+
+## 2026-07-19 — Media Console: band-logo scale-to-stage fix + backdrop darkness control
+
+Fixed two issues in the Entry 53 band-logo silence-fade feature, reported against the shipped
+version (a design-alternatives detour via a Claude Artifact was explored and rejected - not part of
+this repo). `.band-logo-text`'s font-size used `vw` (browser viewport) instead of scaling with
+`#stageWrap` (the actual fullscreen target), so the wordmark looked correctly sized in the small
+preview card but tiny once fullscreened. Switched `.stage-wrap` to a CSS size-query container
+(`container-type: inline-size`) and the wordmark to `cqw` units - verified the font now holds a
+constant ~5.6% ratio to stage width at 700px/1400px/1920px. Also added a `.band-logo-backdrop` solid
+scrim layer (new `backdrop_opacity` field on `band_logo`, default 0.6, 0-1 range slider) since the
+silence-dimmed video's residual 12% opacity was still showing through the wordmark - the new backdrop
+fades in/out with the rest of the overlay automatically since it's a child of the already-animating
+`.band-logo-overlay`. See `AUDIT.md` Entry 54 for full verification evidence.
