@@ -11,6 +11,14 @@ Phase 1 `mix(video, child, uBlend)`, plus decode-rate playback-speed pacing (0.2
 a new "Effects" section — see `AUDIT.md` Entry 50. Not committed as of this note without the paired
 commit hash; check `git log` for the actual commit once landed.
 
+**Media Console Audio Tuning slider bug fixed (v0.1):** the Audio Tuning tab's per-mapping sliders
+(Liquid Warp/Edge Glow/Mirror/Color-Saturation) could appear to stop responding entirely if more than
+one browser tab/page-load held the panel open — a full-object last-write-wins save race, root-caused
+and fixed via a new per-field patch endpoint (`POST /api/audio/tuning/field`). See `AUDIT.md` Entry 52.
+Verified via synthetic test-pulse signal only (user was away); real two-guitar tuning session with the
+fix in place is still pending.
+
+
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since
 selected the real interface as the default input, matching Entry 38's own recommended fix. Not re-verified

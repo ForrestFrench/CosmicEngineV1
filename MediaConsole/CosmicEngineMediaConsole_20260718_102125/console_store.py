@@ -263,8 +263,31 @@ class ConsoleStore:
     def exploration_bootstrap(self) -> Dict[str, Any]:
         return {"schema_version": "3.1-audio-tuning", "approved_count": len(self.runtime_atoms), "atoms": [self.public_runtime_atom(atom) for atom in self.runtime_atoms], "presets": self.presets.get("presets", []), "session": self.exploration, "audio_tuning": self.audio_tuning, "audio_tuning_presets": self.audio_tuning_presets.get("presets", []), "weights": {"normal": .7, "transition": .2, "experimental": .1}}
 
-    @staticmethod
-    def sanitize_audio_tuning(payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Numeric fields are (min, max); "enabled" and "source" are handled separately
+    # since they aren't clamped ranges. Shared by sanitize_audio_tuning (full-object
+    # save) and patch_audio_tuning_field (single-field save) so both paths enforce
+    # identical bounds from one place.
+    MAPPING_FIELD_RANGES = {
+        "sensitivity": (0.1, 4.0),
+        "response_speed": (0.02, 3.0),
+        "smoothing": (0.0, 0.95),
+        "max_contribution": (0.0, 1.0),
+        "decay_time": (0.05, 5.0),
+        "dead_zone": (0.0, 0.5),
+    }
+
+    @classmethod
+    def _clamp_mapping_value(cls, field: str, value: Any, default: Any, source_default: str) -> Any:
+        if field == "enabled":
+            return bool(value)
+        if field == "source":
+            source = str(value)
+            return source if source in AUDIO_MAPPING_SOURCES else source_default
+        lo, hi = cls.MAPPING_FIELD_RANGES[field]
+        return max(lo, min(hi, float(value)))
+
+    @classmethod
+    def sanitize_audio_tuning(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         result = {"schema_version": "2.0.0", "last_modified": now_iso(), "enabled": bool(payload.get("enabled", True)), "active_preset": str(payload.get("active_preset") or "Custom")[:80], "effect_mappings": {}}
         incoming = payload.get("effect_mappings", {})
         legacy = payload.get("mappings", {})
@@ -273,22 +296,34 @@ class ConsoleStore:
             if not isinstance(candidate, dict) or not candidate:
                 candidate = legacy.get(AUDIO_MAPPING_LEGACY[name], {})
             values = candidate if isinstance(candidate, dict) else {}
-            source = str(values.get("source", defaults["source"]))
             result["effect_mappings"][name] = {
-                "enabled": bool(values.get("enabled", defaults["enabled"])),
-                "source": source if source in AUDIO_MAPPING_SOURCES else defaults["source"],
-                "sensitivity": max(0.1, min(4.0, float(values.get("sensitivity", defaults["sensitivity"])))),
-                "response_speed": max(0.02, min(3.0, float(values.get("response_speed", defaults["response_speed"])))),
-                "smoothing": max(0.0, min(0.95, float(values.get("smoothing", defaults["smoothing"])))),
-                "max_contribution": max(0.0, min(1.0, float(values.get("max_contribution", defaults["max_contribution"])))),
-                "decay_time": max(0.05, min(5.0, float(values.get("decay_time", defaults["decay_time"])))),
-                "dead_zone": max(0.0, min(0.5, float(values.get("dead_zone", defaults["dead_zone"])))),
+                field: cls._clamp_mapping_value(field, values.get(field, defaults[field]), defaults[field], defaults["source"])
+                for field in ("enabled", "source", "sensitivity", "response_speed", "smoothing", "max_contribution", "decay_time", "dead_zone")
             }
         return result
 
     def save_audio_tuning(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         with self.lock:
             self.audio_tuning = self.sanitize_audio_tuning(payload)
+            atomic_json_write(self.audio_tuning_path, self.audio_tuning)
+            return dict(self.audio_tuning)
+
+    def patch_audio_tuning_field(self, mapping: str, field: str, value: Any) -> Dict[str, Any]:
+        """Update exactly one mapping field in place, under lock, against the
+        server's current in-memory state - never against a client's possibly
+        stale full snapshot. This is the fix for the multi-tab/stale-snapshot
+        bug where a full-object save from an older page load silently
+        reverted fields another tab had just changed (see AUDIT.md)."""
+        if mapping not in DEFAULT_AUDIO_TUNING["effect_mappings"]:
+            raise ValueError(f"Unknown audio tuning mapping: {mapping!r}")
+        if field not in ("enabled", "source", "sensitivity", "response_speed", "smoothing", "max_contribution", "decay_time", "dead_zone"):
+            raise ValueError(f"Unknown audio tuning field: {field!r}")
+        defaults = DEFAULT_AUDIO_TUNING["effect_mappings"][mapping]
+        with self.lock:
+            current = self.audio_tuning.setdefault("effect_mappings", {}).setdefault(mapping, dict(defaults))
+            current[field] = self._clamp_mapping_value(field, value, defaults[field], defaults["source"])
+            self.audio_tuning["last_modified"] = now_iso()
+            self.audio_tuning["active_preset"] = "Custom"
             atomic_json_write(self.audio_tuning_path, self.audio_tuning)
             return dict(self.audio_tuning)
 

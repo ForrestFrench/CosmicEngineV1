@@ -262,6 +262,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.server.store.save_exploration_session(body))
             elif path == "/api/audio/tuning":
                 self._json(self.server.store.save_audio_tuning(body))
+            elif path == "/api/audio/tuning/field":
+                self._json(self.server.store.patch_audio_tuning_field(
+                    body.get("mapping", ""), body.get("field", ""), body.get("value")
+                ))
             elif path == "/api/audio/tuning/presets":
                 self._json(self.server.store.save_audio_tuning_preset(body.get("name", ""), body.get("settings", {})))
             elif path == "/api/audio/calibration/manual":

@@ -5933,3 +5933,51 @@ staged whole. `AUDIT.md` itself (this entry) is a pure append at file end.
 (`DiagnosticReports/` is gitignored, consistent with every prior evidence package in this repo).
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 52 — Media Console: Audio Tuning slider "stuck"/reverting bug — root cause + fix (v0.1)
+
+**Date:** 2026-07-18
+**Executor:** Claude Code / Sonnet (autonomous troubleshooting pass, user stepped away mid-session)
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Reported symptom
+During a live guitar tuning session on the Media Console's Audio Tuning tab (`MediaConsole/CosmicEngineMediaConsole_20260718_102125/`), the user reported: "I'm clicking and dragging the sliders and they don't go anywhere." After confirming this was not an artifact of the automation browser pane (reproduced in the user's own real browser via `http://127.0.0.1:8140/`), the refined symptom was: "I was able to move the mirror sensitivity, then nothing else after that. I can't even move mirror sensitivity anymore." The user then asked for autonomous troubleshooting and a synthetic-signal-based verification while away from the machine.
+
+### Investigation
+Ruled out (with evidence, not assumption) before landing on the real cause:
+- **CSS/z-index/pointer-events overlay** — read `static/exploration.css`'s `.mapping-control`/`.audio-mapping` rules directly; plain `<input type=range>` with `accent-color`, no `pointer-events:none`, no absolute-positioned overlay, no `opacity:0` mismatch.
+- **A periodic re-render fighting the drag** — read `static/exploration.js` in full for any interval/rAF-driven call to `buildAudioTuningControls()`/`syncAudioTuningSummary()` outside explicit user actions (init, preset load/save); found none. The 20Hz `pollAudio()`/`pollAudioCalibration()` loops only touch guitar-level meters and calibration-gain fields, never mapping sliders.
+- **A single running server process / port collision** — `lsof -nP -iTCP:8140` and `pgrep -fal media_console.py` both confirmed exactly one process.
+
+**Root cause, confirmed by direct evidence, not inference:** `console_store.py`'s `save_audio_tuning()` (`POST /api/audio/tuning`) does a **full blind overwrite** — `self.audio_tuning = self.sanitize_audio_tuning(payload)` — of all four mappings' every field, with no merge, no version/etag check, and no comparison against what the client last actually read. The client's own `audioTuningPayload()` sends the browser's **entire locally-held** `audio_tuning.effect_mappings` object on every single slider/toggle/dropdown change, not just the one field that changed. Caught live and reproduced directly via `curl`: at 20:31:08 the persisted state had `liquid_warp.sensitivity=3.9`; two minutes later, at 20:33:11, with no user action in between, it had reverted to `liquid_warp.sensitivity=1.0` — because a second page load (a second browser tab/context, in this case the investigator's own automation pane, holding an older in-memory snapshot from before the user's edits) fired its own full-object save and silently clobbered every field it hadn't touched. This is a classic last-write-wins race with an object-granularity save contract, not a rendering bug — it fully explains "one slider worked, then everything (including that same slider) stopped," since *any* tab's *next* edit — even to an unrelated field — re-asserts that tab's entire stale snapshot over the top of whatever the other tab just set.
+
+### Fix
+Minimal, scoped, no engine/C#-side changes:
+- **`console_store.py`**: extracted the existing per-field clamp ranges into `MAPPING_FIELD_RANGES` + `_clamp_mapping_value()` (shared by both the old and new save paths, so validation bounds can't drift between them). Added `patch_audio_tuning_field(mapping, field, value)` — updates exactly one field of one mapping **against the server's current in-memory state**, under the existing lock, never against a client-supplied full snapshot.
+- **`media_console.py`**: added `POST /api/audio/tuning/field` routing to the new store method.
+- **`static/exploration.js`**: added `patchAudioTuningField(mapping, field, value)` (150ms per-field debounce, independent of the old full-object debounce). The three per-mapping listeners inside `buildAudioTuningControls()` (enabled toggle, source dropdown, and each of the six numeric sliders) now call this instead of `debounceAudioTuning()`.
+- **Deliberately left unchanged**: the master "Enabled" toggle and preset load/save still use the original full-object `POST /api/audio/tuning` path. These are infrequent, deliberate actions (not continuous drag input) and were not the reported symptom; converting them was out of scope for this pass. Documented here as a known residual: a stale tab toggling master-enable or loading a preset could still clobber other tabs' per-field edits. Recommended mitigation for now is the practical one already given to the user — keep exactly one tab open per tuning session.
+
+### Verification
+1. **Race reproduction and fix confirmation via direct API calls** (bypassing any browser-side ambiguity): patched `liquid_warp.sensitivity` to `2.5` via the new endpoint, then POSTed a synthetic stale full-object payload (mimicking an old tab) with `liquid_warp.sensitivity=1.0` to the *old* endpoint, then patched `edge_glow.max_contribution` to `0.5` via the new endpoint. Result: `edge_glow.max_contribution` correctly landed at `0.5` and was **not** reverted by the intervening stale write — confirming per-field patches are immune to another actor's full-object race, which is exactly the fix the reported bug needed.
+2. **Synthetic-signal sensitivity verification** (user was away; no real guitar available). Reset tuning to the documented "Gentle Instrument" baseline, then patched `liquid_warp.sensitivity=3.0` and `liquid_warp.max_contribution=0.6` via the fixed endpoint. Drove a sustained synthetic signal via the existing calibration test-pulse (`POST /calibration/testinput {"input":"A","value":0.7}`, the same mechanism used throughout this project's prior calibration-validation passes — never a new/parallel analyzer), confirmed via the C# `/audio/reactivity` endpoint that `guitar_a.sustain` rose to `0.9999998`. In the browser, manually pumped the `render()` loop (the automation pane's tab is backgrounded, so `requestAnimationFrame` never fires there on its own — confirmed by direct inspection: a single manual `render()` call correctly flipped `AUDIO LIVE`/`SHAPING VISUALS` state, proving the render function itself is correct and the gap was rAF-scheduling in a non-visible automation tab, not application logic) with ~180 realistic ~16.7ms frame steps to let the smoothing/envelope math converge as it would in a real, focused browser tab. Result: **Liquid Warp's live contribution rose to `0.55`** (near its `0.6` ceiling) versus the ~`0.02` observed earlier at default (`1.0×`/`22%`) settings — screenshot confirms `AUDIO LIVE`, Guitar A in `SUSTAIN` state, `Live Effect Response: Liquid Warp 0.55`, `SHAPING VISUALS · 0.55`, and the video frame visibly warped. This confirms the sensitivity/max-contribution controls are not just saving correctly now but are genuinely, proportionally reaching the live effect.
+3. Cleared the test override afterward (`{"input":"A","value":null}`) and confirmed via `/audio/reactivity` that the override was released (level began its documented multi-second decay, not an instant cut — consistent with the sustain-envelope behavior verified earlier in this same session).
+4. Reset the tuning state back to the documented "Gentle Instrument" defaults, restarted the Media Console process so its in-memory state re-synced with the (git-clean) on-disk file, and confirmed both the Media Console and the C# audio core (`--dashboard-only`, Clarett 4Pre USB) were left running and healthy for the user's return.
+5. `python3 -m py_compile console_store.py media_console.py` — clean. No standalone JS linter was available on this machine (no `node`, no `jsc`); JS correctness was instead verified by the browser actually loading and executing the script with zero console errors, plus the live functional test above.
+
+### Known limitations
+- Master-enable toggle and preset load/save remain on the full-object save path (see Fix section) — a narrower, lower-probability residual of the same race class, out of scope for this pass.
+- The rAF-backgrounding finding (automation tabs don't tick `render()` on their own) is specific to this investigator's tooling, not a user-facing bug — noted here only because it was a real dead-end during troubleshooting and could confuse a future investigator re-reading this entry.
+- Sensitivity verification used the calibration test-pulse (a single sustained synthetic level), not real two-guitar playing — per this project's established convention (see Entry 49/50 and `AUDIO_VIDEO_INTEGRATION_PLAN.md` §11), a test pulse validates the calibrated-intensity/sustain path end-to-end but cannot substitute for real string dynamics, attack transients, or the artistic feel of the response. The actual tuning session (the task this bug was blocking) is still pending the user's return.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/console_store.py`, `media_console.py`,
+`static/exploration.js` only. Runtime data files touched incidentally during testing
+(`data/AUDIO_TUNING_STATE.json`, `data/EXPLORATION_STATE.json`) were reverted via `git checkout --`
+before committing, consistent with this project's convention of not committing ephemeral runtime/session
+state. `AUDIT.md` itself (this entry) is a pure append at file end, non-overlapping with the standing
+uncommitted Cosmic Reef Entry 48 hunk.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

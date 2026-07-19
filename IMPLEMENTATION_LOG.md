@@ -2136,3 +2136,20 @@ backward compatible, defaults to no-trim). `Tuning.cs`/`ControlServer.cs` gained
 field set mirroring the existing `Hybrid*` pattern, including `ComposerIndex` to cycle compositions
 from the dashboard without recompiling. See `AUDIT.md` Entry 51 for full evidence and an honest
 artistic verdict (only one of nine compositions clearly reaches "renderer-only" territory).
+
+## 2026-07-18 — Media Console: fix Audio Tuning slider stuck/reverting bug
+
+Root cause: `console_store.py`'s `save_audio_tuning()` did a full blind overwrite of all four
+effect-mapping objects on every single slider/toggle/dropdown change, with the browser sending its
+entire locally-held snapshot each time. Any second open tab/page-load (a stale snapshot from an
+earlier moment) would silently revert every field on its own next save, including fields it never
+touched — reproduced live via direct `curl` calls, not inferred. Fixed by adding a per-field patch
+path: `patch_audio_tuning_field()` in `console_store.py`, a new `POST /api/audio/tuning/field` route
+in `media_console.py`, and a `patchAudioTuningField()` client function in `static/exploration.js`
+that the three per-mapping listeners (enabled/source/numeric sliders) now call instead of the old
+full-object `debounceAudioTuning()`. Master-enable toggle and preset load/save deliberately left on
+the old full-object path (out of scope, lower-probability residual — see AUDIT.md Entry 52).
+Verified via direct API race reproduction and a synthetic-signal sensitivity test (calibration
+test-pulse driving a sustained Guitar A level, confirming a 3x sensitivity/2.7x max-contribution
+change produced a proportional live effect response, 0.02 -> 0.55). See `AUDIT.md` Entry 52 for full
+investigation, evidence, and known limitations.
