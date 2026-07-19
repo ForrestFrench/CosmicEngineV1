@@ -1,0 +1,48 @@
+{
+  "schema_version": "2.0.0",
+  "last_modified": "2026-07-18T19:36:26-06:00",
+  "enabled": true,
+  "active_preset": "Custom",
+  "effect_mappings": {
+    "liquid_warp": {
+      "enabled": true,
+      "source": "sustain",
+      "sensitivity": 1.0,
+      "response_speed": 0.35,
+      "smoothing": 0.55,
+      "max_contribution": 0.22,
+      "decay_time": 1.8,
+      "dead_zone": 0.07
+    },
+    "edge_glow": {
+      "enabled": true,
+      "source": "guitar_a",
+      "sensitivity": 1.0,
+      "response_speed": 0.06,
+      "smoothing": 0.18,
+      "max_contribution": 0.18,
+      "decay_time": 0.55,
+      "dead_zone": 0.08
+    },
+    "mirror": {
+      "enabled": true,
+      "source": "combined_energy",
+      "sensitivity": 3.9,
+      "response_speed": 0.45,
+      "smoothing": 0.62,
+      "max_contribution": 0.28,
+      "decay_time": 2.0,
+      "dead_zone": 0.1
+    },
+    "color_saturation": {
+      "enabled": true,
+      "source": "combined_energy",
+      "sensitivity": 1.0,
+      "response_speed": 0.22,
+      "smoothing": 0.48,
+      "max_contribution": 0.16,
+      "decay_time": 1.2,
+      "dead_zone": 0.06
+    }
+  }
+}

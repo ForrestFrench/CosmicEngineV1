@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cosmic Engine · Media Console</title><link rel="stylesheet" href="/console.css"></head>
+<body class="console-shell">
+  <header class="shell-header">
+    <div><p class="kicker">COSMIC ENGINE · PERSISTENT VIDEO TOOLING</p><h1>Media Console</h1></div>
+    <nav aria-label="Console tools"><button class="tab active" data-page="ingestion">Atom Ingestion &amp; Library</button><button class="tab" data-page="exploration">Visual Exploration &amp; Effects</button><button class="tab" data-page="audioTuning">Audio Tuning</button></nav>
+    <div class="shell-status"><i></i><span>Local console</span></div>
+  </header>
+  <main class="frames">
+    <iframe id="ingestionFrame" title="Atom Ingestion and Library Management" src="/ingestion.html"></iframe>
+    <iframe id="explorationFrame" title="Visual Exploration and Effects Review" data-src="/exploration.html" allow="fullscreen" allowfullscreen hidden></iframe>
+    <iframe id="audioTuningFrame" title="Audio Reactive Tuning" data-src="/exploration.html?mode=audio-tuning" allow="fullscreen" allowfullscreen hidden></iframe>
+  </main>
+  <script>
+    const tabs=[...document.querySelectorAll('.tab')];
+    const frames={ingestion:document.querySelector('#ingestionFrame'),exploration:document.querySelector('#explorationFrame'),audioTuning:document.querySelector('#audioTuningFrame')};
+    function activate(page){
+      tabs.forEach(item=>item.classList.toggle('active',item.dataset.page===page));
+      for(const [name,frame] of Object.entries(frames))frame.hidden=name!==page;
+      const frame=frames[page];
+      if(frame.dataset.src&&!frame.src){frame.src=frame.dataset.src}
+      const other=page==='exploration'?frames.audioTuning:page==='audioTuning'?frames.exploration:null;
+      if(other&&other.src){other.src='about:blank';other.removeAttribute('src')}
+      location.hash=page;
+    }
+    tabs.forEach(tab=>tab.addEventListener('click',()=>activate(tab.dataset.page)));
+    const initial=location.hash.slice(1);if(frames[initial])activate(initial);
+  </script>
+</body></html>

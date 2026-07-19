@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Atom Ingestion &amp; Library</title><link rel="stylesheet" href="/console.css"></head>
+<body class="tool-page">
+  <header class="tool-header"><div><p class="kicker">TAB 1 · CONTROLLED INCREMENTAL WORKFLOW</p><h2>Atom Ingestion &amp; Library Management</h2><p>Find only unseen source videos, generate review candidates, then deliberately publish approved atoms.</p></div><span id="health" class="pill">Ready</span></header>
+  <main class="dashboard">
+    <section class="action-row">
+      <button id="scan" class="primary">1 · Scan for New Videos</button><button id="generate">2 · Generate Atoms</button><button id="openReview">3 · Review Candidates</button><button id="saveLibrary" class="publish">4 · Save Approved Atoms to Library</button>
+    </section>
+    <section class="metric-grid">
+      <article><small>NEW SOURCES</small><strong id="newSources">—</strong><span id="lastScan">Not scanned</span></article>
+      <article><small>CANDIDATES</small><strong id="candidateCount">—</strong><span id="needsReviewCount">— need review</span></article>
+      <article><small>APPROVED / REJECTED</small><strong><b id="approvedCount">—</b> / <b id="rejectedCount">—</b></strong><span>persistent decisions</span></article>
+      <article><small>RUNTIME LIBRARY</small><strong id="runtimeCount">—</strong><span id="lastSave">Not saved</span></article>
+    </section>
+    <section class="progress-card"><div><strong id="jobMessage">Idle</strong><span id="jobDetails">No active operation</span></div><div class="progress"><i id="progressBar"></i></div></section>
+    <section class="split">
+      <article class="panel"><div class="panel-title"><div><p class="kicker">WHAT CHANGED</p><h3>New source videos</h3></div><span id="scanResult" class="pill muted">No scan yet</span></div><div id="sourceList" class="source-list"><p class="empty">Run a scan to compare VisionBoard with the processed-source inventory.</p></div><div id="failures" class="errors"></div></article>
+      <article class="panel review-panel" id="reviewPanel"><div class="panel-title"><div><p class="kicker">REVIEW QUEUE</p><h3>Candidate decision</h3></div><span id="reviewPosition" class="pill muted">0 / 0</span></div>
+        <div id="emptyReview" class="empty">No candidates are waiting for review.</div>
+        <div id="reviewCard" hidden><div class="review-media"><video id="preview" controls loop muted playsinline></video><img id="thumb" alt="Candidate thumbnail"></div><h4 id="atomId"></h4><p id="description"></p><dl id="metadata"></dl><label>Collections<input id="collections" placeholder="Comma-separated collections"></label><label>Review notes<textarea id="notes" rows="2"></textarea></label><div class="decision-row"><button data-status="approved" class="approve">Approve</button><button data-status="rejected" class="reject">Reject</button><button data-status="needs_review">Needs review</button><button data-status="candidate">Keep candidate</button></div><div class="review-nav"><button id="prev">← Previous</button><button id="next">Next →</button></div></div>
+      </article>
+    </section>
+  </main><div id="toast" role="status"></div><script src="/ingestion.js"></script>
+</body></html>

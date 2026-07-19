@@ -1,0 +1,171 @@
+{
+  "schema_version": "1.0.0",
+  "last_modified": "2026-07-18T16:27:30-06:00",
+  "presets": [
+    {
+      "name": "Gentle Instrument",
+      "description": "Restrained two-guitar response for tuning and discovery.",
+      "settings": {
+        "schema_version": "1.0.0",
+        "enabled": true,
+        "active_preset": "Gentle Instrument",
+        "mappings": {
+          "attack": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.06,
+            "smoothing": 0.18,
+            "max_contribution": 0.18,
+            "decay_time": 0.55,
+            "dead_zone": 0.08
+          },
+          "sustain": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.35,
+            "smoothing": 0.55,
+            "max_contribution": 0.22,
+            "decay_time": 1.8,
+            "dead_zone": 0.07
+          },
+          "intensity": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.22,
+            "smoothing": 0.48,
+            "max_contribution": 0.16,
+            "decay_time": 1.2,
+            "dead_zone": 0.06
+          },
+          "interaction": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.45,
+            "smoothing": 0.62,
+            "max_contribution": 0.28,
+            "decay_time": 2.0,
+            "dead_zone": 0.1
+          },
+          "silence": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.7,
+            "smoothing": 0.7,
+            "max_contribution": 1.0,
+            "decay_time": 1.8,
+            "dead_zone": 0.05
+          }
+        }
+      }
+    },
+    {
+      "name": "Live Guitar Gentle Test",
+      "description": "Saved from Audio Reactive Tuning Mode.",
+      "settings": {
+        "schema_version": "1.0.0",
+        "last_modified": "2026-07-18T16:10:08-06:00",
+        "enabled": true,
+        "active_preset": "Live Guitar Gentle Test",
+        "mappings": {
+          "attack": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.06,
+            "smoothing": 0.18,
+            "max_contribution": 0.18,
+            "decay_time": 0.55,
+            "dead_zone": 0.08
+          },
+          "sustain": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.35,
+            "smoothing": 0.55,
+            "max_contribution": 0.22,
+            "decay_time": 1.8,
+            "dead_zone": 0.07
+          },
+          "intensity": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.22,
+            "smoothing": 0.48,
+            "max_contribution": 0.16,
+            "decay_time": 1.2,
+            "dead_zone": 0.06
+          },
+          "interaction": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.45,
+            "smoothing": 0.62,
+            "max_contribution": 0.28,
+            "decay_time": 2.0,
+            "dead_zone": 0.1
+          },
+          "silence": {
+            "enabled": true,
+            "sensitivity": 1.0,
+            "response_speed": 0.7,
+            "smoothing": 0.7,
+            "max_contribution": 1.0,
+            "decay_time": 1.8,
+            "dead_zone": 0.05
+          }
+        }
+      }
+    },
+    {
+      "name": "Audio Tuning Tab Validation",
+      "description": "Saved from Audio Reactive Tuning Mode.",
+      "settings": {
+        "schema_version": "2.0.0",
+        "last_modified": "2026-07-18T16:27:30-06:00",
+        "enabled": true,
+        "active_preset": "Audio Tuning Tab Validation",
+        "effect_mappings": {
+          "liquid_warp": {
+            "enabled": true,
+            "source": "sustain",
+            "sensitivity": 1.0,
+            "response_speed": 0.35,
+            "smoothing": 0.55,
+            "max_contribution": 0.22,
+            "decay_time": 1.8,
+            "dead_zone": 0.07
+          },
+          "edge_glow": {
+            "enabled": true,
+            "source": "guitar_a",
+            "sensitivity": 1.0,
+            "response_speed": 0.06,
+            "smoothing": 0.18,
+            "max_contribution": 0.18,
+            "decay_time": 0.55,
+            "dead_zone": 0.08
+          },
+          "mirror": {
+            "enabled": true,
+            "source": "combined_energy",
+            "sensitivity": 1.0,
+            "response_speed": 0.45,
+            "smoothing": 0.62,
+            "max_contribution": 0.28,
+            "decay_time": 2.0,
+            "dead_zone": 0.1
+          },
+          "color_saturation": {
+            "enabled": true,
+            "source": "combined_energy",
+            "sensitivity": 1.0,
+            "response_speed": 0.22,
+            "smoothing": 0.48,
+            "max_contribution": 0.16,
+            "decay_time": 1.2,
+            "dead_zone": 0.06
+          }
+        }
+      }
+    }
+  ]
+}

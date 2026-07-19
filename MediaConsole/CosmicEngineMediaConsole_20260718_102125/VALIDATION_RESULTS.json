@@ -1,0 +1,39 @@
+{
+  "ok": true,
+  "started_at": "2026-07-18T10:32:12-06:00",
+  "completed_at": "2026-07-18T10:32:14-06:00",
+  "isolation": "Temporary console copy and synthetic source outside VisionBoard",
+  "fixture_source": {
+    "duration_seconds": 38.0,
+    "resolution": "640x360",
+    "sha256_unchanged": true
+  },
+  "scan": {
+    "first_scan_new": 1,
+    "second_scan_new": 0,
+    "existing_sources_rescanned": 0
+  },
+  "generation": {
+    "new_atoms": 3,
+    "unique_ids": true,
+    "preview_files_readable": true
+  },
+  "review": {
+    "approved_test_atom": "ce-mc-9a9ce4c65680ae",
+    "rejected_test_atom": "ce-mc-bd590169322015",
+    "existing_decisions_unchanged": 1158
+  },
+  "runtime": {
+    "before": 282,
+    "after_publish": 283,
+    "approved_present": true,
+    "rejected_absent": true,
+    "live_reload_count": 283
+  },
+  "data_validation": {
+    "catalog_json": true,
+    "review_json": true,
+    "runtime_json": true,
+    "source_media_unchanged": true
+  }
+}

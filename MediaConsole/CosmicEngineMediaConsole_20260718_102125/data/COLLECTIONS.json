@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0.0",
+  "last_modified": "2026-07-18T10:19:04-06:00",
+  "collections": [
+    {
+      "name": "Abstract",
+      "description": "Nonliteral, graphic, microscopic, or material imagery.",
+      "user_created": false
+    },
+    {
+      "name": "Architecture",
+      "description": "Buildings, interiors, structures, and spatial geometry.",
+      "user_created": false
+    },
+    {
+      "name": "Background Texture",
+      "description": "Layer-friendly environmental or textural footage.",
+      "user_created": false
+    },
+    {
+      "name": "Body",
+      "description": "Anatomy, eyes, faces, gesture, and organic human form.",
+      "user_created": false
+    },
+    {
+      "name": "Calm",
+      "description": "Low-energy or contemplative material.",
+      "user_created": false
+    },
+    {
+      "name": "Camera Motion",
+      "description": "Noticeable camera travel, drift, pan, or handheld motion.",
+      "user_created": false
+    },
+    {
+      "name": "Conflict",
+      "description": "Violence, unrest, explosions, and editorially sensitive material.",
+      "user_created": false
+    },
+    {
+      "name": "Cosmos",
+      "description": "Space, planets, stars, and celestial scale.",
+      "user_created": false
+    },
+    {
+      "name": "Crowds",
+      "description": "Groups of people and collective motion.",
+      "user_created": false
+    },
+    {
+      "name": "Deep / Underwater",
+      "description": "Depth, oceans, darkness, immersion, and underwater feeling.",
+      "user_created": false
+    },
+    {
+      "name": "Film Texture",
+      "description": "Grain, archival artifacts, analog noise, and aged imagery.",
+      "user_created": false
+    },
+    {
+      "name": "Fire",
+      "description": "Flame, embers, plasma, heat, and combustion.",
+      "user_created": false
+    },
+    {
+      "name": "Hero Visual",
+      "description": "Strong enough to carry the primary visual field.",
+      "user_created": false
+    },
+    {
+      "name": "High Energy",
+      "description": "Fast, forceful, or climactic material.",
+      "user_created": false
+    },
+    {
+      "name": "Humanity",
+      "description": "People, culture, civilization, and symbolic human activity.",
+      "user_created": false
+    },
+    {
+      "name": "Industry",
+      "description": "Machines, infrastructure, energy, and engineered systems.",
+      "user_created": false
+    },
+    {
+      "name": "Living World",
+      "description": "Plants, animals, cells, and ecosystems.",
+      "user_created": false
+    },
+    {
+      "name": "Locked / Stable",
+      "description": "Stable framing useful for compositing and layering.",
+      "user_created": false
+    },
+    {
+      "name": "Loopable",
+      "description": "Likely to support a useful visual loop.",
+      "user_created": false
+    },
+    {
+      "name": "Machinery",
+      "description": "Mechanical parts, vehicles, tools, and industrial movement.",
+      "user_created": false
+    },
+    {
+      "name": "Micro Texture",
+      "description": "Small details, particles, surfaces, and brief motion.",
+      "user_created": false
+    },
+    {
+      "name": "Nature",
+      "description": "Landscapes, weather, plants, animals, and natural systems.",
+      "user_created": false
+    },
+    {
+      "name": "Particles",
+      "description": "Dots, debris, sparks, cells, bubbles, or granular motion.",
+      "user_created": false
+    },
+    {
+      "name": "Smoke / Fog",
+      "description": "Smoke, haze, clouds, mist, and volumetric atmosphere.",
+      "user_created": false
+    },
+    {
+      "name": "Song Build",
+      "description": "Useful for rising motion, density, or anticipation.",
+      "user_created": false
+    },
+    {
+      "name": "Song Climax",
+      "description": "Useful for high-impact peak moments.",
+      "user_created": false
+    },
+    {
+      "name": "Song Intro",
+      "description": "Useful for establishing a performance or slow reveal.",
+      "user_created": false
+    },
+    {
+      "name": "Song Outro",
+      "description": "Useful for release, decay, and closing imagery.",
+      "user_created": false
+    },
+    {
+      "name": "Transformation",
+      "description": "Metamorphosis, material change, and abstract evolution.",
+      "user_created": false
+    },
+    {
+      "name": "Transition Material",
+      "description": "Short accents and visual bridges.",
+      "user_created": false
+    },
+    {
+      "name": "Water",
+      "description": "Water, waves, ripples, reflections, and aquatic imagery.",
+      "user_created": false
+    }
+  ]
+}

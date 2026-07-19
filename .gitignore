@@ -18,3 +18,15 @@ CosmicEngineApp/Config/calibration-presets.json
 # planning pass - reference/runtime data, not source, not needed to build or
 # run the engine.
 VisionBoard/
+# VideoCurationOutput: local video-atom curation review tooling + generated
+# previews/thumbnails (1.1GB) - runtime/generated review data, not source.
+VideoCurationOutput/
+
+# Media Console: commit the tool's source + curation state, but not its
+# self-packaged archive, timestamped runtime backups, or the demo recording -
+# those are regenerable artifacts, consistent with how DiagnosticReports and
+# other generated content are excluded.
+MediaConsole/*.zip
+MediaConsole/**/backups/
+MediaConsole/**/demo/
+MediaConsole/**/generated_media/

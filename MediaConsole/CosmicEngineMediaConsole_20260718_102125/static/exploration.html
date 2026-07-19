@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cosmic Engine · Visual Exploration</title>
+  <link rel="stylesheet" href="/exploration.css">
+</head>
+<body>
+  <svg class="svg-filters" aria-hidden="true">
+    <filter id="posterize"><feComponentTransfer><feFuncR type="discrete" tableValues="0 .2 .45 .72 1"/><feFuncG type="discrete" tableValues="0 .18 .42 .7 1"/><feFuncB type="discrete" tableValues="0 .24 .5 .78 1"/></feComponentTransfer></filter>
+    <filter id="duotone"><feColorMatrix type="matrix" values=".36 .72 .07 0 0  .15 .30 .03 0 .02  .52 1.04 .10 0 .06  0 0 0 1 0"/></filter>
+    <filter id="liquidWarp" x="-30%" y="-30%" width="160%" height="160%">
+      <feTurbulence id="liquidNoise" type="fractalNoise" baseFrequency=".015 .021" numOctaves="2" seed="17" result="noise"/>
+      <feOffset id="liquidOffset" in="noise" dx="0" dy="0" result="movedNoise"/>
+      <feTile in="movedNoise" result="tiledNoise"/>
+      <feDisplacementMap id="liquidDisplace" in="SourceGraphic" in2="tiledNoise" scale="0" xChannelSelector="R" yChannelSelector="B"/>
+    </filter>
+    <filter id="edgeGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur id="edgePreBlur" in="SourceGraphic" stdDeviation="1" result="denoised"/>
+      <feColorMatrix in="denoised" type="saturate" values="0" result="gray"/>
+      <feConvolveMatrix id="edgeKernel" in="gray" order="3" kernelMatrix="-1 -1 -1 -1 8 -1 -1 -1 -1" preserveAlpha="false" result="edges"/>
+      <feComponentTransfer in="edges" result="sensitiveEdges"><feFuncR id="edgeGainR" type="linear" slope="1"/><feFuncG id="edgeGainG" type="linear" slope="1"/><feFuncB id="edgeGainB" type="linear" slope="1"/><feFuncA type="linear" slope="1"/></feComponentTransfer>
+      <feMorphology id="edgeDilate" in="sensitiveEdges" operator="dilate" radius="1" result="wideEdges"/>
+      <feGaussianBlur id="edgeBlur" in="wideEdges" stdDeviation="2" result="softEdges"/>
+      <feFlood id="edgeFlood" flood-color="hsl(285 100% 70%)" result="edgeColor"/>
+      <feComposite in="edgeColor" in2="softEdges" operator="in" result="coloredEdges"/>
+      <feComponentTransfer in="coloredEdges" result="glowEdges"><feFuncA id="edgeGlowAlpha" type="linear" slope="0"/></feComponentTransfer>
+      <feComponentTransfer in="SourceGraphic" result="sourceLayer"><feFuncA id="edgeSourceAlpha" type="linear" slope="1"/></feComponentTransfer>
+      <feMerge><feMergeNode in="sourceLayer"/><feMergeNode in="glowEdges"/></feMerge>
+    </filter>
+  </svg>
+
+  <header>
+    <div><p id="pageEyebrow" class="eyebrow">TAB 2 · APPROVED-ONLY RUNTIME LIBRARY</p><h1 id="pageTitle">Visual Exploration &amp; Effects <small>Media Console</small></h1></div>
+    <div class="header-stats"><button id="refreshLibrary">Refresh Atom Library</button><span><strong id="approvedCount">—</strong> approved atoms</span><span id="saveStatus" class="saved">Saved</span></div>
+  </header>
+
+  <main>
+    <section class="performance" aria-label="Video performance">
+      <div id="stageWrap" class="stage-wrap">
+        <canvas id="stage" aria-label="Effected approved video atom"></canvas>
+        <img id="fallback" alt="Preview unavailable; representative thumbnail shown">
+        <div id="grain" class="grain"></div><div id="vhs" class="vhs"></div><div id="vignette" class="vignette"></div>
+        <div class="stage-labels"><span id="groupBadge">NORMAL · 70%</span><span id="qualityBadge">ORIGINAL SOURCE</span><span id="clipHealthBadge">LOADING</span><span id="presetBadge">Queen Cosmic Dream</span></div>
+        <div id="clipPausedBadge" class="paused-badge">CLIP TIMELINE PAUSED</div>
+      </div>
+      <div class="transport">
+        <button id="previous" title="Previous clip">← Previous</button>
+        <button id="clipPause" class="primary">Pause clips</button>
+        <button id="skip">Skip clip →</button>
+        <button id="fullscreen" title="Show only the visuals in full screen">Full Screen Visuals</button>
+        <label class="quality-control">Preview Quality <select id="qualityMode" aria-label="Preview Quality"><option value="proxy">Proxy</option><option value="original">Original</option></select></label>
+        <label class="transition-control">Crossfade · random 1–7s <input id="transitionDuration" type="range" min="1000" max="7000" step="100" value="1000" disabled aria-label="Randomized crossfade duration"><output id="transitionDurationValue">1.0s</output></label>
+      </div>
+      <section class="atom-info" aria-label="Current atom information">
+        <div><p class="eyebrow">CURRENT ATOM</p><h2 id="atomId">Loading…</h2><p id="description"></p></div>
+        <dl><div><dt>Time</dt><dd id="timestamps">—</dd></div><div><dt>Tier</dt><dd id="tier">—</dd></div><div><dt>Motif</dt><dd id="motif">—</dd></div><div><dt>Mood</dt><dd id="mood">—</dd></div><div><dt>Energy</dt><dd id="energy">—</dd></div><div><dt>Motion</dt><dd id="motion">—</dd></div><div><dt>Synergy</dt><dd id="synergy">—</dd></div></dl>
+        <div id="tags" class="tags"></div>
+      </section>
+    </section>
+
+    <aside class="playground">
+      <section class="audio-tuning-panel" aria-label="Audio Reactive Tuning Mode">
+        <div class="audio-tuning-title">
+          <div><p class="eyebrow">LIVE GUITAR CONTROL</p><h2>Audio Reactive Tuning Mode</h2></div>
+          <label class="mode-toggle"><input id="audioTuningEnabled" type="checkbox"><span>Enabled</span></label>
+        </div>
+        <div class="audio-status-row"><span id="audioCoreStatus" class="audio-status offline">CORE OFFLINE</span><span id="audioActivePreset">Gentle Instrument</span></div>
+
+        <div class="guitar-debug-grid">
+          <article class="guitar-card" data-guitar="a">
+            <div class="guitar-heading"><strong>GUITAR A</strong><span id="audioAState">INACTIVE</span></div>
+            <label>Input level <output id="audioALevelValue">0.00</output><span class="signal-meter"><i id="audioALevel"></i></span></label>
+            <label>Raw RMS <output id="audioARmsValue">0.00</output><span class="signal-meter"><i id="audioARms"></i></span></label>
+            <label>Attack <output id="audioAAttackValue">0.00</output><span class="signal-meter attack"><i id="audioAAttack"></i></span></label>
+            <label>Sustain <output id="audioASustainValue">0.00</output><span class="signal-meter sustain"><i id="audioASustain"></i></span></label>
+            <div class="silence-readout">Silence <strong id="audioASilence">YES</strong></div>
+            <label class="calibration-gain">Visual-control gain <output id="audioGainAValue">1.00×</output><input id="audioGainA" type="range" min="0" max="32" step="0.25" value="1"></label>
+          </article>
+          <article class="guitar-card" data-guitar="b">
+            <div class="guitar-heading"><strong>GUITAR B</strong><span id="audioBState">INACTIVE</span></div>
+            <label>Input level <output id="audioBLevelValue">0.00</output><span class="signal-meter"><i id="audioBLevel"></i></span></label>
+            <label>Raw RMS <output id="audioBRmsValue">0.00</output><span class="signal-meter"><i id="audioBRms"></i></span></label>
+            <label>Attack <output id="audioBAttackValue">0.00</output><span class="signal-meter attack"><i id="audioBAttack"></i></span></label>
+            <label>Sustain <output id="audioBSustainValue">0.00</output><span class="signal-meter sustain"><i id="audioBSustain"></i></span></label>
+            <div class="silence-readout">Silence <strong id="audioBSilence">YES</strong></div>
+            <label class="calibration-gain">Visual-control gain <output id="audioGainBValue">1.00×</output><input id="audioGainB" type="range" min="0" max="32" step="0.25" value="1"></label>
+          </article>
+        </div>
+        <p class="gain-note">This gain affects only the normalized visual-control signal. Reduce Clarett preamp gain if the interface itself clips.</p>
+
+        <div class="combined-debug">
+          <label>Performance energy <output id="performanceEnergyValue">0.00</output><span class="signal-meter combined"><i id="performanceEnergy"></i></span></label>
+          <label>Both-guitar interaction <output id="interactionMeterValue">0.00</output><span class="signal-meter interaction"><i id="interactionMeter"></i></span></label>
+          <strong id="interactionState">SOLO / IDLE</strong>
+        </div>
+
+        <section class="live-effect-readout" aria-label="Live modulated effect values">
+          <p class="eyebrow">LIVE EFFECT RESPONSE <strong id="modulationState">WAITING FOR PLAYING</strong></p>
+          <div><span>Liquid Warp</span><strong id="liveLiquidWarp">0.00</strong></div>
+          <div><span>Edge Glow</span><strong id="liveEdgeGlow">0.00</strong></div>
+          <div><span>Mirror blend</span><strong id="liveMirror">0.00</strong></div>
+          <div><span>Saturation</span><strong id="liveSaturation">1.00</strong></div>
+        </section>
+
+        <details class="mapping-tuner" open>
+          <summary>Effect mapping controls</summary>
+          <div id="audioMappingGroups"></div>
+        </details>
+
+        <div class="audio-preset-panel">
+          <p class="eyebrow">TUNING PRESETS</p>
+          <div class="audio-preset-row"><select id="audioTuningPreset" aria-label="Audio tuning preset"></select><button id="loadAudioTuningPreset">Load</button></div>
+          <div class="audio-preset-row"><input id="audioTuningPresetName" maxlength="80" placeholder="Name this response"><button id="saveAudioTuningPreset">Save</button></div>
+          <p id="audioTuningSaveState">Tuning saved</p>
+        </div>
+
+        <details class="audio-test-workflow" open>
+          <summary>Guided input test</summary>
+          <ol>
+            <li id="audioTestA"><span>1</span><div><strong>Play Guitar A only</strong><small>Waiting for A while B is silent</small></div></li>
+            <li id="audioTestB"><span>2</span><div><strong>Play Guitar B only</strong><small>Waiting for B while A is silent</small></div></li>
+            <li id="audioTestBoth"><span>3</span><div><strong>Play both guitars</strong><small>Waiting for interaction</small></div></li>
+            <li id="audioTestSilence"><span>4</span><div><strong>Stop playing</strong><small>Observe the gradual return to base</small></div></li>
+          </ol>
+          <button id="resetAudioTest">Reset test observations</button>
+        </details>
+      </section>
+
+      <section class="timeline-panel">
+        <p class="eyebrow">EFFECT TIMELINE</p>
+        <div class="timeline-state"><div><small>CURRENT</small><strong id="currentEffectState">Queen Cosmic Dream</strong></div><span>→</span><div><small>UPCOMING</small><strong id="upcomingEffectState">—</strong></div></div>
+        <div class="morph-meter"><div id="morphBar"></div></div><p id="morphProgress">Holding · 0%</p>
+        <div class="timeline-buttons"><button id="effectPause">Pause effects</button><button id="nextMorph">Begin next morph</button><button id="effectLock">Lock state</button></div>
+        <div class="timeline-settings">
+          <label>State min (s)<input id="effectDurationMin" type="number" min="5" max="300" value="15"></label>
+          <label>State max (s)<input id="effectDurationMax" type="number" min="5" max="300" value="45"></label>
+          <label>Morph min (s)<input id="morphDurationMin" type="number" min="1" max="60" value="5"></label>
+          <label>Morph max (s)<input id="morphDurationMax" type="number" min="1" max="60" value="15"></label>
+          <label>Deterministic seed<input id="deterministicSeed" type="number" step="1" value="1337"></label>
+          <button id="resetSeed">Restart seeded timelines</button>
+        </div>
+      </section>
+
+      <section class="preset-panel">
+        <p class="eyebrow">EFFECT PRESETS</p>
+        <div class="preset-row"><select id="presetSelect" aria-label="Effect preset"></select><button id="randomPreset">Random</button></div>
+        <div class="save-preset-row"><input id="presetName" placeholder="Name this combination" maxlength="80"><button id="savePreset">Save preset</button></div>
+      </section>
+
+      <div id="effectGroups"></div>
+      <button id="resetEffects" class="reset">Reset all effects</button>
+      <p class="hint">Space: pause clips · E: pause effects · F: full screen visuals · ← previous · → skip · M: next morph</p>
+    </aside>
+  </main>
+  <script src="/exploration.js"></script>
+</body>
+</html>
