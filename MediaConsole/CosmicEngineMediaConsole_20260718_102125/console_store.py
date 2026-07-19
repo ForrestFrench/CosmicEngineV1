@@ -311,7 +311,7 @@ class ConsoleStore:
         }
 
     @classmethod
-    def sanitize_audio_tuning(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def sanitize_audio_tuning(cls, payload: Dict[str, Any], existing_band_logo: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         result = {"schema_version": "2.0.0", "last_modified": now_iso(), "enabled": bool(payload.get("enabled", True)), "active_preset": str(payload.get("active_preset") or "Custom")[:80], "effect_mappings": {}}
         incoming = payload.get("effect_mappings", {})
         legacy = payload.get("mappings", {})
@@ -324,12 +324,26 @@ class ConsoleStore:
                 field: cls._clamp_mapping_value(field, values.get(field, defaults[field]), defaults[field], defaults["source"])
                 for field in ("enabled", "source", "sensitivity", "response_speed", "smoothing", "max_contribution", "decay_time", "dead_zone")
             }
-        result["band_logo"] = cls.sanitize_band_logo(payload.get("band_logo", {}))
+        # band_logo is intentionally NOT reset to package defaults just because a
+        # caller's payload omits it (every full-object save path - preset
+        # save/load, the master-enable toggle, beforeunload - builds its payload
+        # from fields it actually knows about, which never included band_logo).
+        # Without this fallback, loading an audio tuning preset would silently
+        # wipe the user's chosen fade durations back to 1.5s/2.5s/disabled - the
+        # exact stale-object-overwrite bug class this file's per-field-patch
+        # endpoints exist to avoid (see AUDIT.md Entry 52). A payload that
+        # explicitly sends band_logo (the /api/audio/tuning/logo/field patch
+        # path, or a genuine full re-save with it deliberately included) is
+        # still honored.
+        band_logo_payload = payload.get("band_logo")
+        if band_logo_payload is None:
+            band_logo_payload = existing_band_logo or {}
+        result["band_logo"] = cls.sanitize_band_logo(band_logo_payload)
         return result
 
     def save_audio_tuning(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         with self.lock:
-            self.audio_tuning = self.sanitize_audio_tuning(payload)
+            self.audio_tuning = self.sanitize_audio_tuning(payload, existing_band_logo=self.audio_tuning.get("band_logo"))
             atomic_json_write(self.audio_tuning_path, self.audio_tuning)
             return dict(self.audio_tuning)
 
@@ -371,7 +385,7 @@ class ConsoleStore:
         name = re.sub(r"\s+", " ", str(name or "").strip())[:80]
         if not name:
             raise ValueError("Audio tuning preset name is required")
-        sanitized = self.sanitize_audio_tuning({**settings, "active_preset": name})
+        sanitized = self.sanitize_audio_tuning({**settings, "active_preset": name}, existing_band_logo=self.audio_tuning.get("band_logo"))
         record = {"name": name, "description": "Saved from Audio Reactive Tuning Mode.", "settings": sanitized}
         with self.lock:
             presets = self.audio_tuning_presets.setdefault("presets", [])
