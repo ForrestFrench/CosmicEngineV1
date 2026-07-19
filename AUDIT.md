@@ -6533,3 +6533,63 @@ staged around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (E
 `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 59 — Media Console: fix chromatic aberration saturation not scaling with the slider (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+Following Entry 57 (attack-only audio reactivity), user reported many effects producing blown-out,
+flat-looking colors and initially suspected the Infinite Trail & Datamoshing preset was shifting the
+base video's hue. Code inspection (`drawSingle()`/`rebuildMotionTrail()`) showed the trail's rainbow
+coloring is already fully isolated to its own offscreen `motionTrailCtx`/`motionGhostCtx` canvases and
+never touches the base video draw - ruling that specific mechanism out. As a precaution, Entry 57's
+audio-reactive hue modulation was removed from `modulateEffects()` anyway (base hue now always equals
+whatever the active preset authored, never audio-shifted) and its brightness/saturation coefficients
+were pulled back, since sustained playing under the original Entry 57 formula could plausibly also
+produce a washed-out look.
+
+User then found the actual root cause independently: the **Chromatic Aberration** slider (0-100%) blew
+out color even at 1%.
+
+### Root cause
+`drawSingle()`'s chromatic-aberration branch draws two hue-shifted (+/-105 deg), 'screen'-blended ghost
+copies of the frame, offset a few pixels apart. The pixel offset (`chromatic*13`) and blend opacity
+(`chromatic*.13`) both scale correctly with the slider's 0-1 value - but the color intensity applied to
+those ghost copies, `ctx.filter='hue-rotate(105deg) saturate(3)'`, used a **hardcoded `saturate(3)`**
+(300% saturation) independent of the slider entirely. Even at `chromatic=0.01`, both ghost copies were
+still drawn at full 300% saturation - only their opacity was low. Because `globalCompositeOperation`
+is `'screen'` (which only ever lightens toward white, never darkens), two overlapping oversaturated
+hue-shifted layers were enough to visibly wash out the image even at what should have been a
+near-imperceptible 1% setting.
+
+### Fix
+`static/exploration.js` `drawSingle()`: the saturation factor is now computed as `1 + chromatic*2`
+(1.0x at `chromatic=0`, 3.0x at `chromatic=1`, preserving the original full-strength look at 100%) and
+interpolated into both `ctx.filter` strings instead of the hardcoded `saturate(3)`.
+
+### Verification
+1. Direct code read confirmed the trail/datamosh mechanism was never the cause (see Context above) -
+   documented honestly rather than silently accepting the user's initial hypothesis as correct.
+2. Set `effects.chromatic=0.01` directly and rendered: screenshot shows natural, unblown color on a
+   forest/moth atom.
+3. Set `effects.chromatic=1.0` and rendered: screenshot confirms the full dramatic wash-to-white effect
+   still occurs at maximum setting, exactly as originally designed - the fix changes the *scaling*, not
+   the ceiling.
+4. Reset `effects.chromatic` back to the active preset's authored value (0.12) after testing; the test
+   was performed via direct in-memory state mutation and never touched saved session data.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/static/exploration.js` only (the Entry 57-related
+hue/brightness/saturation changes described in Context are bundled into this same commit, since they
+were made and verified together in the same pass before the user identified the real chromatic-
+aberration cause). `static/exploration.html`'s "Live Effect Response" panel also lost its now-meaningless
+"Hue shift" readout row (hue is no longer audio-reactive) as part of the same change. Line-level staged
+around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48) - verified via
+`git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

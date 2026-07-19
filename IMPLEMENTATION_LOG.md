@@ -2234,3 +2234,18 @@ max-contribution/decay-time/dead-zone/source, `buildAudioTuningControls`/`patchA
 attack). Server-side schema (`console_store.py`) untouched, left inert for a future richer-controls
 pass. User-confirmed live with real guitar playing ("It's much more dramatic now"). See `AUDIT.md`
 Entry 57.
+
+## 2026-07-19 — Media Console: remove frozen atom + fix chromatic aberration scaling
+
+Two follow-ups. First, found and removed `ce-va2-a2be6a90a2b63f` (a fully-frozen 11.8s atom, confirmed
+via `ffmpeg freezedetect` scanning all 281 approved previews - pre-computed motion metadata didn't
+catch it since it's a decode/playback issue, not low source motion) via `/api/review/update` +
+`/api/library/save` + `/api/library/refresh`; seven other 96-99%-frozen atoms were flagged but
+explicitly left untouched per user instruction. Second, user reported blown-out colors across many
+effects; traced to a real bug in `drawSingle()`'s chromatic aberration branch - the ghost-copy
+saturation was hardcoded `saturate(3)` regardless of the 0-100% slider value (only offset/opacity
+scaled), so even 1% blew out color. Fixed to scale `1+chromatic*2` with the slider. Also removed
+Entry 57's audio-reactive hue modulation entirely (base hue never shifts now, only the independent
+motion-trail layer introduces color) and pulled back its brightness/saturation coefficients as a
+precaution, though the chromatic aberration bug was the actual root cause the user identified. See
+`AUDIT.md` Entries 58-59.

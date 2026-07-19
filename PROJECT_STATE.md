@@ -455,3 +455,10 @@ the UI for now. `modulateEffects()` reads guitar attack directly with much large
 (brightness +90%/saturation +1.8/hue +/-80deg at full attack). Live-confirmed by the user playing real
 guitar. Server-side schema left in place, unused, for a future richer-controls pass. See `AUDIT.md`
 Entry 57.
+
+**Frozen atom removed + chromatic aberration bug fixed (2026-07-19):** `ce-va2-a2be6a90a2b63f` (fully
+frozen, found via full-library `ffmpeg freezedetect` scan) rejected and removed from the runtime
+library, now 280 approved atoms. Chromatic Aberration's ghost-copy saturation was hardcoded to 300%
+regardless of the slider - fixed to scale with it, so low settings are now actually subtle. Audio
+reactivity no longer touches hue at all (Entry 57's hue modulation removed); brightness/saturation
+coefficients pulled back. See `AUDIT.md` Entries 58-59.
