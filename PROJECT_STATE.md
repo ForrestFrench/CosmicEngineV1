@@ -448,3 +448,10 @@ See `AUDIT.md` Entry 55.
 
 **Band-logo wordmark sized up (2026-07-19):** now 8.8% of stage width (was 5.6%), picked by the user
 from three Artifact-rendered size options. See `AUDIT.md` Entry 56.
+
+**Audio reactivity simplified to attack-only (2026-07-19):** the configurable Color/Saturation mapping
+(sensitivity/response-speed/smoothing/max-contribution/decay-time/dead-zone/source) is removed from
+the UI for now. `modulateEffects()` reads guitar attack directly with much larger coefficients
+(brightness +90%/saturation +1.8/hue +/-80deg at full attack). Live-confirmed by the user playing real
+guitar. Server-side schema left in place, unused, for a future richer-controls pass. See `AUDIT.md`
+Entry 57.

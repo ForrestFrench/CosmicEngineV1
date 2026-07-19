@@ -2218,3 +2218,19 @@ User picked a larger size (8.8% of stage width) from three Claude-Artifact-rende
 with the exact shipped font/gradient/glow. `.band-logo-text`'s clamp changed from
 `clamp(26px, 5.6cqw, 120px)` to `clamp(26px, 8.8cqw, 220px)` - the ceiling was raised proportionally
 so it doesn't become a new binding constraint at realistic fullscreen widths. See `AUDIT.md` Entry 56.
+
+## 2026-07-19 — Media Console: simplify audio reactivity to attack-only
+
+Live tuning session found the Color/Saturation mapping's visual ceiling was hard-coded in
+`modulateEffects()` (max +25% brightness / +0.72 saturation / +28deg hue at full contribution) -
+independent of the Sensitivity/Maximum Contribution sliders, which only controlled how easily the
+mapping's envelope reached 1.0, not what happened after. A first attempt raising those coefficients
+was verified mathematically but rejected live by the user as still not dramatic enough. Per direct
+user request, removed the entire configurable mapping pipeline (sensitivity/response-speed/smoothing/
+max-contribution/decay-time/dead-zone/source, `buildAudioTuningControls`/`patchAudioTuningField`/
+`updateMappingLevels`/`rawMappingValue`) and replaced it with a direct, fast attack-only response:
+`modulateEffects()` now reads `audioCurrent.guitar_a/b.attack` straight (already smoothed ~35ms rise/
+~240ms fall) with much larger coefficients (brightness +90%, saturation +1.8, hue +/-80deg at full
+attack). Server-side schema (`console_store.py`) untouched, left inert for a future richer-controls
+pass. User-confirmed live with real guitar playing ("It's much more dramatic now"). See `AUDIT.md`
+Entry 57.

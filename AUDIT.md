@@ -6398,3 +6398,85 @@ around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md` (Entry 48
 `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 57 — Media Console: simplify audio reactivity to attack-only, remove mapping controls (v0.1)
+
+**Date:** 2026-07-19
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+Live guitar tuning session (per user request, following Entries 51-56). User reported the visual
+reaction still felt minimal even with the Color/Saturation mapping's Sensitivity at its 4.0x maximum
+and Maximum Contribution at 100% — screenshot evidence showed exactly those settings maxed with a
+"0.00" live readout at rest. Root cause found by direct code inspection (not guessed): `modulateEffects()`
+applied the mapping's 0-1 contribution value through small, hard-coded coefficients that no UI control
+ever touched -
+`brightness*(1+color*.25)` (max +25%), `saturation+color*.72` (max +0.72), `hue+color*28` (max +/-28 deg).
+Sensitivity/Maximum Contribution only affect how easily the mapping's internal envelope reaches 1.0 -
+once it does, the visual result is capped by those fixed numbers regardless of further tuning. Confirmed
+via direct math (`modulateEffects({brightness:1,saturation:1,hue:0}, signal, tuning, {color_saturation:1})`)
+that the user's exact settings were already producing `color=1.0` on hard attacks, i.e. they had already
+hit the true ceiling - further tuning could never have helped.
+
+A first attempt raised the coefficients (`.6`/`1.4`/`55`) and was verified mathematically to produce a
+much larger swing (brightness 1.6, saturation 2.4, hue 55). Live-tested with the user playing real
+guitar; user reported it was **still not dramatic at all**, despite the formula genuinely producing a
+larger number than before. At that point the user redirected: rather than keep iterating on coefficient
+size, simplify the whole feature down to attack-only with no configurable mapping layer, "focus on this
+first, we'll add more later."
+
+### Change
+Removed the entire per-mapping configuration UI and pipeline from `static/exploration.js`/`.html`:
+`buildAudioTuningControls()`, `patchAudioTuningField()`, `updateMappingLevels()`, `rawMappingValue()`,
+the `mappingLevels`/`mappingContributions` globals, and the "Color / Saturation Mapping" HTML section
+(sensitivity/response-speed/smoothing/max-contribution/decay-time/dead-zone sliders + source dropdown).
+`modulateEffects()` now reads `audioCurrent.guitar_a.attack`/`guitar_b.attack` **directly** (the values
+already smoothed client-side in `updateAudioSignals()` with a fast ~35ms rise / ~240ms fall, see
+`AUDIO_FIELDS` handling) rather than passing them through a second, separately-configured smoothing/
+envelope/dead-zone layer - removing that second smoothing stage is itself part of why the response
+should now feel faster, independent of the coefficient size. New formula, pushed further than the first
+attempt given the live "still not dramatic" feedback:
+`brightness*(1+attack*.9)` (max +90%, ceiling raised .4-2.2), `saturation+attack*1.8` (max +1.8, ceiling
+raised 0-3), `hue+attack*80` (max +/-80 deg). Gated only by the existing master `audioTuning.enabled`
+toggle (unchanged) - no other control surface remains for this pass.
+
+**Deliberately left in place, unused for now:** `console_store.py`/`media_console.py` were not touched.
+`DEFAULT_AUDIO_TUNING`/`AUDIO_MAPPING_LEGACY`/`AUDIO_MAPPING_SOURCES`/`patch_audio_tuning_field()`/
+`POST /api/audio/tuning/field` all still exist server-side, and `audioTuning.effect_mappings` still
+round-trips through `sanitizeAudioTuning()` client-side (kept only so the schema stays intact for a
+future pass per the user's "we'll add more later") - none of it is built into any UI or consulted by
+`modulateEffects()` anymore. The Tuning Presets panel (save/load named response snapshots) was left in
+place unmodified; it still saves/loads the now-inert `effect_mappings` blob alongside `enabled`, which
+is harmless (nothing reads it) but not deleted, since presets themselves weren't part of this request.
+
+### Verification
+1. **Root-cause proof (deterministic, not signal-timing-dependent):** called `modulateEffects()` directly
+   with a synthetic `contribution.color_saturation=1.0` under the *old* formula and confirmed the ceiling
+   values (1.25/1.72/28) matched exactly what the code specified - proving the user's maxed settings were
+   already at the wall before any fix.
+2. **First (intermediate) fix verified mathematically** (brightness 1.6/saturation 2.4/hue 55 at
+   `color=1.0`) but **live-rejected by the user** ("still not dramatic at all") after real playing -
+   documented honestly rather than treating a synthetic-math pass as sufficient sign-off, consistent with
+   this project's established evidence culture (Entry 51 etc.: a test pulse or direct formula call proves
+   the code path works, not that it *feels* right).
+3. **New attack-only formula verified mathematically**: `modulateEffects({brightness:1,saturation:1,hue:0}, {guitar_a:{attack:1.0},guitar_b:{attack:0}}, audioTuning)` → `{brightness:1.9, saturation:2.8, hue:80}`; at `attack:0.5` → `{brightness:1.45, saturation:1.9, hue:40}`.
+4. **Live-verified by the user playing real guitar** ("It's much more dramatic now") - this is the
+   binding confirmation for this pass, not the math alone.
+5. Attempted to catch a live transient via automated polling (curl for raw signal + a manual `render()`
+   pump in the browser pane, same technique as Entry 52) but consistently missed the peak due to
+   real-wall-clock latency between the two separate polling channels - documented as a tooling
+   limitation, not a product issue, and abandoned in favor of the user's own direct visual confirmation
+   above once it became clear the async polling couldn't reliably win the race against the attack
+   envelope's own fast decay.
+6. No console errors on load (`read_console_messages`); no Python files touched, so no backend restart
+   was required - static JS/HTML served fresh automatically.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/static/exploration.{html,js}` only - no CSS or
+Python changes this pass. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk in
+`AUDIT.md` (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
