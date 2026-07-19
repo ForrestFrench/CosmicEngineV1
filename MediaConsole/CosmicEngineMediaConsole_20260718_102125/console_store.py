@@ -31,14 +31,20 @@ DEFAULT_AUDIO_TUNING = {
     "enabled": True,
     "active_preset": "Gentle Instrument",
     "effect_mappings": {
-        "liquid_warp": {"enabled": True, "source": "sustain", "sensitivity": 1.0, "response_speed": 0.35, "smoothing": 0.55, "max_contribution": 0.22, "decay_time": 1.8, "dead_zone": 0.07},
-        "edge_glow": {"enabled": True, "source": "attack", "sensitivity": 1.0, "response_speed": 0.06, "smoothing": 0.18, "max_contribution": 0.18, "decay_time": 0.55, "dead_zone": 0.08},
-        "mirror": {"enabled": True, "source": "combined_energy", "sensitivity": 1.0, "response_speed": 0.45, "smoothing": 0.62, "max_contribution": 0.20, "decay_time": 2.0, "dead_zone": 0.10},
-        "color_saturation": {"enabled": True, "source": "combined_energy", "sensitivity": 1.0, "response_speed": 0.22, "smoothing": 0.48, "max_contribution": 0.16, "decay_time": 1.2, "dead_zone": 0.06},
+        "color_saturation": {"enabled": True, "source": "attack", "sensitivity": 1.0, "response_speed": 0.22, "smoothing": 0.48, "max_contribution": 0.16, "decay_time": 1.2, "dead_zone": 0.06},
     },
 }
-AUDIO_MAPPING_LEGACY = {"liquid_warp": "sustain", "edge_glow": "attack", "mirror": "interaction", "color_saturation": "intensity"}
+AUDIO_MAPPING_LEGACY = {"color_saturation": "intensity"}
 AUDIO_MAPPING_SOURCES = {"guitar_a", "guitar_b", "combined_energy", "attack", "sustain"}
+DEFAULT_BAND_LOGO = {
+    "enabled": False,
+    "visuals_fade_seconds": 1.5,
+    "logo_fade_seconds": 2.5,
+}
+BAND_LOGO_FIELD_RANGES = {
+    "visuals_fade_seconds": (0.3, 8.0),
+    "logo_fade_seconds": (0.3, 8.0),
+}
 
 
 def now_iso() -> str:
@@ -287,6 +293,24 @@ class ConsoleStore:
         return max(lo, min(hi, float(value)))
 
     @classmethod
+    def _clamp_band_logo_value(cls, field: str, value: Any, default: Any) -> Any:
+        if field == "enabled":
+            return bool(value)
+        lo, hi = BAND_LOGO_FIELD_RANGES[field]
+        try:
+            return max(lo, min(hi, float(value)))
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def sanitize_band_logo(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
+        payload = payload if isinstance(payload, dict) else {}
+        return {
+            field: cls._clamp_band_logo_value(field, payload.get(field, default), default)
+            for field, default in DEFAULT_BAND_LOGO.items()
+        }
+
+    @classmethod
     def sanitize_audio_tuning(cls, payload: Dict[str, Any]) -> Dict[str, Any]:
         result = {"schema_version": "2.0.0", "last_modified": now_iso(), "enabled": bool(payload.get("enabled", True)), "active_preset": str(payload.get("active_preset") or "Custom")[:80], "effect_mappings": {}}
         incoming = payload.get("effect_mappings", {})
@@ -300,6 +324,7 @@ class ConsoleStore:
                 field: cls._clamp_mapping_value(field, values.get(field, defaults[field]), defaults[field], defaults["source"])
                 for field in ("enabled", "source", "sensitivity", "response_speed", "smoothing", "max_contribution", "decay_time", "dead_zone")
             }
+        result["band_logo"] = cls.sanitize_band_logo(payload.get("band_logo", {}))
         return result
 
     def save_audio_tuning(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -324,6 +349,21 @@ class ConsoleStore:
             current[field] = self._clamp_mapping_value(field, value, defaults[field], defaults["source"])
             self.audio_tuning["last_modified"] = now_iso()
             self.audio_tuning["active_preset"] = "Custom"
+            atomic_json_write(self.audio_tuning_path, self.audio_tuning)
+            return dict(self.audio_tuning)
+
+    def patch_band_logo_field(self, field: str, value: Any) -> Dict[str, Any]:
+        """Same per-field-patch-not-full-object-save pattern as
+        patch_audio_tuning_field() above, applied to the band-logo fade
+        settings (enable toggle, visuals fade seconds, logo fade seconds) so
+        a stale tab can't clobber these either."""
+        if field not in DEFAULT_BAND_LOGO:
+            raise ValueError(f"Unknown band logo field: {field!r}")
+        default = DEFAULT_BAND_LOGO[field]
+        with self.lock:
+            current = self.audio_tuning.setdefault("band_logo", dict(DEFAULT_BAND_LOGO))
+            current[field] = self._clamp_band_logo_value(field, value, default)
+            self.audio_tuning["last_modified"] = now_iso()
             atomic_json_write(self.audio_tuning_path, self.audio_tuning)
             return dict(self.audio_tuning)
 
