@@ -2,7 +2,7 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
-**Last updated:** 2026-07-15 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc — now committed as `fed7a7d`, see `AUDIT.md` Entry 46; Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 — a distant alien-presence shadow layer, color-variation nudges, and 4-8 cheap background jellyfish, High holding ≥60fps in all three required forced states (61.4-62.6fps) — not yet committed, see `AUDIT.md` Entry 47)
+**Last updated:** 2026-07-17 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc — now committed as `fed7a7d`, see `AUDIT.md` Entry 46; Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 — a distant alien-presence shadow layer, color-variation nudges, and 4-8 cheap background jellyfish, plus a compositing-order visibility fix (Addendum 1) — committed as `28f3e43`, see `AUDIT.md` Entry 47 and its addendum; **Cosmic Reef Pivot Phase 1 v0.1 — World04 renamed "Cosmic Reef", pivoting from a purely underwater scene toward a psychedelic underwater-to-cosmic transformation (starfield, nebula retint, color-bloom wave, ribbon organisms, hero-jellyfish demotion, `uCosmic` accumulator tied to the same evolution-length slider as bloom) — NOT yet committed, NOT ready for review: the mandatory 60fps-floor performance check FAILED at sustained high bloom (~50fps measured, vs. the required ≥60fps) after two genuine optimization rounds; see `AUDIT.md` Entry 48 for the full investigation and its options memo.**)
 
 **Video Atoms Phase 3 "Effect Stack v1" (World05 HybridTest):** uniform-driven grayscale/mirror-X/
 mirror-Y/lift-gamma-gain grade/vignette added to the existing `hybrid.frag` composite shader after the
@@ -17,7 +17,6 @@ one browser tab/page-load held the panel open — a full-object last-write-wins 
 and fixed via a new per-field patch endpoint (`POST /api/audio/tuning/field`). See `AUDIT.md` Entry 52.
 Verified via synthetic test-pulse signal only (user was away); real two-guitar tuning session with the
 fix in place is still pending.
-
 
 **Entry 38 blocker status: appears resolved on this machine.** This session's own smoke-test/build logs show
 `[AudioEngine] Capture opened: device="Clarett 4Pre USB", ...` (not "Hue Sync Audio") — the user has since

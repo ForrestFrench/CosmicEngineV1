@@ -81,13 +81,20 @@ namespace CosmicEngine.App.Engine
             // Id is deliberately unchanged (Phase 1 "Living Water", display-
             // rename only) - renaming it would break --world Underwater CLI
             // usage, existing docs, and every test invocation across this
-            // project's history. DisplayName/Description below are updated
-            // to reflect the drifting jellyfish/plankton-bloom evolution
-            // added this pass, not just the static atmosphere the old copy
-            // described.
+            // project's history. DisplayName/Description have now been
+            // updated twice for the same reason: first ("Abyssal Bloom",
+            // Phase 1 "Living Water") to reflect the drifting jellyfish/
+            // plankton-bloom evolution added at the time; now ("Cosmic Reef",
+            // Cosmic Reef Pivot Phase 1) to reflect the approved architect
+            // plan's pivot from a purely underwater scene toward a
+            // psychedelic underwater-to-cosmic transformation over the length
+            // of a song (starfield, nebula retint, color-bloom wave, ribbon
+            // organisms - see underwater.frag/UnderwaterScene.cs). Id staying
+            // "Underwater" through both renames is exactly why this pattern
+            // (stable Id, evolving DisplayName/Description) exists.
             Id             = "Underwater",
-            DisplayName    = "Abyssal Bloom",
-            Description    = "Drifting jellyfish and a bioluminescent plankton bloom, evolving through god rays and caustic shimmer in a living water column.",
+            DisplayName    = "Cosmic Reef",
+            Description    = "A living reef that drifts from deep-water bioluminescence into a psychedelic cosmic breach - starfields, nebula glow, and drifting ribbon organisms emerging as the song builds.",
             Status         = "Prototype v0.1",
             DefaultProfile = "Safe",
             Showable       = true,

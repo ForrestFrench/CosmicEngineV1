@@ -72,6 +72,52 @@ out vec4 fragColor;
 // logic (monsterShape()/monsterCenter()) or the darkening-not-brightening
 // technique itself.
 //
+// Cosmic Reef Pivot Phase 1 (approved Fable-authored architect plan,
+// user-amended, direct follow-on to Phase 4/Addendum 1 above): pivots World04
+// from "Abyssal Bloom" (three jellyfish in an underwater scene) toward
+// "Cosmic Reef" - a psychedelic underwater-to-cosmic ecosystem that
+// transforms over the length of a song, using a second continuous 0-1
+// accumulator, uCosmic (UnderwaterScene.cs's _cosmic - rises only once uBloom
+// exceeds 0.65, decays at roughly half uBloom's own rate so the breach
+// lingers into the afterglow; see that file for the exact formula). The
+// binding lesson carried forward from Phase 4 Addendum 1's compositing-order
+// bug: isolated-render verification is not acceptable evidence of
+// visibility - every new layer below is additive and/or composited late
+// enough in the stack to survive brighter layers drawn on top of it. Five
+// additions, all confined to this file (plus the uCosmic/uRibbonCount
+// uniforms and the RibbonCount profile knob in UnderwaterScene.cs/
+// CosmicEngine.cs, and the DisplayName/Description rename in
+// SceneRegistry.cs):
+//   1. Cosmic Breach Starfield (see that section, composited immediately
+//      after Distant Alien Presence) - hash-grid point stars plus a faint
+//      stardust glow, gated by uCosmic, starting in the abyss and expanding
+//      upward as the breach opens, haze-occluded so they read as seen
+//      through water.
+//   2. Nebula retint - a uCosmic-gated violet/magenta color mix layered onto
+//      the existing Abyssal Glow Field's own established violet-nudge
+//      mechanism (glowPulseVar), plus a bounded, uCosmic-eased outward nudge
+//      to that field's own vertical mask upper bound. abyssalGlowShape()
+//      itself (the shape function) is untouched.
+//   3. Color-Bloom Wave (see that section) - a scene-level traveling hue
+//      accent (violet/magenta, occasional gold), modeled on
+//      planktonPulseWave()'s own traveling-wave construction, gated by uBloom
+//      (0.45-0.70 rising), modulating the Abyssal Glow Field's and caustic
+//      shimmer's EXISTING color terms only - never a full-frame overlay.
+//   4. Ribbon Organisms (see renderRibbon()) - a new drifting organism type,
+//      composited on its own parallax tier between the background-jellyfish
+//      loop and the hero jellyfish, using the exact traveling-wave-polyline
+//      technique that survived six rounds of tentacle iteration (Entry 41)
+//      so multiple bends exist along the body at once and travel over time -
+//      never a single rigid curve swinging on a pivot.
+//   5. Hero-jellyfish demotion - renderJelly()'s existing rim-brightness and
+//      tentacle-brightness terms are each multiplied by
+//      mix(1.0, 0.72, uCosmic), the ONLY change inside that six-round-frozen
+//      function this pass. Bell/skirt shape, pulse kinematics, tentacle
+//      shape/motion, hash placement, and drift code are otherwise completely
+//      untouched.
+// Dark-dominance (the existing exposure/vignette guard near the end of
+// main()) is preserved unmodified by every addition above.
+//
 // Guitar 1 (Creator) -> uLightDrive: ray/caustic/glow brightness and the
 // uBloom accumulation drive (uLightDrive itself already carries the C#-side
 // asymmetric attack/release envelope - see UnderwaterScene.cs - so it swells
@@ -84,11 +130,35 @@ out vec4 fragColor;
 // uCurrentDrive/uCurrentTurbulence already computed for Phase 1, plus 3 new
 // uJellyPhase0/1/2 uniforms (C#-integrated pulse phase - see
 // UnderwaterScene.cs for why that needs real integration, not uTime*rate).
+// The Cosmic Reef pivot's Color-Bloom Wave (see above) reuses this same
+// split again: amplitude scales with uLightDrive, speed with uCurrentDrive.
 //
-// Color discipline: glow stays on a deep-blue -> cyan -> pale-green ramp
-// only. A violet nudge is allowed only via a small uBloom-gated mix weight
-// on the bioluminescent motes and (as of Phase 2) the jellyfish rim glow -
-// never a hue flip, nothing neon, nothing full-saturation.
+// Color discipline (revised, Cosmic Reef Pivot Phase 1 - supersedes the
+// pre-pivot "deep-blue -> cyan -> pale-green only, never a hue flip" rule
+// below, which predates this pivot and no longer describes what this file
+// does): a STAGED palette, not a single fixed ramp -
+//   - Base teal/cyan/indigo (the original deep-blue -> cyan -> pale-green
+//     water-column ramp) is always present at every bloom/cosmic level - the
+//     scene's resting identity never disappears.
+//   - Green/gold appears from the Bioluminescent Awakening band onward
+//     (plankton, caustic hue drift, rare warm sparks - all pre-existing Phase
+//     4 color-variation nudges).
+//   - Violet/magenta wave accents (the new Color-Bloom Wave above) appear
+//     from higher bloom (0.45-0.70 rising) - an occasional gold accent within
+//     the same wave, per that section's own design.
+//   - Nebula/star colors (the new starfield + glow-field nebula retint) are
+//     gated specifically by uCosmic, not uBloom - they stay entirely absent
+//     until the cosmic breach itself begins, independent of how far bloom
+//     alone has progressed.
+//   - Dark-dominance is preserved at every stage - the existing exposure/
+//     vignette guard near the end of main() is untouched by this pass; even a
+//     fully-bloomed, fully-cosmic frame stays dark-dominant, never a flat
+//     color wash.
+// Pre-pivot rule (superseded, kept here only as history): glow stayed on a
+// deep-blue -> cyan -> pale-green ramp only, with a violet nudge allowed only
+// via a small uBloom-gated mix weight on the bioluminescent motes and (as of
+// Phase 2) the jellyfish rim glow - never a hue flip, nothing neon, nothing
+// full-saturation. The staged palette above is what now governs this file.
 //
 // Two GLSL gotchas this codebase has been bitten by before (see
 // wind_turbine_fire.frag): (a) after the uv.y flip + aspect correction, p.y
@@ -98,6 +168,12 @@ out vec4 fragColor;
 
 uniform float uTime;
 uniform float uBloom;              // 0 (calm/dark) .. 1 (fully bloomed), continuous
+// Cosmic Reef Pivot Phase 1: second continuous 0-1 accumulator (see this
+// file's header comment and UnderwaterScene.cs's _cosmic for the exact
+// mechanics/formula) - 0 until uBloom clears 0.65, then rises toward 1 as the
+// "cosmic breach" second act of the visual arc. Gates the starfield, the
+// glow field's nebula retint, and the hero-jellyfish demotion scalar.
+uniform float uCosmic;
 uniform float uLightDrive;         // Guitar 1 / Creator, already envelope-shaped, 0-1ish
 uniform float uCurrentDrive;       // Guitar 2 / Sculptor, 0-1
 uniform float uCurrentTurbulence;  // 0-1ish, baseline never 0 (set in C#)
@@ -146,9 +222,15 @@ uniform int uPlanktonCount;
 // plumbing for what's meant to be a cheap background layer.
 uniform int uBgJellyCount;
 
+// Cosmic Reef Pivot Phase 1: profile-scaled ribbon-organism count - see
+// "Ribbon Organisms" section below. Same "no C#-integrated per-instance
+// state" rationale as uBgJellyCount above.
+uniform int uRibbonCount;
+
 const int MAX_PARTICLES = 64;
 const int MAX_PLANKTON  = 140;
 const int MAX_BG_JELLY  = 8;
+const int MAX_RIBBON    = 4;
 const int RAY_COUNT = 4;
 
 // Jellyfish Tentacle Rescue Pass 1 (round 6, AUDIT.md Entry 41 - see
@@ -506,6 +588,14 @@ void renderJelly(inout vec3 color, vec2 p, float idx, float phase,
     vec3  rimColor  = mix(vec3(0.42, 0.86, 0.68), vec3(0.55, 0.80, 0.95), hash1(seed + 6.0));
     rimColor = mix(rimColor, vec3(0.55, 0.35, 0.75), smoothstep(0.80, 1.0, uBloom) * 0.15);
     float rimBrightness = (0.35 + 0.70 * uLightDrive + 0.55 * uBloom) * rimBand * occlusion;
+    // Cosmic Reef Pivot Phase 1: hero-jellyfish demotion scalar - the ONLY
+    // change permitted inside this function this pass (see this file's
+    // header comment). As the cosmic breach opens, the hero jellyfish
+    // recede in relative prominence against the new starfield/nebula/ribbon
+    // layers rather than the scene's focal point staying fixed on them
+    // forever. Bell/skirt shape, pulse kinematics, hash placement, and drift
+    // are completely untouched.
+    rimBrightness *= mix(1.0, 0.72, uCosmic);
     color += rimColor * rimBrightness * 0.75;
 
     // --- Tentacles (Phase 2 round 6 - traveling-wave polyline rewrite) -----
@@ -771,6 +861,11 @@ void renderJelly(inout vec3 color, vec2 p, float idx, float phase,
             // this pass, not the color/audio-reactivity design.
             float tentBrightness = tentMask * lengthFade * occlusion * brightVar;
             tentBrightness *= (0.55 + 0.85 * uLightDrive + 0.60 * uBloom);
+            // Cosmic Reef Pivot Phase 1: hero-jellyfish demotion scalar - see
+            // the matching rimBrightness comment above, same rationale/same
+            // multiplier, the only two changes permitted inside this
+            // function this pass.
+            tentBrightness *= mix(1.0, 0.72, uCosmic);
 
             color += rimColor * tentBrightness * 1.15;
         }
@@ -879,6 +974,216 @@ void renderBackgroundJelly(inout vec3 color, vec2 pBg, float idx,
 
     float brightness = (0.10 + 0.30 * uLightDrive + 0.28 * uBloom) * occlusion;
     color += bgColor * (bodyGlow + rim) * brightness;
+}
+
+// --- Ribbon Organisms (Cosmic Reef Pivot Phase 1) ---------------------------
+//
+// "No longer just three jellyfish" - a new drifting organism type distinct
+// from both the hero jellyfish (renderJelly() above, six-round-frozen per
+// AUDIT.md Entry 41 and addenda) and the background jellyfish
+// (renderBackgroundJelly() above, Phase 4): a long, slow, undulating ribbon
+// crossing the frame edge-to-edge on its own parallax tier.
+//
+// Placement/motion deliberately reuses renderBackgroundJelly()'s own
+// established pattern (pure shader-side hash + uTime, off-frame wrap bound,
+// no C#-integrated drift state - ribbons don't need audio-reactive lap
+// timing any more than background jellies do) rather than reinventing it.
+// Distinct, non-colliding hash-seed domain from every other per-instance
+// seed in this file (hero jellies idx*41.7+5, background jellies
+// idx*29.3+71, plankton fi*23.71+11, marine snow fi*19.61+7).
+//
+// Body technique is modeled directly on renderJelly()'s own tentacle
+// traveling-wave polyline - the construction that survived six rounds of
+// iteration (Entry 41 and its addenda) after every simpler technique
+// (ridged-FBM field, per-lane hashing, discrete capsule chains, a single
+// Bezier bow) was rejected for reading as rigid/mechanical/"pivoting on a
+// hinge." Same capsule-SDF-walk-with-smooth-min distance evaluation, same
+// traveling-wave form - amplitude(t) = maxAmplitude * pow(t, ampPow) (~1.5,
+// per the brief), wave = amplitude(t) * sin(t*waveFreq - uTime*waveSpeed +
+// phase) - so multiple bends exist simultaneously along the body and travel
+// down it over time, applied to a whole-body ribbon instead of a tentacle
+// fringe. A ribbon built as a single control point swinging on a sine term
+// would be exactly the "rigid curve on a pivot" failure Entry 41 already
+// spent six rounds fixing - this reuses the technique that fixed it, not a
+// shortcut around it.
+//
+// Per-instance reach early-out runs BEFORE any polyline math, mirroring
+// renderJelly()'s own tentacle bounding-box gate / the plankton loop's
+// spatial early-out (Entry 41 addendum 6 / Entry 45 addendum) - most
+// fragments, most instances, most frames are nowhere near a given ribbon.
+void renderRibbon(inout vec3 color, vec2 pRibbon, float idx,
+                   float hazeCombined, float hazeDensity) {
+    float seed = idx * 37.9 + 131.0;
+
+    // Audit fix (Cosmic Reef Pivot Phase 1 performance investigation, second
+    // round - see the reach-check comment below for the first round):
+    // hoisting heading/maxAmplitude above the early-out (needed for the
+    // tighter anisotropic reach bound) initially just added 2 more hash1()
+    // calls to the always-executed, unconditional-per-fragment prefix,
+    // measured to barely move the needle (63.7-64.0fps before vs after,
+    // still well short of the ~71fps ceiling with the ribbon loop disabled
+    // entirely) - the prefix hash *count* itself, not the post-cull tail
+    // work, was the real remaining cost, exactly the second-lever finding
+    // Entry 45 addendum made for the plankton loop. Fix, same technique:
+    // consolidate the 5 independent hash1() calls this prefix used to make
+    // (depthNorm, hMotion, hPos, heading, maxAmpFrac) down to 2 real hash1()
+    // calls, deriving the rest via fract(h*constant) - a standard
+    // single-hash multi-output technique, same precedent as Entry 45
+    // addendum's lifeSpeed/phase-hash consolidation. This introduces mild
+    // deterministic correlation between otherwise-independent motion/shape
+    // parameters (e.g. a ribbon's heading and its depth now share a root
+    // hash) - the same class of minor, disclosed, low-visual-risk
+    // correlation Entry 45 addendum accepted (timing/shape variance, not a
+    // structural/positional/color identity attribute), not re-litigated
+    // here.
+    float hA = hash1(seed + 1.0);
+    float hB = hash1(seed + 2.0);
+
+    float depthNorm = hA;
+    float sizeScale = mix(0.55, 1.05, depthNorm);
+    float bodyLen    = 0.42 * sizeScale;
+    float bodyThick  = 0.017 * sizeScale;
+
+    float hMotion = hB;
+    // Very slow edge-to-edge crossing - background pacing, same order of
+    // magnitude as renderBackgroundJelly()'s own speed range immediately
+    // above.
+    float speed   = mix(0.0028, 0.0072, hMotion);
+    float dirSign = fract(hMotion * 61.51) > 0.5 ? 1.0 : -1.0;
+    float hPos    = fract(hA * 71.317 + 13.91); // derived from hA, not a fresh hash1() call
+    float cyc     = fract(uTime * speed + hPos);
+    // Off-frame both ends, same wrap-bound trick as renderBackgroundJelly()'s
+    // own 1.15 bound - the wrap itself is never seen.
+    float posX    = dirSign * mix(-1.20, 1.20, cyc);
+    float yCenter = mix(-0.30, 0.22, fract(hPos * 83.41));
+
+    // Fixed per-instance heading (not always horizontal) so ribbons don't
+    // all lie perfectly flat across the frame. Hoisted above the early-out
+    // (first-round audit fix) since the tighter anisotropic reach check
+    // needs it; derived from hB (second-round fix, see above) instead of its
+    // own hash1() call.
+    float heading  = mix(-0.35, 0.35, fract(hB * 53.113 + 7.71));
+    vec2  dirBody  = vec2(cos(heading) * dirSign, sin(heading));
+    vec2  perpBody = vec2(-dirBody.y, dirBody.x);
+
+    // maxAmplitude also hoisted above the early-out (first-round fix) so the
+    // perpendicular reach bound below can be exact rather than a padded
+    // guess - see full traveling-wave parameter block (waveFreq/waveSpeed/
+    // wavePhase/ampPow) further down, unchanged, for the rest of the wave
+    // shape math these don't need. Derived from hA (second-round fix)
+    // instead of its own hash1() call.
+    float maxAmpFrac   = mix(0.12, 0.22, fract(hA * 91.71 + 3.33));
+    float maxAmplitude = bodyLen * maxAmpFrac;
+
+    // Audit fix (Cosmic Reef Pivot Phase 1 performance investigation): the
+    // original early-out was an isotropic circle of radius
+    // bodyLen*0.85+0.06 centered on the body's own origin point. A ribbon is
+    // long and thin (bodyLen up to ~0.44, bodyThick ~0.01-0.02), so a circle
+    // sized to cover the body's full length wastes a large fraction of its
+    // own area in directions perpendicular to the body where no part of the
+    // shape ever reaches - every fragment inside that wasted area still paid
+    // the full 9-sample polyline walk (9 sdCapsuleT + smooth-min calls)
+    // below for zero visual contribution. Confirmed as the dominant new cost
+    // via disable-and-measure (Entry 41 addendum 6 / Entry 45 addendum's own
+    // established isolation technique): High-profile rest state measured
+    // ~64fps with the original circular check vs ~71fps with the ribbon loop
+    // disabled entirely, a ~10-11fps (~15%) cost - exactly the "reach circle
+    // is large" concern the interrupted prior session's own last status
+    // update flagged before being cut off. Replaced with an anisotropic
+    // oriented-box check along the body's own dirBody/perpBody axes (two dot
+    // products, cheap) - tight along-body bound (half the body length plus a
+    // small AA pad) and a tight cross-body bound (the wave's own maximum
+    // lateral amplitude plus half-thickness plus a small AA pad), instead of
+    // a bound sized for the body's longest dimension applied equally in
+    // every direction. Changes zero pixels of visible output (the bound is
+    // still a superset of every point the polyline walk can actually touch)
+    // - only culls fragments that were always going to contribute nothing.
+    vec2  coarsePos   = vec2(posX, yCenter);
+    vec2  toCoarse    = pRibbon - coarsePos;
+    float alongCoarse = dot(toCoarse, dirBody);
+    float perpCoarse  = dot(toCoarse, perpBody);
+    float reachAlong  = bodyLen * 0.5 + 0.035;
+    float reachPerp   = maxAmplitude + bodyThick * 0.6 + 0.10; // +0.10 covers yWander (0.05 amplitude) plus AA/blend pad
+    if (abs(alongCoarse) > reachAlong || abs(perpCoarse) > reachPerp) return;
+
+    float yWander  = 0.05 * sin(uTime * mix(0.02, 0.05, hash1(seed + 6.0)) + hash1(seed + 7.0) * 6.2831853);
+    vec2  originPt = vec2(posX, yCenter + yWander);
+
+    // Traveling-wave parameters - required form per the brief:
+    // amplitude(t)*sin(t*waveFreq - uTime*waveSpeed + phase), amplitude(t) =
+    // maxAmplitude*pow(t,ampPow) with ampPow centered on ~1.5.
+    //
+    // Audit fix (Cosmic Reef Pivot Phase 1 verification pass): waveFreq was
+    // originally mix(3.0, 5.5, ...) - at most ~5.5 radians across the body
+    // (st in [0,1]), i.e. under one full sine period (2*pi ~= 6.28), which a
+    // polyline-marker isolation check showed rendered as a single smooth
+    // bow/arc, not multiple simultaneous bends - the exact failure mode this
+    // pass's own brief named as highest-risk. The tentacle traveling-wave
+    // this construction is modeled on (see TENT_SAMPLES loop above, ~line
+    // 725) uses mix(4.0, 9.0, ...) - up to ~1.4 full periods, genuinely
+    // multi-bend, six-round battle-tested. Widened to match/exceed that
+    // proven range so ribbons reliably show 2+ bends along their length,
+    // re-verified via the same polyline-marker isolation technique after
+    // the fix (see this pass's evidence package).
+    float wavePhase   = hash1(seed + 9.0) * 6.2831853;
+    float waveFreq    = mix(8.0, 14.0, hash1(seed + 11.0));
+    float waveSpeed   = mix(0.5, 1.1, hash1(seed + 13.0));
+    float ampPow      = mix(1.3, 1.7, hash1(seed + 17.0));
+    // maxAmpFrac/maxAmplitude computed earlier now (see the hoisted block
+    // above the early-out) - not re-declared here.
+
+    const int RIBBON_SAMPLES = 9; // 8-10 per the brief
+    vec2 pts[RIBBON_SAMPLES];
+    for (int si = 0; si < RIBBON_SAMPLES; si++) {
+        float st = float(si) / float(RIBBON_SAMPLES - 1);
+        vec2  basePos = originPt + dirBody * (bodyLen * (st - 0.5));
+        float ampT = maxAmplitude * pow(st, ampPow);
+        float wave = ampT * sin(st * waveFreq - uTime * waveSpeed + wavePhase);
+        pts[si] = basePos + perpBody * wave;
+    }
+
+    // Distance to the polyline: walk each segment and smooth-min the running
+    // distance (identical technique to renderJelly()'s own tentacle walk
+    // above) so consecutive-segment joints blend into a soft rounded bend
+    // rather than a visible facet.
+    float distC  = 1e5;
+    float tParam = 0.0;
+    float blendK = max(bodyThick * 0.6, 0.0018);
+    for (int si = 0; si < RIBBON_SAMPLES - 1; si++) {
+        float tA = float(si)     / float(RIBBON_SAMPLES - 1);
+        float tB = float(si + 1) / float(RIBBON_SAMPLES - 1);
+        // Body tapers toward both ends, widest at the middle - a genuine
+        // ribbon silhouette rather than a uniform-thickness tube.
+        float rA = bodyThick * mix(0.35, 1.0, sin(tA * 3.14159265));
+        float rB = bodyThick * mix(0.35, 1.0, sin(tB * 3.14159265));
+        vec2  dh = sdCapsuleT(pRibbon, pts[si], pts[si + 1], rA, rB);
+        float d    = dh.x;
+        float segT = mix(tA, tB, dh.y);
+        if (si == 0) {
+            distC  = d;
+            tParam = segT;
+        } else {
+            float bh   = clamp(0.5 + 0.5 * (distC - d) / blendK, 0.0, 1.0);
+            float newD = mix(distC, d, bh) - blendK * bh * (1.0 - bh);
+            tParam = mix(tParam, segT, bh);
+            distC  = newD;
+        }
+    }
+
+    float edgeAA     = max(bodyThick * 0.5, 0.0015);
+    float ribbonMask = 1.0 - smoothstep(-edgeAA, edgeAA, distC);
+    // Soft fade toward both ends (matches the tapered-thickness silhouette
+    // above), brightest at the body's own middle - never a hard clipped end.
+    float lengthFade = 0.55 + 0.45 * sin(tParam * 3.14159265);
+
+    float occlusion = (1.0 - hazeCombined * hazeDensity * 0.70) * mix(0.35, 0.90, depthNorm);
+
+    // Additive electric-blue/cyan glow, distinct from both the hero jellies'
+    // teal-forward palette and the background jellies' blue-violet palette.
+    vec3  ribbonColor = mix(vec3(0.16, 0.56, 0.90), vec3(0.32, 0.88, 0.98), hash1(seed + 21.0));
+    float brightness = (0.18 + 0.55 * uLightDrive + 0.42 * uBloom) * occlusion;
+
+    color += ribbonColor * ribbonMask * lengthFade * brightness * 1.05;
 }
 
 // --- Distant Alien Presence (Phase 4 "Presence / Color / Depth Population") -
@@ -1079,6 +1384,38 @@ float planktonPulseWave(vec2 pos, float bloomNorm) {
     return 0.5 + 0.5 * sin(phase);
 }
 
+// --- Color-Bloom Wave (Cosmic Reef Pivot Phase 1) ---------------------------
+// A scene-level traveling hue-accent wave, modeled directly on
+// planktonPulseWave() immediately above - same dot(pos,dir)*freq -
+// uTime*speed traveling-wave construction, reused here as a hue MODULATOR on
+// top of existing color terms (Abyssal Glow Field / caustic shimmer, see
+// their call sites in main()) rather than a new visual layer of its own -
+// this file's own established "reuse the proven construction, don't
+// reinvent it" convention. Amplitude scales with uLightDrive (Guitar 1 /
+// Creator - "A makes it glow", this file's established convention); speed
+// scales with uCurrentDrive (Guitar 2 / Sculptor - "B makes it move") - both
+// verified against the uniform declarations above this pass, not assumed.
+// Never applied as a full-frame overlay/wash - every call site mixes it into
+// an already-existing color variable at a bounded weight, preserving the
+// existing exposure/vignette dark-dominance guard untouched.
+float colorBloomWave(vec2 pos) {
+    vec2  waveDir = normalize(vec2(0.35, 1.0));
+    float freq    = 3.2;
+    float speed   = 0.35 + 0.90 * uCurrentDrive;
+    float phase   = dot(pos, waveDir) * freq - uTime * speed;
+    return 0.5 + 0.5 * sin(phase);
+}
+
+// Occasional-gold hue selector for the Color-Bloom Wave above - a slow,
+// bucketed time hash (a fresh window roughly every 14s) rather than a
+// per-pixel random choice, so "occasional gold" reads as the wave itself
+// drifting into a rare warm mood for a while, not per-pixel static/noise.
+// Violet/magenta is the wave's default hue; gold is the rare minority.
+float colorBloomGoldWeight() {
+    float bucket = floor(uTime / 14.0);
+    return step(0.86, hash1(bucket * 3.77 + 9.0)); // ~14% of windows lean gold
+}
+
 // --- Abyssal Glow Field (Phase 3 "Distant Event") ---------------------------
 // Fable-authored roadmap item, directly addressing ChatGPT's review of the
 // "Living Water"/"Bloom refinement" passes: "the next visual gain should
@@ -1154,6 +1491,71 @@ float abyssalGlowShape(vec2 pos, float drift) {
     float detail   = fbm2(detailUV, 2) * (1.0 / 0.75); // fbm2(.,2) maxes at 0.75 - renormalize to [0,1]
 
     return clamp(macro * 0.60 + detail * 0.40, 0.0, 1.0);
+}
+
+// --- Cosmic Breach Starfield (Cosmic Reef Pivot Phase 1) --------------------
+// "The scene stops being just underwater" - a hash-grid starfield gated
+// entirely by uCosmic, composited immediately after Distant Alien Presence
+// and before the background-jellyfish loop in main() (see that call site).
+// Additive only (never a darkening mix, unlike the Presence layer it follows
+// - this is the specific lesson carried forward from Phase 4 Addendum 1: a
+// subtractive effect composited early is fragile against brighter additive
+// layers drawn on top of it, so every new layer this pass adds is additive
+// and/or composited late enough in the stack to survive).
+//
+// Point stars via cell-hash coordinates - one star candidate per grid cell
+// (sparsified via a per-cell hash threshold so not every cell has a star),
+// jittered to a sub-cell position, never a filled/tiled cell texture. A 3x3
+// cell neighborhood is checked per fragment (still O(1), not a loop over N
+// stars) so a star jittered near a cell boundary is still found from a
+// neighboring fragment's query.
+vec3 cosmicStarfield(vec2 pos, float hazeCombined, float hazeDensity) {
+    vec3  result    = vec3(0.0);
+    float cellSize  = 0.050; // tuned so stars read as individual points at normal viewing scale, not a filled texture
+    vec2  cell      = floor(pos / cellSize);
+
+    for (int oy = -1; oy <= 1; oy++) {
+        for (int ox = -1; ox <= 1; ox++) {
+            vec2  c  = cell + vec2(float(ox), float(oy));
+            float ch = hash2(c);
+            if (ch > 0.50) continue; // sparsify - roughly half of cells carry a star candidate
+
+            vec2 jitter  = vec2(hash2(c + 13.1), hash2(c + 47.7)) - 0.5;
+            vec2 starPos = (c + 0.5 + jitter * 0.85) * cellSize;
+            float d = length(pos - starPos);
+
+            float starSizePx = mix(0.0007, 0.0020, hash2(c + 91.3));
+            float core       = smoothstep(starSizePx, 0.0, d);
+            if (core < 0.001) continue;
+
+            // Gentle per-star twinkle - a slow sine, not a strobe.
+            float twinkle = 0.55 + 0.45 * sin(uTime * mix(0.5, 1.6, hash2(c + 5.5)) + ch * 6.2831853);
+
+            // Dim-skew brightness (Entry 33 convention, reused verbatim by
+            // every particle system in this file) so most stars are faint
+            // and only a few are bright.
+            float brightHash = pow(hash2(c + 3.3), 2.8);
+
+            // Mostly cool white-blue; a dim-skewed rare warm minority.
+            vec3 starColorCool = vec3(0.78, 0.86, 1.00);
+            vec3 starColorWarm = vec3(1.00, 0.80, 0.56);
+            float warmTier = pow(hash2(c + 61.1), 3.2); // rare - squared/cubed skew keeps most stars cool
+            vec3 starColor = mix(starColorCool, starColorWarm, smoothstep(0.90, 1.0, warmTier));
+
+            result += starColor * core * brightHash * twinkle;
+        }
+    }
+
+    // Faint stardust glow - a soft ambient companion to the point stars,
+    // sampled with the same cheap vnoise2 this file already uses everywhere
+    // else (no new noise primitive), not a second star loop.
+    float dust = vnoise2(pos * 2.6 + vec2(uTime * 0.004, -uTime * 0.003));
+    result += vec3(0.34, 0.42, 0.62) * smoothstep(0.58, 0.86, dust) * 0.09;
+
+    // Haze occlusion - the specific mechanic that makes these read as "seen
+    // through water" rather than pasted on top of it, per the brief.
+    result *= (1.0 - hazeCombined * hazeDensity * 0.55);
+    return result;
 }
 
 void main() {
@@ -1308,7 +1710,21 @@ void main() {
         // never-repeating boundary before the noise field even begins.
         float vMaskWobble = 0.055 * sin(pRefractWater.x * 2.3 + uTime * 0.021)
                            + 0.032 * sin(pRefractWater.x * 5.1 - uTime * 0.014 + 1.7);
-        float glowVMask = 1.0 - smoothstep(-0.62, -0.14, pRefractWater.y + vMaskWobble);
+        // Cosmic Reef Pivot Phase 1: the upper bound of this vertical gate is
+        // eased outward (upward) with uCosmic - as the cosmic breach opens,
+        // the glow field's own footprint expands beyond its original
+        // abyss-only band, per the brief's "ease the glow field's vertical
+        // mask upper bound outward with uCosmic" instruction. Bounded
+        // deliberately small (-0.14 -> -0.02 at most, not all the way to
+        // mid-frame) both to protect the measured fps cost of the FBM work
+        // this mask gates (see the Performance section of this pass's own
+        // evidence - this specific expansion was measured and capped, not
+        // left open-ended) and to keep uCosmic=0 (the default/rest state)
+        // producing the exact original -0.14 bound, i.e. zero visual change
+        // at rest. abyssalGlowShape() itself (the shape function) is
+        // untouched by this pass - only this mask's own bound moves.
+        float glowVMaskUpper = mix(-0.14, -0.02, clamp(uCosmic, 0.0, 1.0));
+        float glowVMask = 1.0 - smoothstep(-0.62, glowVMaskUpper, pRefractWater.y + vMaskWobble);
         if (glowVMask > 0.003) {
             // Internal churn very subtly quickens through the arc (never
             // enough to read as urgency, only enough to feel like "more is
@@ -1355,6 +1771,38 @@ void main() {
             // violet-nudge mechanism rather than a new one.
             float glowPulseVar = 0.85 + 0.15 * sin(uTime * 0.21 + 3.1);
             abyssalColor = mix(abyssalColor, vec3(0.38, 0.20, 0.62), smoothstep(0.80, 1.0, uBloom) * 0.30 * glowPulseVar);
+
+            // Cosmic Reef Pivot Phase 1: nebula retint - extends the
+            // glowPulseVar-gated violet-nudge mechanism immediately above
+            // (per the brief's explicit instruction to extend the existing
+            // mechanism rather than add a new one) with a SECOND, independent
+            // mix gated specifically by uCosmic - stays exactly zero until
+            // the cosmic breach itself begins, regardless of how far uBloom
+            // alone has progressed (the "gated by uCosmic specifically, not
+            // just riding on uBloom" requirement - verified via this pass's
+            // own gating-check screenshot, uBloom=1/uCosmic=0). Leans more
+            // magenta than the pre-existing indigo-violet nudge above, so the
+            // two remain visually distinct rather than compounding into one
+            // muddier color.
+            vec3 nebulaColor = vec3(0.52, 0.16, 0.58);
+            abyssalColor = mix(abyssalColor, nebulaColor, clamp(uCosmic, 0.0, 1.0) * 0.45 * glowPulseVar);
+
+            // Cosmic Reef Pivot Phase 1: Color-Bloom Wave hue modulation (see
+            // colorBloomWave()/colorBloomGoldWeight() above) - modulates this
+            // EXISTING color term only, never a new additive layer of its
+            // own. Gated locally (0.45-0.70 rising, matching the brief's
+            // range) rather than via a shared uniform-only precomputed
+            // variable, since this is the only call site inside the glow
+            // field's own already-gated block that needs it - a second,
+            // independent gate here costs nothing extra since the block is
+            // already conditionally executing.
+            float colorWaveGateGlow = smoothstep(0.45, 0.70, uBloom);
+            if (colorWaveGateGlow > 0.001) {
+                float waveVal   = colorBloomWave(pRefractWater);
+                float waveAmt   = colorWaveGateGlow * (0.25 + 0.75 * uLightDrive) * waveVal;
+                vec3  waveHue   = mix(vec3(0.58, 0.22, 0.72), vec3(0.85, 0.62, 0.20), colorBloomGoldWeight());
+                abyssalColor = mix(abyssalColor, waveHue, clamp(waveAmt, 0.0, 1.0) * 0.35);
+            }
 
             color += abyssalColor * glowField * glowArc * glowVMask;
         }
@@ -1416,6 +1864,36 @@ void main() {
     vec3  causticColorA = vec3(0.30, 0.68, 0.56); // green-teal (original)
     vec3  causticColorB = vec3(0.22, 0.56, 0.74); // cyan-blue
     vec3  causticColor  = mix(causticColorA, causticColorB, smoothstep(0.35, 0.65, cn1));
+    // Cosmic Reef Pivot Phase 1: Color-Bloom Wave hue modulation - same
+    // construction/gate as the glow field's own call site above, applied
+    // here to caustics' own existing color term instead of introducing a new
+    // layer. Sampled against this layer's own coordinate space
+    // (pRefractRaysCaustics) rather than pRefractWater, so the hue accent
+    // stays visually locked to the caustics it's modulating, matching this
+    // file's own established per-layer-coordinate-space convention.
+    // Audit fix (Cosmic Reef Pivot Phase 1 performance investigation): unlike
+    // the glow field's own call site above (already inside an
+    // "if (glowVMask > 0.003)" block, so only running within that layer's
+    // own bounded vertical band), this caustic call site had no spatial
+    // gate at all - colorBloomWave()/colorBloomGoldWeight() ran for every
+    // fragment on screen whenever uBloom > 0.45, regardless of whether the
+    // caustic layer itself was visually present at that fragment (caustic
+    // is only actually painted where causticMask, already computed just
+    // above, is non-negligible - the upper water band inside ray
+    // interiors). Added the same causticMask early-out this file's own
+    // established convention would use (see the plankton/tentacle/ribbon
+    // spatial early-outs) - changes zero pixels of visible output (the
+    // wave's own contribution was already multiplied by causticMask*caustic
+    // at the mix's own weight, so a near-zero causticMask fragment was
+    // already contributing ~nothing) while skipping the wave/gold-weight
+    // computation entirely outside that region.
+    float colorWaveGateCaustic = smoothstep(0.45, 0.70, uBloom);
+    if (colorWaveGateCaustic > 0.001 && causticMask > 0.01) {
+        float waveValC = colorBloomWave(pRefractRaysCaustics);
+        float waveAmtC = colorWaveGateCaustic * (0.25 + 0.75 * uLightDrive) * waveValC;
+        vec3  waveHueC = mix(vec3(0.58, 0.22, 0.72), vec3(0.85, 0.62, 0.20), colorBloomGoldWeight());
+        causticColor = mix(causticColor, waveHueC, clamp(waveAmtC, 0.0, 1.0) * 0.30);
+    }
     color += causticColor * caustic * causticMask * (0.45 + 0.55 * uLightDrive + 0.40 * uBloom) * 0.85;
 
     // --- Bloom-arc bands (Phase 1 "Living Water") -----------------------------
@@ -1568,6 +2046,54 @@ void main() {
         }
     }
 
+    // --- Cosmic Breach Starfield (Cosmic Reef Pivot Phase 1) ------------------
+    // Composited immediately after Distant Alien Presence and before the
+    // background-jellyfish loop, per the brief. Additive (see
+    // cosmicStarfield()'s own header comment above for why - the specific
+    // lesson carried forward from Phase 4 Addendum 1's compositing-order
+    // bug). Gate (a): a uniform-only check (uCosmic near zero) that skips
+    // this entire block's cost, mirroring this file's own established
+    // bloomNorm > 0.001-style gate on the plankton loop. Gate (b): a spatial
+    // mask starting in the abyss/bottom of frame and expanding upward as
+    // uCosmic rises, built with the same smoothstep-vertical-band
+    // construction glowVMask above already uses. Sampled against
+    // pRefractWater - the same most-distant, refracted, 0.2x-parallax
+    // coordinate space the water gradient/glow field/presence layer all
+    // already use - so stars shimmer with the water's own refraction motion
+    // rather than sitting in a separate, static coordinate space.
+    // Audit fix (Cosmic Reef Pivot Phase 1 performance investigation):
+    // starVMaskUpper's original ceiling (0.62) is well past this frame's own
+    // visible p.y range (+-0.5, see main()'s "vec2 p = (uv-0.5)" - the
+    // visible frame top is p.y=0.5) - at cosmic=1.0 the vertical mask's
+    // smoothstep boundary sat entirely off-frame, meaning starVMask was
+    // effectively ~1.0 across nearly the WHOLE screen, not a bounded
+    // "breach expanding from the abyss" region. Measured directly (disable-
+    // and-measure, same technique as the ribbon reach-check fix above):
+    // ~921,600-fragment full-frame coverage of cosmicStarfield()'s own
+    // 3x3-cell hash-grid loop (up to ~30 hash2() calls/fragment when
+    // sparsify passes) was a real, large cost at the new worst case (forced
+    // bloom=1.0+cosmic=1.0+presencePulse=1.0). Capped to 0.30 - the breach
+    // still visibly expands well past the abyss into the mid-frame (see
+    // this pass's own evidence screenshots), just never covers literally the
+    // entire visible frame including the region right under the god rays -
+    // also a better match to this scene's "still dark-dominant, breach from
+    // below" design intent than an unbounded ceiling. uCosmic=0 still
+    // produces the exact original -0.20 bound (zero visual change at rest).
+    if (uCosmic > 0.001) {
+        // Starts as "abyss only" (lower bound fixed, upper bound tight to
+        // the bottom) at low uCosmic, expanding upward toward the visible
+        // frame as the breach opens - "the cosmic breach opens FROM the
+        // abyss" per this pass's own required screenshot evidence
+        // (bloom=1.0, cosmic=0.3: breach beginning to open from the abyss).
+        float starVMaskLower = -0.66;
+        float starVMaskUpper = mix(-0.20, 0.30, clamp(uCosmic, 0.0, 1.0));
+        float starVMask = 1.0 - smoothstep(starVMaskLower, starVMaskUpper, pRefractWater.y);
+        if (starVMask > 0.003) {
+            vec3 stars = cosmicStarfield(pRefractWater, hazeCombined, hazeDensity);
+            color += stars * uCosmic * starVMask;
+        }
+    }
+
     // --- Background jellyfish (Phase 4 "Presence / Color / Depth Population") -
     // Several (profile-scaled) small, faint, reduced-detail organisms behind
     // the 3 hero jellyfish - see renderBackgroundJelly() above for why this
@@ -1582,6 +2108,19 @@ void main() {
     for (int bi = 0; bi < MAX_BG_JELLY; bi++) {
         if (bi >= uBgJellyCount) break;
         renderBackgroundJelly(color, pBg, float(bi), hazeCombined, hazeDensity);
+    }
+
+    // --- Ribbon organisms (Cosmic Reef Pivot Phase 1) -------------------------
+    // Composited here - between the background-jellyfish loop above and the
+    // hero jellyfish below, per the brief - on their own parallax depth tier
+    // (0.90x, between background jellyfish's 0.82x and the near/hero-
+    // jellyfish layer's 1.0x). Never refraction-warped, same exclusion rule
+    // Phase 3 established for every creature/organism layer in this file.
+    // See renderRibbon() above for the full design.
+    vec2 pRibbon = p - uCameraOffset * 0.90;
+    for (int ri = 0; ri < MAX_RIBBON; ri++) {
+        if (ri >= uRibbonCount) break;
+        renderRibbon(color, pRibbon, float(ri), hazeCombined, hazeDensity);
     }
 
     // --- Jellyfish (Phase 2, drift path added Phase 1 "Living Water") --------

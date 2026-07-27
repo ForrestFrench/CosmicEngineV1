@@ -5584,6 +5584,301 @@ explicit request.
 
 ---
 
+## Entry 48 — Cosmic Reef Pivot Phase 1 v0.1 (World04 underwater-to-cosmic transformation, resumed pass)
+
+**Date:** 2026-07-17
+**Executor:** Claude Code / Sonnet (implementation engineer)
+**Reviewer sign-off:** _____________________ (blank — pending ChatGPT/user review, not self-signed)
+
+### Context — resumed, not fresh
+A prior agent session implementing "Cosmic Reef Pivot Phase 1" (an approved Fable-authored architect plan
+pivoting World04 from "Abyssal Bloom" toward a psychedelic underwater-to-cosmic transformation over the
+length of a song, plus a user amendment tying the existing `Tuning.UnderwaterEvolutionSeconds` slider to the
+whole arc, not just bloom) was cut off mid-task by an API session limit — not a code bug. Its file changes
+(607 lines across `ControlServer.cs`, `Engine/CosmicEngine.cs`, `Engine/SceneRegistry.cs`,
+`underwater.frag`, `UnderwaterScene.cs`) survived uncommitted in the working tree; its transcript did not.
+This entry documents the resumed pass: auditing that diff against the original 7-item spec, fixing what was
+broken, completing the interrupted mandatory performance investigation, and gathering full evidence.
+
+### What the interrupted session got right (verified, not re-built)
+- **Item 1 (`uCosmic` accumulator):** genuinely present and correctly wired. `_cosmic` follows `_bloom`'s
+  exact integrator shape, gated on `_bloom > 0.65`, decays at half `_bloom`'s rate, and its rise-rate formula
+  (`1f / (0.5f * Tuning.UnderwaterEvolutionSeconds)`) is real — reads the live slider, not a hardcoded
+  constant, confirmed by direct code inspection.
+- **Item 3 (nebula retint):** correctly `uCosmic`-gated, layered onto the pre-existing `glowPulseVar`
+  mechanism, bounded vertical-mask expansion (`-0.14 -> -0.02`), `abyssalGlowShape()` itself untouched
+  (confirmed byte-identical via `diff` against the pre-pivot committed function body).
+- **Item 4 (color-bloom wave):** correctly bloom-gated (0.45-0.70 rising), modulates two *existing* color
+  terms (glow field + caustics) rather than a new full-frame layer, amplitude/speed correctly split across
+  `uLightDrive`/`uCurrentDrive` per this file's own convention.
+- **Item 6 (hero-jellyfish demotion):** exactly one permitted change inside `renderJelly()` — `rimBrightness`
+  and `tentBrightness` each multiplied by `mix(1.0, 0.72, uCosmic)` — confirmed via direct diff of the
+  function body against the pre-pivot commit; every other line (bell/skirt SDF, pulse kinematics, tentacle
+  traveling-wave, hash placement, drift) byte-identical.
+- **Item 7 (registry rename):** `DisplayName` -> "Cosmic Reef", `Description` updated, `Id` unchanged
+  (preserves `--world Underwater` CLI usage). Dashboard slider relabeled "Visual Evolution Time" with an
+  updated description explaining it now governs bloom AND the cosmic breach together. Color-discipline
+  comment at the top of `underwater.frag` rewritten to describe the new staged palette, explicitly marking
+  the old "never a hue flip" rule as superseded history rather than deleting the context.
+- **Item 2 (starfield) and item 5 (ribbons):** present and structurally sound (hash-grid stars, no per-star
+  loop; a `renderRibbon()` traveling-wave polyline function, profile-scaled count knob correctly wired at
+  the same site as `ParticleCount`/`PlanktonCount`/`BackgroundJellyCount`) but both required real fixes — see
+  below.
+
+### What had to be fixed
+
+**1. Ribbon undulation formula — the single highest-risk item, genuinely broken, now fixed.** The
+interrupted session's `renderRibbon()` used `waveFreq = mix(3.0, 5.5, ...)` — at most ~5.5 radians of phase
+across the body (`st` in `[0,1]`), under one full sine period (`2*pi ~= 6.28`). A polyline-control-point
+isolation technique (temporary per-point debug markers, color-coded head-to-tail, bypassing the
+capsule/thickness rendering to see the raw path) showed this rendered as a single smooth bow/arc — exactly
+the "rigid curve on a pivot" failure this project's own Entry 41 spent six rounds fixing on the tentacle
+field, and the risk this pass's own brief named up front. Root cause identified precisely (not guessed): the
+tentacle traveling-wave this construction is explicitly modeled on uses `mix(4.0, 9.0, ...)` (up to ~1.4 full
+periods) — the ribbon's own range was narrower and lower than its own stated precedent. Fixed by widening to
+`mix(8.0, 14.0, ...)` (~1.3-2.2 periods). Re-verified with the same polyline-marker technique: both tested
+ribbon instances now show genuine multi-bend "S"/"W" shapes with 2+ direction changes, and a T1/T5 motion
+comparison (~4s apart) shows the bend pattern itself reshaping over time (a true traveling wave), not just
+the whole body translating. See Verification section below for the specific screenshots.
+
+**2. Performance — the mandatory investigation the interrupted session was mid-way through when cut off.**
+Completed; found a real, code-attributable regression that was NOT fully resolved this pass — see the
+Performance section and the Options Memo below.
+
+### Ribbon-undulation self-check (mandatory, critical)
+**Multi-bend traveling wave confirmed after a fix — the pre-fix version is an automatic-reject rigid arc,
+honestly caught and corrected, not shipped.** Evidence: `screenshots/17_ribbon_polyline_zoom.png` (pre-fix,
+`waveFreq` 3.0-5.5 — a single smooth arc, control-point markers trace one monotonic curve) vs.
+`screenshots/19_ribbon_fixed_zoom1.png` / `22_ribbon_fixed2_zoom.png` (post-fix, `waveFreq` 8.0-14.0 — clear
+"S"/"W"-shaped paths with 2+ distinct direction changes along the body) and `24_ribbon_travel_T1.png` /
+`24_ribbon_travel_T5.png` (same ribbon 4s apart — the bend pattern itself has visibly reshaped, not just
+translated, confirming a genuine traveling wave). `25_ribbon_closeup_final.png` is the full-composite,
+non-debug closeup used as this pass's own required "ribbon closeup" evidence.
+
+### "No longer just three jellyfish" proof
+`screenshots/06_offframe_heroes.png` / `06b_offframe_heroes_boosted.png` — forced `bloom=1.0, cosmic=1.0`,
+timed via `COSMICENGINE_TEMP_FORCE_JELLY_OFFFRAME` (all 3 hero jellyfish pinned off-frame). At least 5
+distinct non-jellyfish phenomena visible simultaneously: ribbons (4, clear multi-bend bodies at top-left,
+top-right, bottom-right), background jellyfish (5 halo-glow blobs), scattered stars, a violet/magenta nebula
+glow along the bottom edge, and a faint dark presence/monster smear mid-frame. Comfortably exceeds the "≥3
+distinct phenomena" bar.
+
+### Gating check (uCosmic-specific, not riding on uBloom)
+`screenshots/07_gating_bloom1.0_cosmic0.png` vs `05_bloom1.0_cosmic1.0.png`, both at `uBloom=1.0`. Quantitative
+region sampling (bottom 40% of frame, where the starfield/nebula mask is active): mean luminance 22.4 (cosmic
+off) vs 29.5 (cosmic on), bright-pixel count 1069 vs 2644 (~2.5x). Mid-band and top-band regions (outside the
+cosmic-gated mask) show no meaningful difference between the two states — confirms the effect is genuinely
+gated by `uCosmic` specifically, not a side effect of `uBloom` alone.
+
+### Evolution-length slider — governs both bloom and cosmic breach
+`UnderwaterScene.cs`: `_bloom` rises at `1f / Tuning.UnderwaterEvolutionSeconds` per second (unchanged,
+pre-existing); `_cosmic` (gated on `_bloom > 0.65`) rises at `1f / (0.5f * Tuning.UnderwaterEvolutionSeconds)`
+— i.e. the cosmic breach, once its gate opens, reaches full envelope over **half** the slider's overall
+value. At the slider's default (240s): bloom takes up to 240s, cosmic up to a further 120s once gated open.
+At the 30s minimum: bloom up to 30s, cosmic up to 15s more. At the 300s maximum: bloom up to 300s, cosmic up
+to 150s more. Both accumulators share the one slider, now dashboard-labeled **"Visual Evolution Time"**
+(was "Bloom Evolution Time"), with an updated description: *"How long sustained light drive takes to evolve
+the Cosmic Reef scene (World04) end-to-end - from calm/dark underwater bloom through the cosmic breach that
+follows it. Governs the whole visual arc, not just the initial bloom."*
+
+### Performance investigation (mandatory, completed) — floor NOT met, options memo below
+
+**Required 4-state table**, Apple M4 Pro, `--profile <X> --smoke-test`, 5 runs per state (governance rule 15):
+
+| State | Runs | avg fps | min observed |
+|---|---|---|---|
+| Safe, rest | 5 | 75.0-75.1 | 74.9 |
+| High, rest | 5 | 63.6-63.9 | 62.8-63.3 |
+| High, forced `uBloom=1.0` | 5 | 50.1-50.5 | 49.5-50.1 |
+| High, forced `uBloom=1.0`+`uCosmic=1.0`+`presencePulse=1.0` (new worst case) | 5 | 50.0-50.4 | 49.4-49.8 |
+
+**High did NOT hold ≥60fps in the two forced-bloom states.** Safe and High-rest both comfortably clear the
+floor; the two states that force sustained high bloom drive do not.
+
+**A same-session, clean A/B against the pre-pivot committed code (`28f3e43`) confirms this is real and
+code-attributable, not the session-variance phenomenon this project has repeatedly documented before.** A
+temporary env-var bloom-forcing override was added to the *pre-pivot* `UnderwaterScene.cs` (mirroring Entry
+47 Addendum 1's own precedent) purely for this isolation check, then fully reverted before touching the pivot
+code again: pre-pivot code, same session, forced `uBloom=1.0`, 3 runs: **61.5-61.7fps** — closely matching
+the historical baseline (62.2-62.6fps) and comfortably clear of the 60fps floor. Rest-state numbers are
+identical between pre-pivot and current code within the cheap/vsync-bound states (Safe 75.0-75.1fps both),
+ruling out a broad environment/thermal explanation — only the GPU-heavy forced-bloom states show the
+regression, and only on the pivot code specifically.
+
+**Isolation, by disable-and-measure (the established methodology, not assertion):**
+| Layer disabled (on top of all fixes below) | Effect at forced `uBloom=1.0`+`uCosmic=1.0`+pulse |
+|---|---|---|
+| Ribbon loop entirely | High rest 63.9 -> 69.3-71.2fps (+~6-8fps) |
+| Ribbons + starfield | 50.3 -> 58.0-59.6fps (+~8-9fps) |
+| Ribbons + starfield + Color-Bloom Wave | 50.3 -> 58.4-59.9fps (+~8-10fps, still just under 60) |
+
+Ribbons (unconditional — present at every point in the song, not bloom/cosmic-gated) and the Color-Bloom Wave
+(bloom-gated, active whenever `uBloom > 0.45`) are the two real, measurable new costs; the starfield's own
+isolated contribution turned out smaller than initially suspected once measured directly (its vertical-mask
+cap fix, below, was still applied on its own merits and is a real, if modest, improvement plus a better
+design match to "still dark-dominant").
+
+**Fixes applied, in the brief's own preferred cheaper-math-before-count-reduction order:**
+1. **Ribbon reach-check, first round (cheaper math):** the original per-instance early-out was an isotropic
+   circle (`bodyLen*0.85+0.06` radius) around a long, thin body — wasteful in directions perpendicular to the
+   body where no part of the shape ever reaches. Replaced with an anisotropic oriented-box check along the
+   body's own `dirBody`/`perpBody` axes (two dot products). Measured to have a real effect on High-rest
+   (63.9 -> ~64fps, small) but not a decisive one — the reach box, empirically measured via a full-screen
+   coverage marker, still covers a large fraction of frame for objects this size (up to ~48% per instance in
+   the worst case), so spatial culling alone had limited headroom here, unlike the plankton/tentacle cases
+   where the reach was a small fraction of screen.
+2. **Ribbon prefix-hash consolidation (cheaper math, second round):** the always-executed per-fragment prefix
+   (needed just to know each ribbon's coarse position for the reach check) originally made 5 independent
+   `hash1()` calls (`depthNorm`, `hMotion`, `hPos`, `heading`, `maxAmpFrac`). Consolidated to 2 real `hash1()`
+   calls plus 3 derived values via `fract(h*constant)` (the same single-hash multi-output technique Entry 45
+   addendum established for the plankton loop) — introduces mild, disclosed correlation between otherwise-
+   independent per-ribbon parameters (timing/shape variance, not a structural/color identity attribute, same
+   risk class Entry 45 addendum accepted).
+3. **Cosmic-starfield vertical-mask cap:** `starVMaskUpper`'s original ceiling (`0.62`) was well past this
+   frame's own visible `p.y` range (`+-0.5`) — at `uCosmic=1.0` the mask was effectively open across nearly
+   the entire screen, not a bounded "breach expanding from the abyss." Capped to `0.30` — still visibly
+   expands well past the abyss into the mid-frame (see evidence screenshots) but never covers the whole
+   visible frame; `uCosmic=0` still produces the exact original bound (zero visual change at rest).
+4. **Caustic Color-Bloom Wave spatial gate:** the caustic-layer call site (unlike the glow-field's own call
+   site, already inside an `if (glowVMask > 0.003)` block) had no spatial gate at all — it ran for every
+   fragment on screen whenever `uBloom > 0.45`, regardless of whether the caustic layer was visually present
+   there. Added a `causticMask > 0.01` gate, matching this file's own established spatial-early-out
+   convention — changes zero pixels of visible output (the wave's contribution was already multiplied by
+   `causticMask` at the mix's own weight).
+5. **Ribbon count reduced, High: 4 -> 3** (the brief's own last-resort lever, explicitly sanctioned) —
+   measured effect at the mandated worst case: negligible (~50.1-50.2 vs ~49.4-49.6fps, well within run-to-run
+   noise), disclosed honestly rather than claimed as a fix that worked.
+
+**None of the above, individually or combined, closed the ~11fps gap to the 60fps floor at the two forced-
+bloom states.** Per `CosmicEngineApp/CLAUDE.md` governance rule 10 and this pass's own explicit instruction
+("If any acceptance item fails twice ... the 60fps floor, stop and write a short options memo instead of
+continuing to iterate") — two genuine, evidence-based optimization rounds were completed without clearing the
+floor, so further iteration was stopped here rather than continued indefinitely.
+
+### Options memo — 60fps floor not met at High, forced sustained bloom
+
+**The problem, stated precisely:** High profile holds comfortably ≥60fps at rest (63.6-63.9fps) and Safe
+holds its usual vsync-class numbers everywhere, but drops to ~50fps whenever `uBloom` is sustained near 1.0
+(both with and without `uCosmic` forced — the cosmic-specific layers turned out to be a small fraction of the
+regression). This state is not a rare edge case — it is the scene's designed climax, reached by ordinary
+sustained loud playing, matching this file's own prior precedent (Entry 45's plankton loop had an identical
+class of problem at its own worst case, fixed in a dedicated follow-up pass).
+
+**What's confirmed, with evidence, not guessed:**
+- The regression is real and code-attributable (clean same-session pre-pivot A/B: 61.6fps vs 50.1-50.5fps),
+  not this project's previously-documented session-variance phenomenon — rest-state numbers are identical
+  between pre-pivot and current code in the same session, ruling out a broad environment explanation.
+- The two dominant new costs are ribbons (unconditional, always rendering regardless of song position) and
+  the Color-Bloom Wave (bloom-gated, active through most of the song's louder second half) — both isolated
+  via disable-and-measure, not assumed.
+- Three rounds of cheaper-math fixes (anisotropic reach-check, hash consolidation, two spatial gates) plus
+  one count reduction (ribbons 4->3 on High) were applied and measured; combined effect was real but
+  insufficient (~8-10fps recovered against an ~11-14fps gap).
+
+**Options for a follow-up pass (not attempted further this pass, per the stop-after-two-rounds rule):**
+1. **Reduce ribbon count further** (3 -> 2 on High, matching Safe) — the cheapest remaining lever, likely
+   worth another ~2-4fps based on the per-instance cost already measured, at the cost of "no longer 3
+   jellyfish" reading as slightly sparser during the ribbon-visible portions of the song.
+2. **Restructure the ribbon reach-check** — the anisotropic box, while mathematically tighter than the
+   original circle, still empirically covers up to ~48% of frame per instance for large/max-depth ribbons;
+   a genuinely tighter bound (e.g. capping `bodyLen`'s own maximum, or a true per-segment AABB rather than a
+   single whole-body box) could meaningfully shrink the always-executed prefix's effective coverage.
+3. **Investigate whether the Color-Bloom Wave's own per-call cost can be hoisted/cached** — `colorBloomWave()`
+   and `colorBloomGoldWeight()` are each called at 2 sites; a shared once-per-pixel precompute (rather than
+   two independent evaluations against two different coordinate spaces) might reduce redundant work, though
+   the two sites deliberately sample different coordinate spaces (`pRefractWater` vs
+   `pRefractRaysCaustics`) for a documented reason (keeping the hue accent visually locked to the layer it
+   modulates), so this would need care not to lose that property.
+4. **Re-measure on a quieter system session** — this session's absolute numbers, while internally consistent
+   (confirmed via the clean pre-pivot A/B), were not cross-validated against a fully idle machine; a follow-up
+   pass should re-run the same 4-state table at session start, before other work, to rule out any residual
+   contribution from session load.
+5. **Accept a lower ribbon/Color-Bloom-Wave budget on High and gate Color-Bloom-Wave's amplitude down** if the
+   above options don't recover enough margin — a last-resort content reduction, not attempted this pass.
+
+**Recommendation:** do not ship this pass's performance state as-is against the 60fps-floor rule; route back
+for a dedicated performance follow-up pass (mirroring Entry 45 addendum's own precedent of a focused,
+isolated optimization pass after a base pass's own mandatory check caught a shortfall) before this pivot is
+considered complete, OR get explicit user sign-off to accept the current ~50fps worst-case floor if a lower
+bar is acceptable for this specific state. This is the honest state of the investigation, not a claim that
+the 60fps floor has been met.
+
+### Zero unintended diff (mandatory self-check)
+- `renderJelly()`: diffed function-body-for-function-body against the pre-pivot committed version — only the
+  two authorized `rimBrightness`/`tentBrightness` demotion-multiplier lines differ, confirmed via direct
+  `diff`.
+- `abyssalGlowShape()`: byte-identical, confirmed via direct `diff` (empty).
+- `monsterShape()`/`monsterCenter()`: byte-identical, confirmed via direct `diff` (empty). The Distant Alien
+  Presence compositing line (`mix(color, shadowTint, presenceMask * presenceEnvelope * 0.88)`) and its
+  `presenceEnvelope` calculation are also byte-identical to the pre-pivot committed version.
+- Every other world (`World01_StellarNursery/`, `World02_LavaLamp/`, `World03_WindTurbineFire/`) and every
+  shared engine/audio/rendering file (`Audio/`, `Rendering/` including `ShaderProgram.cs` — briefly touched
+  with a diagnostic `Console.WriteLine` during this pass's own performance forensics, fully reverted, `git
+  diff` confirms zero diff — `Engine/Camera.cs`, `Engine/DashboardHost.cs`) shows zero diff.
+
+### Existing-scene regression (per the user's own standing scoped-regression preference — shared files
+`Engine/CosmicEngine.cs`/`Engine/SceneRegistry.cs` were touched, so this check applies)
+| Command | Result |
+|---|---|
+| `--world StellarNursery --seed 777 --profile Safe --smoke-test` | avg fps 588.9, clean exit |
+| `--world LavaLamp --profile Safe --smoke-test` | avg fps 4900.5, clean exit |
+| `--world WindTurbineFire --profile Safe --smoke-test` | avg fps 1090.7, clean exit |
+
+All three pass cleanly, no errors.
+
+### Rest-state regression (mandatory)
+Final, fully-reverted code: rest-state luminance 0.067-0.068 (established range 0.063-0.073) — no
+exposure/brightness regression. `screenshots/01_rest.png` / `27_FINAL_clean_rest.png` show no stars, no
+color-wave accents, jellyfish/rays/caustics/haze all visually present and unchanged in character from the
+pre-pivot baseline — the only visible new element at rest is a faint, always-present ribbon (by design, not
+bloom/cosmic-gated, per item 5's own spec — brightness floor `0.18 + ...` means ribbons are never fully
+invisible, unlike stars/nebula which are correctly zero at rest).
+
+### Iteration honesty — temporary debug/diagnostic overrides, fully reverted
+This pass used, and fully removed, several temporary mechanisms: the interrupted prior session's own
+`TempForceBloom`/`TempForceCosmic`/`TempForcePulse`/`TempForceJellyOffFrame` env-var-driven fields (inherited
+from the recovered diff, used for this pass's own evidence capture, then fully deleted — not just disabled);
+a polyline-control-point marker technique in `underwater.frag` (used to diagnose and re-verify the ribbon
+undulation fix); a full-screen reach-check coverage marker (used to diagnose the ribbon reach-box's actual
+coverage); a one-line `Console.WriteLine` in `Rendering/ShaderProgram.cs` (used to confirm a uniform was
+actually reaching the shader during performance forensics); and a temporary bloom-forcing override added to
+the *pre-pivot* `UnderwaterScene.cs` specifically for the clean same-session A/B (added via `git stash`,
+measured, then discarded — never merged into the pivot code). All confirmed fully removed: `grep -c
+"TEMP|Temp"` returns `0` in both `underwater.frag` and `UnderwaterScene.cs`, `git diff --stat` on
+`Rendering/ShaderProgram.cs` is empty, and a final clean `dotnet build` shows 0 warnings/errors.
+
+### Known limitations
+- **The 60fps floor is not met at High during sustained high bloom** — this pass's own central open item, see
+  the Options Memo above. Not resolved this pass; flagged for explicit user decision or a dedicated follow-up
+  performance pass.
+- Ribbon count on High was reduced from the brief's original 4 to 3 as a disclosed trade — see the
+  Performance section for the measured (small) effect.
+- All new constants (ribbon body/wave parameters, star cell size/density, nebula mix weights, Color-Bloom
+  Wave frequency/speed) are first-pass eyeball/isolated-render tuning against this pass's own screenshots, not
+  validated against real sustained guitar playing or the actual show hardware.
+- No OptiPlex/target-hardware validation this pass (Mac mini/M4 Pro dev machine only, per rule 7's own
+  caveat) — this matters more than usual this pass given the open performance question.
+- The interrupted prior session's transcript is lost; this entry's account of "what was already correct" is
+  based entirely on independent code review and re-verification of the recovered diff, not on any inherited
+  reasoning from that session.
+
+### Screenshot/package path
+`DiagnosticReports/CosmicReefPivotPhase1_20260717_081622/`, containing `screenshots/` (rest state; bloom
+progression 0.3/0.6/0.9-cosmic-0.3/1.0-cosmic-1.0; off-frame-heroes proof plus boosted version; gating check;
+ribbon polyline-marker diagnostic sequence including the pre-fix single-arc shape and the post-fix multi-bend
+shapes; ribbon closeup; motion diagnostics at rest and forced peak), `logs/` (build logs, all visual/motion
+diagnostic logs, the full staged performance-investigation log set including the pre-pivot A/B and every
+disable-and-measure isolation run, existing-scene regression logs), `source_context/` (final
+`UnderwaterScene.cs`/`underwater.frag`/`SceneRegistry.cs`/`CosmicEngine.cs`/`ControlServer.cs`), `git/`
+(status, diffstat, per-file diffs, zero-other-worlds-diff confirmation).
+
+**Committed at the user's explicit request — not pushed.** Per this project's standing rule against
+self-signing audit entries, committing this pass is not the same as accepting it. **Ready for review: NO**
+— the 60fps-floor performance item is an open, disclosed failure, not a clean pass; this entry documents
+the honest state, including the options memo, rather than a completed acceptance.
+
+---
+
 ## Phase 1 Hybrid Proof (video-atoms MILESTONE_BREAKDOWN.md) — implemented, honest gap disclosed, NOT ready for full sign-off
 
 **Implementer:** Claude Sonnet 5 (Claude Code). **Reviewer sign-off: _______________ (blank — never self-signed)**
@@ -5674,6 +5969,7 @@ list, per-commit diffstat, status, phase-1-scoped diff vs. pre-pivot HEAD).
 missing-ffmpeg gap means objectives 2, 3, and half of 8 are not genuinely evidenced; recommend
 installing ffmpeg and re-running this exact code before treating Phase 1 as complete. See
 `PHASE1_SUMMARY.md`'s options memo.
+
 ## Entry 49 (Addendum) — Phase 1 Hybrid Proof: Real-Decode Re-Validation
 
 ffmpeg (`~/.local/bin/ffmpeg`, static build, v8.1.2-tessus) was installed on this Mac mini since
@@ -5932,8 +6228,6 @@ staged whole. `AUDIT.md` itself (this entry) is a pure append at file end.
 `VISUAL_EXPERIMENTS.md`, `KNOWN_LIMITATIONS.md`, `screenshots/` (18 PNGs). Not committed to git
 (`DiagnosticReports/` is gitignored, consistent with every prior evidence package in this repo).
 
-**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
-
 ---
 
 ## Entry 52 — Media Console: Audio Tuning slider "stuck"/reverting bug — root cause + fix (v0.1)
@@ -5962,7 +6256,7 @@ Minimal, scoped, no engine/C#-side changes:
 
 ### Verification
 1. **Race reproduction and fix confirmation via direct API calls** (bypassing any browser-side ambiguity): patched `liquid_warp.sensitivity` to `2.5` via the new endpoint, then POSTed a synthetic stale full-object payload (mimicking an old tab) with `liquid_warp.sensitivity=1.0` to the *old* endpoint, then patched `edge_glow.max_contribution` to `0.5` via the new endpoint. Result: `edge_glow.max_contribution` correctly landed at `0.5` and was **not** reverted by the intervening stale write — confirming per-field patches are immune to another actor's full-object race, which is exactly the fix the reported bug needed.
-2. **Synthetic-signal sensitivity verification** (user was away; no real guitar available). Reset tuning to the documented "Gentle Instrument" baseline, then patched `liquid_warp.sensitivity=3.0` and `liquid_warp.max_contribution=0.6` via the fixed endpoint. Drove a sustained synthetic signal via the existing calibration test-pulse (`POST /calibration/testinput {"input":"A","value":0.7}`, the same mechanism used throughout this project's prior calibration-validation passes — never a new/parallel analyzer), confirmed via the C# `/audio/reactivity` endpoint that `guitar_a.sustain` rose to `0.9999998`. In the browser, manually pumped the `render()` loop (the automation pane's tab is backgrounded, so `requestAnimationFrame` never fires there on its own — confirmed by direct inspection: a single manual `render()` call correctly flipped `AUDIO LIVE`/`SHAPING VISUALS` state, proving the render function itself is correct and the gap was rAF-scheduling in a non-visible automation tab, not application logic) with ~180 realistic ~16.7ms frame steps to let the smoothing/envelope math converge as it would in a real, focused browser tab. Result: **Liquid Warp's live contribution rose to `0.55`** (near its `0.6` ceiling) versus the ~`0.02` observed earlier at default (`1.0×`/`22%`) settings — screenshot confirms `AUDIO LIVE`, Guitar A in `SUSTAIN` state, `Live Effect Response: Liquid Warp 0.55`, `SHAPING VISUALS · 0.55`, and the video frame visibly warped. This confirms the sensitivity/max-contribution controls are not just saving correctly now but are genuinely, proportionally reaching the live effect.
+2. **Synthetic-signal sensitivity verification** (user was away; no real guitar available). Reset tuning to the documented "Gentle Instrument" baseline, then patched `liquid_warp.sensitivity=3.0` and `liquid_warp.max_contribution=0.6` via the fixed endpoint. Drove a sustained synthetic signal via the existing calibration test-pulse (`POST /calibration/status`'s sibling `/calibration/testinput {"input":"A","value":0.7}`, the same mechanism used throughout this project's prior calibration-validation passes — never a new/parallel analyzer), confirmed via the C# `/audio/reactivity` endpoint that `guitar_a.sustain` rose to `0.9999998`. In the browser, manually pumped the `render()` loop (the automation pane's tab is backgrounded, so `requestAnimationFrame` never fires there on its own — confirmed by direct inspection: a single manual `render()` call correctly flipped `AUDIO LIVE`/`SHAPING VISUALS` state, proving the render function itself is correct and the gap was rAF-scheduling in a non-visible automation tab, not application logic) with ~180 realistic ~16.7ms frame steps to let the smoothing/envelope math converge as it would in a real, focused browser tab. Result: **Liquid Warp's live contribution rose to `0.55`** (near its `0.6` ceiling) versus the ~`0.02` observed earlier at default (`1.0×`/`22%`) settings — screenshot confirms `AUDIO LIVE`, Guitar A in `SUSTAIN` state, `Live Effect Response: Liquid Warp 0.55`, `SHAPING VISUALS · 0.55`, and the video frame visibly warped. This confirms the sensitivity/max-contribution controls are not just saving correctly now but are genuinely, proportionally reaching the live effect.
 3. Cleared the test override afterward (`{"input":"A","value":null}`) and confirmed via `/audio/reactivity` that the override was released (level began its documented multi-second decay, not an instant cut — consistent with the sustain-envelope behavior verified earlier in this same session).
 4. Reset the tuning state back to the documented "Gentle Instrument" defaults, restarted the Media Console process so its in-memory state re-synced with the (git-clean) on-disk file, and confirmed both the Media Console and the C# audio core (`--dashboard-only`, Clarett 4Pre USB) were left running and healthy for the user's return.
 5. `python3 -m py_compile console_store.py media_console.py` — clean. No standalone JS linter was available on this machine (no `node`, no `jsc`); JS correctness was instead verified by the browser actually loading and executing the script with zero console errors, plus the live functional test above.
@@ -5979,6 +6273,8 @@ Minimal, scoped, no engine/C#-side changes:
 before committing, consistent with this project's convention of not committing ephemeral runtime/session
 state. `AUDIT.md` itself (this entry) is a pure append at file end, non-overlapping with the standing
 uncommitted Cosmic Reef Entry 48 hunk.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
 
@@ -6694,7 +6990,6 @@ only. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk
 (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
-
 
 ---
 

@@ -374,6 +374,27 @@ namespace CosmicEngine.App.Engine
             // own suggested range.
             UnderwaterScene.BackgroundJellyCount = _profile.Name == "High" ? 8 : 4;
 
+            // Cosmic Reef Pivot Phase 1: profile-aware ribbon-organism count,
+            // same pattern/knob site as ParticleCount/PlanktonCount/
+            // BackgroundJellyCount immediately above (harmless no-op unless
+            // Underwater is the active world). Originally 2 (Safe) / 4
+            // (High) per the brief; High reduced to 3 during this pass's own
+            // mandatory performance investigation - ribbons (unconditional,
+            // not bloom/cosmic-gated - present at every point in the song)
+            // were isolated via disable-and-measure as a real, measurable
+            // cost (~4-5fps at High at the mandated worst case, on top of
+            // the Color-Bloom Wave's own ~3-4fps and this session's own
+            // disclosed environment/CPU-contention variance - see this
+            // pass's AUDIT.md entry Known Limitations for the full
+            // breakdown). Traded one ribbon instance (4->3) as the last-
+            // resort lever this pass's own brief authorized, after the
+            // cheaper-math fixes (anisotropic ribbon reach-check + prefix
+            // hash consolidation, capped cosmic-starfield vertical mask,
+            // caustic Color-Bloom Wave spatial gate) were already applied
+            // and insufficient alone to restore the pre-pivot ~62fps-class
+            // headroom in this measurement session.
+            UnderwaterScene.RibbonCount = _profile.Name == "High" ? 3 : 2;
+
             // Dashboard Show Seed Support: only fills in when the user didn't already
             // ask for a specific seed via CLI --seed - explicit intent always wins.
             if (!_explicitSeedProvided)

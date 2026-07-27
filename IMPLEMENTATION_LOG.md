@@ -2083,6 +2083,32 @@ debug overrides (used extensively across this pass's evidence-gathering) fully r
 
 **Not committed, not pushed** — left uncommitted in the working tree pending its own review cycle.
 
+---
+
+## 2026-07-17 — Cosmic Reef Pivot Phase 1 v0.1 (resumed pass, World04)
+
+Resumed a prior agent session's interrupted work (cut off by an API session limit, not a bug) pivoting
+World04 from "Abyssal Bloom" to "Cosmic Reef" — a psychedelic underwater-to-cosmic transformation over the
+length of a song. Audited the recovered 607-line uncommitted diff against the original 7-item spec: 5 items
+(uCosmic accumulator, nebula retint, color-bloom wave, hero-jellyfish demotion, registry rename) were already
+correctly implemented and verified as-is. 2 items required real fixes:
+- **Ribbon undulation** (highest-risk item): the recovered code's traveling-wave frequency (`mix(3.0, 5.5,
+  ...)`) was too low to produce more than a single smooth arc — an automatic-reject rigid-curve failure per
+  this project's own Entry 41 precedent. Fixed by widening to `mix(8.0, 14.0, ...)`, matching/exceeding the
+  battle-tested tentacle traveling-wave's own range. Re-verified via a polyline-control-point isolation
+  technique showing genuine multi-bend "S"/"W" shapes that reshape over time.
+- **Performance**: completed the mandatory investigation the interrupted session was mid-way through. Found
+  a real ~11-14fps code-attributable regression at sustained high bloom (confirmed via a clean same-session
+  A/B against the pre-pivot committed code) — ribbons (always-on) and the color-bloom wave (bloom-gated) are
+  the dominant new costs. Applied 4 rounds of fixes (anisotropic ribbon reach-check, prefix-hash
+  consolidation, capped cosmic-starfield vertical mask, caustic color-wave spatial gate, ribbon count 4->3 on
+  High) but did NOT close the gap to the 60fps floor. Per governance rule 10, stopped after two genuine
+  optimization rounds and wrote an options memo (see `AUDIT.md` Entry 48) instead of continuing to iterate
+  indefinitely — this pass is **not** ready for full sign-off; the performance floor is an open item pending
+  either a dedicated follow-up pass or explicit user acceptance of the current worst-case floor.
+
+Full detail, evidence, and the options memo: `AUDIT.md` Entry 48.
+
 ## Phase 1 Hybrid Proof (video-atoms MILESTONE_BREAKDOWN.md) — implemented, NOT clean, honest gap disclosed
 
 Added `IVideoDecoder`/`FfmpegPipeDecoder`/`VideoTexture` (`CosmicEngineApp/Rendering/Video/`) and a

@@ -95,6 +95,32 @@ namespace CosmicEngine.App.Worlds.World04
     /// (profile-scaled, mirrors ParticleCount/PlanktonCount) - the presence
     /// layer and background jellies both use pure shader-side hash + uTime
     /// placement, no new per-instance C#-integrated state.
+    ///
+    /// Cosmic Reef Pivot Phase 1 (approved Fable-authored architect plan,
+    /// user-amended): pivots World04 from "Abyssal Bloom" (three jellyfish in
+    /// an underwater scene) toward "Cosmic Reef" - a psychedelic underwater-
+    /// to-cosmic ecosystem that transforms over the length of a song. Adds a
+    /// second continuous 0-1 accumulator, _cosmic, following _bloom's exact
+    /// mechanics (see _bloom's own comment below) but gated on _bloom itself
+    /// (rises only once _bloom > 0.65) rather than raw light drive, and
+    /// decaying at roughly half _bloom's rate so the cosmic breach lingers
+    /// into the afterglow instead of snapping shut. User's explicit slider
+    /// amendment to the original architect plan: rather than a separate,
+    /// hardcoded 90s timer (the plan's original Phase 1 spec), _cosmic's rise
+    /// rate is derived from the SAME Tuning.UnderwaterEvolutionSeconds
+    /// dashboard slider that already governs _bloom - see
+    /// CosmicRisePerSecondAtFullDrive below for the exact fraction/formula.
+    /// This makes the one slider ("Visual Evolution Time" in the dashboard,
+    /// relabeled from "Bloom Evolution Time" this pass - see ControlServer.cs)
+    /// govern the length of the ENTIRE visual evolution - bloom AND cosmic
+    /// breach together - not just the bloom portion. Sent to the shader as
+    /// uCosmic. Also adds RibbonCount (profile-scaled, same knob-site pattern
+    /// as ParticleCount/PlanktonCount/BackgroundJellyCount) for the new
+    /// ribbon-organism layer - see underwater.frag's "Ribbon Organisms"
+    /// section for the full design. Everything else (starfield, nebula
+    /// retint, color-bloom wave, hero-jellyfish demotion, registry rename) is
+    /// implemented entirely in underwater.frag/SceneRegistry.cs - no further
+    /// C#-side state needed.
     /// </summary>
     public class UnderwaterScene : IWorld
     {
@@ -142,6 +168,47 @@ namespace CosmicEngine.App.Worlds.World04
         private static float BloomRisePerSecondAtFullDrive =>
             1f / Math.Clamp(Tuning.UnderwaterEvolutionSeconds, MinEvolutionSeconds, MaxEvolutionSeconds);
 
+        // --- Cosmic Reef Pivot Phase 1: cosmic breach accumulator ------------
+        // _cosmic is a second continuous 0-1 accumulator, mechanically
+        // identical in shape to _bloom above (a single float integrator, not
+        // a state machine - same house convention _sceneHeat/_bloom already
+        // established), but with two deliberate differences: (1) its rise
+        // gate is _bloom > CosmicActivationThreshold rather than raw light
+        // drive above a quiet threshold - the cosmic breach is explicitly a
+        // *second act* that only begins once bloom itself is well advanced;
+        // (2) its decay rate is roughly half _bloom's own, so the breach
+        // lingers into the afterglow after a loud passage ends rather than
+        // relaxing at the same pace as bloom itself.
+        private float _cosmic;
+        private const float CosmicActivationThreshold = 0.65f; // _bloom must clear this before _cosmic starts rising at all
+        private const float CosmicDecayPerSecond = BloomDecayPerSecond * 0.5f; // roughly half _bloom's decay rate - breach lingers into the afterglow
+
+        // User's explicit slider amendment (on top of the original approved
+        // architect plan, which specified a separate hardcoded ~90s timer for
+        // the cosmic breach, decoupled from any slider): "add a slider that
+        // allows me to adjust the length of the overall visual evolution, 30
+        // second minimum, 5 minute maximum." Rather than introduce a second
+        // slider/field, _cosmic's rise rate is derived from the SAME
+        // Tuning.UnderwaterEvolutionSeconds slider (already 30-300s,
+        // dashboard-labeled "Visual Evolution Time" as of this pass) that
+        // governs _bloom's own rise rate above - so shortening/lengthening
+        // that one slider scales the WHOLE arc (bloom AND cosmic breach)
+        // together, not just the bloom portion.
+        //
+        // Chosen fraction/formula: the cosmic breach reaches full envelope
+        // (0->1, at sustained full light drive) over HALF of the slider's
+        // overall evolution-time value, counted from the moment its own
+        // _bloom > 0.65 gate first opens - i.e. bloom occupies roughly the
+        // first half of the song's visual arc and the cosmic breach the
+        // second half, both scaled by the same slider. At the slider's
+        // default (240s): bloom takes up to 240s of sustained drive to reach
+        // 1.0; cosmic, once gated open, takes up to 120s of further sustained
+        // drive on top of that. At the slider's minimum (30s): bloom takes up
+        // to 30s, cosmic up to 15s more. At the slider's maximum (300s):
+        // bloom takes up to 300s, cosmic up to 150s more.
+        private static float CosmicRisePerSecondAtFullDrive =>
+            1f / (0.5f * Math.Clamp(Tuning.UnderwaterEvolutionSeconds, MinEvolutionSeconds, MaxEvolutionSeconds));
+
         // Profile-scaled particle count (Safe/High set by CosmicEngine.cs,
         // mirrors WindTurbineFireScene.EmberCount) - MAX_PARTICLES in the
         // GLSL caps the fixed loop, this just picks how many of it run.
@@ -163,6 +230,15 @@ namespace CosmicEngine.App.Worlds.World04
         // reactive lap timing, see underwater.frag's "Background Jellyfish"
         // section for the full rationale.
         public static int BackgroundJellyCount = 6;
+
+        // Cosmic Reef Pivot Phase 1: profile-scaled ribbon-organism count
+        // (Safe/High set by CosmicEngine.cs alongside ParticleCount/
+        // PlanktonCount/BackgroundJellyCount above) - MAX_RIBBON in the GLSL
+        // caps the fixed loop. Same "pure shader-side hash + uTime, no
+        // C#-integrated per-instance state" rationale as BackgroundJellyCount
+        // above - ribbons don't need audio-reactive lap timing either. 2 on
+        // Safe / 4 on High per the brief.
+        public static int RibbonCount = 3;
 
         // Phase 2: per-jellyfish pulse phase, continuously wrapping in [0,1).
         // Initial offsets are hand-picked (not hashed) purely so the 3
@@ -302,6 +378,19 @@ namespace CosmicEngine.App.Worlds.World04
             else
                 _bloom = MathF.Max(_bloom - BloomDecayPerSecond * deltaTime, 0f);
 
+            // Cosmic Reef Pivot Phase 1: _cosmic accumulator, same continuous-
+            // scalar mechanics as _bloom immediately above, gated on _bloom
+            // itself (see CosmicActivationThreshold's comment) rather than raw
+            // light drive. CosmicRisePerSecondAtFullDrive derives from the
+            // same Tuning.UnderwaterEvolutionSeconds slider _bloom's own rate
+            // uses (see that property's comment for the exact half-arc
+            // fraction) so the one dashboard slider scales both accumulators'
+            // timing together.
+            if (_bloom > CosmicActivationThreshold)
+                _cosmic = MathF.Min(_cosmic + _lightEnvelope * CosmicRisePerSecondAtFullDrive * deltaTime, 1f);
+            else
+                _cosmic = MathF.Max(_cosmic - CosmicDecayPerSecond * deltaTime, 0f);
+
             // Phase 2: jellyfish pulse-phase integration. Input B (Sculptor /
             // "water motion") sets the pulse rate - reuses the same
             // current-drive signal Render() derives for uCurrentDrive, so
@@ -332,6 +421,7 @@ namespace CosmicEngine.App.Worlds.World04
 
             _shader.SetFloat("uTime", _time);
             _shader.SetFloat("uBloom", _bloom);
+            _shader.SetFloat("uCosmic", _cosmic);
             _shader.SetFloat("uLightDrive", _lightEnvelope);
             _shader.SetInt("uParticleCount", ParticleCount);
 
@@ -389,6 +479,12 @@ namespace CosmicEngine.App.Worlds.World04
             // needed (unlike the 3 hero jellies) - all placement/motion is
             // derived shader-side from hash + uTime.
             _shader.SetInt("uBgJellyCount", BackgroundJellyCount);
+
+            // Cosmic Reef Pivot Phase 1: profile-scaled ribbon-organism count
+            // - see underwater.frag's "Ribbon Organisms" section. No
+            // per-instance uniforms needed, same rationale as uBgJellyCount
+            // above.
+            _shader.SetInt("uRibbonCount", RibbonCount);
 
             _quad.Draw();
         }
