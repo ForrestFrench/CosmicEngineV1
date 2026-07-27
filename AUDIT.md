@@ -5872,7 +5872,7 @@ disable-and-measure isolation run, existing-scene regression logs), `source_cont
 `UnderwaterScene.cs`/`underwater.frag`/`SceneRegistry.cs`/`CosmicEngine.cs`/`ControlServer.cs`), `git/`
 (status, diffstat, per-file diffs, zero-other-worlds-diff confirmation).
 
-**Committed at the user's explicit request — not pushed.** Per this project's standing rule against
+**Committed at the user's explicit request as `1b51baf` — not pushed.** Per this project's standing rule against
 self-signing audit entries, committing this pass is not the same as accepting it. **Ready for review: NO**
 — the 60fps-floor performance item is an open, disclosed failure, not a clean pass; this entry documents
 the honest state, including the options memo, rather than a completed acceptance.
