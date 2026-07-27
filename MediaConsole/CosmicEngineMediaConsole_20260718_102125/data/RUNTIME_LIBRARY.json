@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0.0",
-  "generated_at": "2026-07-19T12:52:04-06:00",
-  "review_state_last_saved_at": "2026-07-19T12:52:04-06:00",
-  "approved_count": 279,
+  "generated_at": "2026-07-27T10:46:18-06:00",
+  "review_state_last_saved_at": "2026-07-27T10:46:18-06:00",
+  "approved_count": 278,
   "atoms": [
     {
       "atom_id": "ce-va2-841301ed9c12af",
@@ -11571,103 +11571,6 @@
       "representative_thumbnail": "thumbnails/ce-va2-909a0765a40d38.jpg",
       "contact_sheet": null,
       "preview_clip": "previews/ce-va2-909a0765a40d38.mp4",
-      "media_source": "base"
-    },
-    {
-      "atom_id": "ce-va2-ec728da716330b",
-      "review_status": "needs review",
-      "review_notes": "",
-      "revised_start_timestamp": null,
-      "revised_end_timestamp": null,
-      "source_filename": "surrealismanddada.mp4",
-      "source_relative_path": "surrealismanddada.mp4",
-      "source_full_path": "/Volumes/External Hard Drive FCF/CosmicEngine/VisionBoard/surrealismanddada.mp4",
-      "start_timestamp": "00:13:09.270",
-      "end_timestamp": "00:13:14.446",
-      "start_seconds": 789.27,
-      "end_seconds": 794.446,
-      "duration_seconds": 5.176,
-      "tier": "Tier 3",
-      "description": "Surrealist images, objects, and urban fragments form symbolic visual vocabulary. Micro atom for transitions, accents, or layering.",
-      "primary_subject": "surreal artworks, urban fragments, and symbolic objects",
-      "content_tags": [
-        "surrealism",
-        "dada",
-        "artwork",
-        "city",
-        "object",
-        "collage",
-        "tier-3"
-      ],
-      "motif_category": "humanity",
-      "mood": "disorienting, historical",
-      "energy_level": 0.361,
-      "motion_intensity": 0.44,
-      "camera_movement": "mixed editorial footage",
-      "dominant_colors": [
-        "#2e1c2e",
-        "#030204",
-        "#47303f"
-      ],
-      "brightness": {
-        "label": "low",
-        "sampled_luma_0_1": 0.238
-      },
-      "contrast": {
-        "label": "medium",
-        "sampled_contrast_0_1": 0.461
-      },
-      "loopability_assessment": "event-driven or editorial motion; use as a one-shot or transition",
-      "quality_confidence_score": 0.71,
-      "suggested_procedural_enhancements": [
-        "volumetric depth or fog",
-        "particle seeding from luminance",
-        "bloom and color-phase modulation",
-        "displacement or feedback trails"
-      ],
-      "suggested_audio_reactive_mappings": [
-        "bass -> displacement or scale",
-        "midrange -> color-phase and volumetric density",
-        "treble/onsets -> bloom, particles, or strobe accents"
-      ],
-      "allowed_effects": [
-        "color grading",
-        "luma keying",
-        "displacement",
-        "feedback",
-        "bloom",
-        "particles",
-        "volumetrics",
-        "time remapping"
-      ],
-      "effects_to_avoid": [
-        "heavy sharpening",
-        "large opaque typography",
-        "destructive denoising"
-      ],
-      "preferred_transition_in": [
-        "luma dissolve",
-        "color wash",
-        "layered opacity build"
-      ],
-      "preferred_transition_out": [
-        "texture dissolve",
-        "feedback decay",
-        "shape or motion match"
-      ],
-      "visible_logos_text_watermarks_or_licensing_concerns": "Artwork and editorial imagery may be rights-sensitive; source-by-source clearance is required.",
-      "visual_complexity": 0.486,
-      "loop_quality": 0.52,
-      "camera_stability": 0.82,
-      "texture_density": 0.545,
-      "foreground_motion": 0.3,
-      "background_motion": 0.18,
-      "layering_potential": 0.759,
-      "procedural_synergy_score": 0.609,
-      "notes": "High-recall v2 primary candidate; thumbnail/proxy review required. Overlap with neighboring atoms is intentional.",
-      "representative_thumbnail": "thumbnails/ce-va2-ec728da716330b.jpg",
-      "contact_sheet": null,
-      "preview_clip": "previews/ce-va2-ec728da716330b.mp4",
       "media_source": "base"
     },
     {

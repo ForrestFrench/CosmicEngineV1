@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "package_id": "VideoCurationReview_v2_20260717_163426",
   "created_at": "2026-07-17T20:43:14-06:00",
-  "last_saved_at": "2026-07-19T12:52:04-06:00",
+  "last_saved_at": "2026-07-27T10:46:18-06:00",
   "atoms": {
     "ce-va2-cf141ebe5a5645": {
       "status": "rejected",
@@ -8187,7 +8187,7 @@
       "last_modified": "2026-07-17T21:56:46-06:00"
     },
     "ce-va2-ec728da716330b": {
-      "status": "approved",
+      "status": "rejected",
       "assigned_collections": [
         "Humanity",
         "Architecture",
@@ -8196,8 +8196,8 @@
         "Transition Material",
         "Locked / Stable"
       ],
-      "notes": "",
-      "last_modified": "2026-07-17T21:56:48-06:00"
+      "notes": "User confirmed via screenshot: surrealist painting (Paul Delvaux style) revealing two nude female figures flanking a colonnade scene in the final ~1s of the clip. Removed per user request - inappropriate for live show visuals.",
+      "last_modified": "2026-07-27T10:46:18-06:00"
     },
     "ce-va2-4d943d604d1a9b": {
       "status": "rejected",

@@ -2268,3 +2268,17 @@ User recognized `ce-va2-31d431bc872464` (an explosion/mushroom-cloud atom, 99% f
 scan) from its own screenshot as one of the seven atoms flagged-but-untouched in Entry 58. Confirmed via
 thumbnail comparison, then removed the same way (review status -> rejected, library saved/refreshed,
 280 -> 279 approved). Six flagged atoms remain untouched. See `AUDIT.md` Entry 61.
+
+## 2026-07-27 — Media Console: remove an atom depicting nudity
+
+User reported seeing "an artist's painting of two nude women" in the visualizer. Per-atom metadata was
+unreliable for this search (atoms sharing a source file share identical boilerplate descriptions
+regardless of what's on screen), so a keyword search came up empty. Pivoted to a visual sweep of all 279
+approved atoms' thumbnails, then dense multi-frame sampling of the most likely source
+(`surrealismanddada.mp4`, an archival Surrealism/Dada documentary) once a single-thumbnail-frame pass
+still found nothing. Found `ce-va2-ec728da716330b`: its final ~1 second pans to reveal two nude female
+torsos (Paul Delvaux-style imagery), a moment its own thumbnail never captured. Confirmed with the user
+via screenshot before acting, per their explicit request. Removed the same way as prior atoms (rejected,
+library saved/refreshed, 279 -> 278 approved). At the user's request, densely re-sampled all 34 atoms cut
+from that source file for a second instance they believed existed - found none, reported as a negative
+result rather than guessing. See `AUDIT.md` Entry 62.

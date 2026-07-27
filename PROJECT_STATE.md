@@ -472,3 +472,9 @@ passing the real alpha into `drawBasic()` directly. Verified with a controlled s
 **Second frozen atom removed (2026-07-19):** `ce-va2-31d431bc872464` (explosion/mushroom-cloud, 99%
 frozen), user-recognized from Entry 58's flagged-but-untouched list. Now 279 approved atoms. See
 `AUDIT.md` Entry 61.
+
+**Nudity atom removed (2026-07-27):** `ce-va2-ec728da716330b` (surrealist painting revealing two nude
+female figures in its final ~1s, found via metadata-then-visual investigation of
+`surrealismanddada.mp4` after per-atom descriptions proved unreliable), confirmed with the user via
+screenshot before removal. Now 278 approved atoms. A follow-up dense-sampling search of the same source
+file for a second suspected instance found none. See `AUDIT.md` Entry 62.

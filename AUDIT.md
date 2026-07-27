@@ -6694,3 +6694,66 @@ only. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk
 (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+
+---
+
+## Entry 62 — Media Console: remove an atom depicting nudity (v0.1)
+
+**Date:** 2026-07-27
+**Executor:** Claude Code / Sonnet
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+User reported having seen "an artist's painting of two nude women" appear in the visualizer and asked
+that it be found, confirmed via screenshot, and removed only once approved.
+
+### Search
+Per-atom metadata (`description`/`content_tags`/`primary_subject`/`motif_category`) proved unreliable
+for this: atoms cut from the same source video share identical boilerplate descriptions regardless of
+what's actually on screen at that timestamp (e.g. all 34 atoms from `surrealismanddada.mp4` share the
+text "Surrealist images, objects, and urban fragments form symbolic visual vocabulary"), so keyword
+search across roughly 25 plausible art/nudity-adjacent terms found no reliable candidate. Pivoted to a
+visual sweep: downloaded thumbnails for all 279 currently-approved atoms and visually scanned them in
+contact-sheet grids - no match at the single-thumbnail-frame level. Reasoned that `surrealismanddada.mp4`
+(an archival Surrealism/Dada documentary, several of whose real-world source paintings depict nude
+figures) was the most likely source despite not matching on its own thumbnails, since a brief reveal
+mid-clip would not be captured by a single representative frame. Densely re-sampled (every 0.5s, then
+every 0.2-0.25s at the point of interest) all atoms cut from that source file and found the match:
+`ce-va2-ec728da716330b` (00:13:09.270-00:13:14.446, 5.176s) opens on a surrealist scene of stone
+pillars and a distant figure, then in its final ~1 second pans to reveal two nude female torsos
+flanking the composition (Paul Delvaux-style imagery) - a moment its own thumbnail frame (captured
+near the clip's start) never showed.
+
+### Confirmation
+Sent the revealing frame to the user for confirmation before taking any action, per their explicit
+request. User confirmed: "Yes. Remove this and look for another. There is another within the same mp4,
+I believe."
+
+### Second search
+Extended the same dense multi-frame sampling to all 34 atoms cut from `surrealismanddada.mp4` (not just
+the 3 currently approved), covering each atom's full duration, plus a finer 0.25s-step pass across the
+two other approved atoms from that source (`ce-va2-da41a46a647b37`, a cracking-egg Dali-style image;
+`ce-va2-909a0765a40d38`, twin spheres over a desert horizon) end-to-end. No second instance of nudity
+found anywhere in the source file's approved atoms. Reported this back to the user as a negative result
+rather than a false-positive removal, along with what would help narrow a second pass if the atom
+resurfaces (distinguishing visual details, roughly when in a set it played).
+
+### Action taken
+`ce-va2-ec728da716330b` marked `rejected` via `POST /api/review/update`, library saved (279 -> 278
+approved) and refreshed via `POST /api/library/save`/`POST /api/library/refresh`, confirmed absent from
+`/api/exploration/bootstrap` afterward. Only `data/REVIEW_STATE.json`/`data/RUNTIME_LIBRARY.json`/
+`data/INGESTION_STATE.json` changed; source media untouched, fully reversible per the established
+process.
+
+One operational snag along the way: the Media Console server process already running on port 8140 (a
+stale instance from a prior session) returned `Operation not permitted` on every write - a stale/invalid
+file-permission context from a long-lived background process, not a real permissions or code problem.
+Fixed by killing and restarting the server fresh; the same request then succeeded immediately.
+
+### Commit
+`MediaConsole/CosmicEngineMediaConsole_20260718_102125/data/{REVIEW_STATE,RUNTIME_LIBRARY,INGESTION_STATE}.json`
+only. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk in `AUDIT.md`
+(Entry 48) - verified via `git diff --cached` that none of that hunk was included.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
