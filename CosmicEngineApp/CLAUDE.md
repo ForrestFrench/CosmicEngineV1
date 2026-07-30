@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> ## ⚠ THIS PROJECT IS ON HOLD (2026-07-30)
+>
+> **The C# OpenTK engine described in this file is parked.** The user has decided the live show is the
+> Media Console's video-atom playback (`../MediaConsole/CosmicEngineMediaConsole_20260718_102125/`),
+> because the procedural worlds "looked too much like a screensaver no matter what we did" and would
+> not stay visually interesting across a full performance.
+>
+> Everything below remains an accurate description of the engine as built, and the code still builds
+> and runs — nothing was reverted. But **do not resume, extend, or optimize engine/world work unless
+> the user explicitly reopens it.** The known-open Cosmic Reef 60fps failure (`AUDIT.md` Entry 48) no
+> longer blocks anything, since that scene is no longer show content.
+>
+> See `AUDIT.md` Entry 63 for the decision and rationale.
+
 ## What this is
 
 Cosmic Engine — a real-time, audio-reactive visual engine for live music performances (see `../Vision`). It listens to two guitar inputs via an audio interface, does FFT analysis, and drives GLSL fragment shaders ("worlds") that are projected/displayed live. There is no offline/batch mode — the intended runtime experience is a fullscreen visual synced to a live audio signal.

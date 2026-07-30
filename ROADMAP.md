@@ -2,9 +2,23 @@
 
 Immediate phases only — not a long-range plan. Update as phases complete or reorder.
 
-**Last updated:** 2026-07-06 (Fable Strategy Review — Roadmap Pivot, see `AUDIT.md`)
+**Last updated:** 2026-07-30 (C# engine placed on hold — see the direction-change note immediately below)
 
-## Pivot note
+> ## ⚠ THIS ROADMAP IS PARKED (2026-07-30)
+>
+> **Every phase in this file targets the C# OpenTK engine, which is now on hold.** The user has
+> decided the live show is the Media Console's video-atom playback instead; the procedural worlds
+> "looked too much like a screensaver no matter what we did."
+>
+> P1-P6, the OptiPlex engine checkpoint, the Stellar Nursery transfer-function spike, the Wind Turbine
+> Fire and Underwater/Cosmic Reef phase notes, and the Clarett multi-channel work below are all
+> **parked history, retained as an accurate record of what was built and why**. None of it is the
+> active plan and none of it should be resumed unless the user reopens that direction.
+>
+> Active work now lives in the Media Console. See `AUDIT.md` Entry 63 for the decision and its
+> rationale, including why integrated UHD 630 graphics favor the video path over raymarched shaders.
+
+## Pivot note (2026-07-06, superseded — engine-era history)
 
 Prior order had "Stellar Nursery Visual Polish" as the immediate next phase after Live/Safe Profiles.
 After three Stellar Nursery visual passes (one rejected, one accepted-but-flagged-as-too-soft, one

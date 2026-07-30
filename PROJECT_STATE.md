@@ -2,6 +2,26 @@
 
 Point-in-time snapshot of the actual repo state. Update this file when the state changes materially — do not let it drift into aspirational territory.
 
+> ## ⚠ DIRECTION CHANGE (2026-07-30) — read this before anything below
+>
+> **The C# OpenTK engine is on hold. The live show is the Media Console's video-atom playback.**
+>
+> The user has parked all procedural-world work — Stellar Nursery, Lava Lamp, Wind Turbine Fire,
+> Cosmic Reef/Underwater, Hybrid Test, Visual Composer — because the result "looked too much like a
+> screensaver no matter what we did" and would not stay visually interesting across a full set. The
+> show is now entirely `MediaConsole/CosmicEngineMediaConsole_20260718_102125/` (curated video atoms,
+> effect presets, crossfades, two-guitar reactivity, browser/Canvas 2D).
+>
+> **Everything in this file below this box that describes engine worlds, the P1-P6 roadmap, the
+> OptiPlex engine checkpoint, or Cosmic Reef's open 60fps failure is parked history, not the active
+> plan.** It is accurate as a record of what was built and is retained deliberately; it is not what to
+> work on. Nothing was reverted or deleted.
+>
+> A second consequence: the Media Console is no longer a desk-side review tool, it is show runtime.
+> Live-performance hardening (kiosk mode, watchdog, proxy-only playback, running off internal storage
+> instead of the external drive, a graceful degradation ladder) is **not yet built**. See `AUDIT.md`
+> Entry 63.
+
 **Last updated:** 2026-07-17 (Underwater Phase 1 "Living Water" v0.1 now committed as `e1c576b`, see `AUDIT.md` Entry 44; Underwater Phase 2 "Bloom refinement" v0.1 — plankton flow-field alignment + pulse-train brightness waves — plus a priority perf-fix addendum (forced Bloom Event High: 49.9-50.1fps → 65.1-65.4fps) now committed as `faddaba`, see `AUDIT.md` Entry 45 and its addendum; Abyssal Bloom Phase 3 "Distant Event" v0.1 — a new distant abyssal glow field, gated across the same bloom arc — now committed as `fed7a7d`, see `AUDIT.md` Entry 46; Abyssal Bloom Phase 4 "Presence / Color / Depth Population" v0.1 — a distant alien-presence shadow layer, color-variation nudges, and 4-8 cheap background jellyfish, plus a compositing-order visibility fix (Addendum 1) — committed as `28f3e43`, see `AUDIT.md` Entry 47 and its addendum; **Cosmic Reef Pivot Phase 1 v0.1 — World04 renamed "Cosmic Reef", pivoting from a purely underwater scene toward a psychedelic underwater-to-cosmic transformation (starfield, nebula retint, color-bloom wave, ribbon organisms, hero-jellyfish demotion, `uCosmic` accumulator tied to the same evolution-length slider as bloom) — committed as `1b51baf` at the user's explicit request, still NOT ready for review: the mandatory 60fps-floor performance check FAILED at sustained high bloom (~50fps measured, vs. the required ≥60fps) after two genuine optimization rounds; see `AUDIT.md` Entry 48 for the full investigation and its options memo.**)
 
 **Video Atoms Phase 3 "Effect Stack v1" (World05 HybridTest):** uniform-driven grayscale/mirror-X/

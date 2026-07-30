@@ -7052,3 +7052,60 @@ only. Line-level staged around the standing uncommitted Cosmic Reef Phase 1 hunk
 (Entry 48) - verified via `git diff --cached` that none of that hunk was included.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 63 — Direction change: C# engine on hold, Media Console playback is the show
+
+**Date:** 2026-07-30
+**Executor:** Claude Code / Opus (documentation-only pass)
+**Reviewer sign-off:** _____________________ (blank — user decision recorded, not self-signed)
+
+### The decision
+Following an advisory review of the live-show visualizer, the user has put the **C# OpenTK engine
+completely on hold**. In their words: *"It simply looked too much like a screensaver no matter what we
+did. Realistically, it's not going to be dynamic and changing enough to keep the viewer interested."*
+
+The live show is now **entirely** the Media Console's Visual Exploration playback path — curated video
+atoms, effect presets, crossfades, and two-guitar audio reactivity, running in the browser on Canvas 2D.
+
+### What this parks
+All procedural-world work in `CosmicEngineApp/`: Stellar Nursery (World01), Lava Lamp (World02), Wind
+Turbine Fire (World03), Cosmic Reef / Underwater (World04), Hybrid Test (World05), Visual Composer
+(World06). Also parked: `ROADMAP.md`'s P1-P6 phase order, `MILESTONE_BREAKDOWN.md`'s engine milestones,
+the OptiPlex-first-light-for-the-engine checkpoint, and the open Cosmic Reef 60fps failure from Entry 48
+(which no longer blocks anything, since that scene is no longer show content).
+
+**Parked, not deleted.** Every commit stands; nothing is being reverted or removed. Entry 48's disclosed
+performance failure remains accurate and unresolved — it simply stops mattering for the show.
+
+### Supporting rationale beyond the user's own aesthetic judgment
+The advisory review reached the same architectural conclusion independently, on hardware grounds. The
+stage target is a Dell OptiPlex 5070 Micro with Intel UHD 630 integrated graphics, which has QuickSync
+fixed-function video decode (cheap) but weak shader ALU/fill rate (scarce). That inverts the usual
+intuition:
+- The **video-atom path is well matched** — a hardware-decoded 720p clip plus light compositing.
+- The **raymarched worlds are badly matched** — Cosmic Reef misses the 60fps floor on an Apple M4 Pro
+  (~50fps, Entry 48). UHD 630 is far weaker in shader throughput; that is not a gap an optimization pass
+  closes.
+
+`ENGINE_EVOLUTION.md` section 9 had already reached the same hardware conclusion. This entry promotes it
+from a footnote to the governing decision.
+
+### Consequence for how the Media Console is treated
+The Media Console's Visual Exploration tab was documented as a **review/curation surface**
+(`MEDIA_CONSOLE_ARCHITECTURE.md`: "the permanent, local video-tooling surface"). It is now the **show
+runtime**. That is a change in stakes, not just in labeling — reliability items that were irrelevant for
+a desk tool are now live-performance concerns: kiosk/watchdog behavior, proxy-only playback in show mode,
+running from internal storage rather than the external drive, and a graceful degradation ladder. None of
+these are built yet; they are recorded here so the gap is visible rather than assumed handled.
+
+### Scope of this pass
+Documentation only. Zero code changes, zero data changes. `CosmicEngineApp/` is untouched.
+
+### Commit
+`AUDIT.md`, `PROJECT_STATE.md`, `ROADMAP.md`, `CosmicEngineApp/CLAUDE.md`. No line-level staging needed
+this time — the standing Cosmic Reef Phase 1 hunk was committed as `1b51baf`, so the working tree is
+clean apart from ephemeral Media Console session state.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
