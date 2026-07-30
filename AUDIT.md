@@ -7109,3 +7109,84 @@ this time — the standing Cosmic Reef Phase 1 hunk was committed as `1b51baf`, 
 clean apart from ephemeral Media Console session state.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 64 — Media Console: rest states + effect-family budget (v0.1)
+
+**Date:** 2026-07-30
+**Executor:** Claude Code / Opus
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Context
+First build under the Entry 63 direction change. The advisory review found the show had no dynamic
+range: all five presets were full-frame treatments at broadly similar mid-brightness, so nothing could
+land as a peak because nothing ever got out of the way. This pass adds a floor.
+
+### What was added
+**Four rest presets** in `data/EFFECT_PRESETS.json` (now 9 total):
+- **Document** (w 0.9) — dim, near-monochrome, gentle vignette, no geometry/trails.
+- **Residue** (w 0.7) — slow, colour draining, `datamosh` deliberately 0 so trails read as after-image
+  rather than rainbow.
+- **Plate** (w 0.25) — fully untreated. Rare by design; the "Archive Breach" moment.
+- **Ash** (w 0.55) — cold and slow, desaturated then pushed off-hue.
+
+**Data-driven rotation weights.** `selectUpcoming()` previously carried a hardcoded name→weight map in
+JS; weight now lives on the preset record (`presetWeight()`, missing/invalid → 1, 0 removes a preset
+from random rotation while leaving it hand-selectable). Existing weights preserved exactly
+(Prismatic Ritual 0.45, Infinite Trail 0.65). Rest states are ~37% of weighted rotation.
+
+**Effect-family budget** (`EFFECT_FAMILIES` / `enforceEffectBudget()`, applied in `render()` after
+`modulateEffects`). Members of a family blend numerically during a morph, so a transition between two
+individually-fine presets can land on a frame carrying more haze/smear than either endpoint authored.
+Each family's weighted load is capped; past the cap all members scale proportionally.
+- temporal: `trailSmear` 1.0, `echo` 0.9, `datamosh` 0.55 — budget 1.15
+- optical: `chromatic` 1.0, `vhs` 0.85, `blur` 0.8, `grain` 0.35 — budget 1.25
+
+**Preset lint** — warns (does not mutate) if a preset stacks multiple geometric treatments.
+
+### Verification
+- All 9 presets load and round-trip through `/api/exploration/bootstrap`.
+- **No authored preset is re-graded by the budget** — verified programmatically across all 9 (empty
+  diff). An earlier temporal budget of 1.0 silently pulled Infinite Trail & Datamoshing back ~10%
+  (0.74 + 0.68×0.55 = 1.114); caught before commit and the budget raised to 1.15 so the guardrail
+  catches only unintended combinations, not existing looks.
+- Budget catches genuine mud: `{trail .9, echo .5, datamosh .8, chromatic .6, vhs .7, blur .6}` →
+  trail .578, chromatic .413, vhs .482.
+- **Continuity:** sweeping `trailSmear` 0.6→1.3 across the cap gives max step 0.05 against a 0.05 input
+  step — the scaling is smooth, so it cannot pop mid-morph.
+- **Document verified visually** composited (canvas + DOM overlay layers) on a bright atom
+  (`ce-vai2-608c6567f15540`, tundra wolf on snow, source luma 0.77): dim, near-monochrome, fully
+  legible, filmic. **Ash verified** on the same frame as a distinctly colder/softer state.
+
+### Two real testing traps hit and corrected mid-pass
+1. **`canvas.toDataURL()` does not capture the effect.** `applyEffectUI()` applies `grain`, `vignette`
+   and `vhs` as **DOM overlay elements** and `duotone`/`posterize`/`liquidWarp`/`edgeGlow` as CSS
+   `filter: url(#...)` — none of which live in the canvas bitmap. Canvas-only captures silently omit
+   them. First-round tuning was done on incomplete images and had to be redone.
+2. **The silence dimming invalidates any composited screenshot taken without audio.** `.stage-wrap`
+   gains `audio-silent`, which drops `#stage` to **opacity 0.12** behind the band logo, re-applied every
+   frame by `updateBandLogo()` and animated through a multi-second CSS transition (so even
+   `opacity:1 !important` reads back as 0.12 until the transition is suppressed). Every early screenshot
+   was of a 12%-opacity stage.
+
+**Design consequence of (2), flagged for the user:** rest states and the silence dimming stack. During a
+genuine silent passage the stage is already at 12%; a rest preset on top of that is close to nothing.
+The 12% figure was chosen when every preset was bright. It likely wants raising now, or making
+state-dependent.
+
+### Known limitations
+- Only **Document** and **Ash** were verified composited, on **one** atom. Plate is verified only as an
+  untreated canvas render (mean luma 190.8, correct); **Residue's trail behaviour is untested in motion**
+  — a paused clip produces no trail, so its defining characteristic has not been seen.
+- Relative darkness between Document and Ash is source-dependent, not guaranteed by the numbers.
+- Ash's off-hue push varies with source hue (violet on colourful footage, cold grey on monochrome).
+  Intended, but it means the name describes only one of its behaviours.
+- The 37% rest share is a starting ratio, not a tuned one. No full-set rehearsal has been run.
+- The budget does not fire during any *current* morph — it exists to cap the worst case.
+
+### Commit
+`data/EFFECT_PRESETS.json`, `static/exploration.js`, plus this entry and the paired log/state updates.
+No Python changes needed (the server backfills missing preset keys from `DEFAULT_EFFECTS`).
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

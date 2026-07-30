@@ -497,3 +497,9 @@ female figures in its final ~1s, found via metadata-then-visual investigation of
 `surrealismanddada.mp4` after per-atom descriptions proved unreliable), confirmed with the user via
 screenshot before removal. Now 278 approved atoms. A follow-up dense-sampling search of the same source
 file for a second suspected instance found none. See `AUDIT.md` Entry 62.
+
+**Rest states + effect-family budget (2026-07-30):** four presets that deliberately do less (Document,
+Residue, Plate, Ash) added to the Media Console, giving the show a dynamic-range floor for the first
+time; rotation weights moved onto the preset records; a smooth temporal/optical family budget caps
+muddy morph blends without re-grading authored presets. Known gap: Residue's trail is unverified in
+motion, and the `audio-silent` 12% stage dimming now stacks with rest states. See `AUDIT.md` Entry 64.

@@ -2308,3 +2308,16 @@ via screenshot before acting, per their explicit request. Removed the same way a
 library saved/refreshed, 279 -> 278 approved). At the user's request, densely re-sampled all 34 atoms cut
 from that source file for a second instance they believed existed - found none, reported as a negative
 result rather than guessing. See `AUDIT.md` Entry 62.
+
+## 2026-07-30 — Media Console: rest states + effect-family budget
+
+First build under the Entry 63 pivot. Added four rest presets (Document, Residue, Plate, Ash) giving the
+show a floor it previously lacked - every prior preset was a full-frame treatment at similar
+mid-brightness, so peaks had nothing to land against. Moved rotation weights out of a hardcoded JS map
+onto the preset records themselves, and added a smooth per-family effect budget (temporal/optical) that
+caps muddy combinations during morphs without re-grading any authored preset. Two testing traps caught
+mid-pass and documented: `canvas.toDataURL()` omits the grain/vignette/vhs DOM overlay layers entirely,
+and the `audio-silent` band-logo dimming drops the stage to 12% opacity through a multi-second CSS
+transition, which invalidated the first round of composited screenshots. Flagged a resulting design
+interaction - rest states and silence dimming stack, so the 12% figure likely needs raising. Residue's
+trail behaviour remains unverified in motion. See `AUDIT.md` Entry 64.
