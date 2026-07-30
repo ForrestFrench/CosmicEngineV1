@@ -7190,3 +7190,91 @@ state-dependent.
 No Python changes needed (the server backfills missing preset keys from `DEFAULT_EFFECTS`).
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 65 — Audio: capture device misbinding (root cause + permanent fix)
+
+**Date:** 2026-07-30
+**Executor:** Claude Code / Opus
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Symptom
+User reported the Media Console showed no reaction to guitar, while the interface was set correctly
+and signal was visible in macOS audio settings.
+
+### Root cause — two independent faults, both real
+The audio core log read:
+
+```
+[AudioEngine] Capture opened: device="Hue Sync Audio", ...
+```
+
+macOS's default input *was* correctly set to `Clarett 4Pre USB` (18ch, confirmed via
+`system_profiler SPAudioDataType`). Both facts are true at once because:
+
+1. **OpenAL's default is not the CoreAudio default.** `AudioEngine.Start()` called
+   `ALC.CaptureOpenDevice(null, ...)`, which asks the deprecated macOS OpenAL.framework for *its*
+   default capture device. That resolution does not track the input you select in System Settings. It
+   picked the Philips Hue Sync virtual device.
+2. **The device is bound once, at process start.** Even after the OS default was corrected, the
+   already-running core kept its original binding. Restarting was required, and nothing said so.
+
+This is AUDIT Entry 38 recurring. Entry 38 diagnosed it and recommended a *user action* (change the OS
+default); it never removed the dependency on the OS default, so the same failure returned the first
+time a virtual audio device won the default slot.
+
+### Why it stayed invisible
+`/audio/reactivity` reported `capture_active: true`, `available: true`, and all-zero levels — which is
+byte-for-byte what a connected rig with nobody playing looks like. There was no signal in the system
+that could distinguish "dead/misbound input" from "quiet guitarist", so the dashboard could only show
+silence and the user could only conclude the reactivity was broken.
+
+### Fix
+**`Audio/AudioEngine.cs`** — device selection instead of trusting a default:
+- Enumerates capture devices and logs the full list at startup.
+- Selection order: `COSMICENGINE_AUDIO_DEVICE` (exact match, then case-insensitive substring) → first
+  device that does not match a known virtual/loopback/aggregate marker (`hue sync`, `blackhole`,
+  `soundflower`, `loopback`, `vb-cable`, `zoomaudio`, `krisp`, `teams`, `obs virtual`, `ndi`,
+  `aggregate`, `multi-output`) → OpenAL default as last resort.
+- Falls back to the default device if the chosen name fails to open, rather than dying.
+- Prints a loud multi-line warning if the opened device looks virtual.
+- New `OpenedDeviceName`, and `HasSeenSignal` which latches the first sample above a deliberately
+  sub-musical floor (0.0015) and logs it once.
+
+**`Audio/GuitarIntentSnapshot.cs` / `GuitarIntentResponse.cs`** — publishes `capture_device` and
+`signal_seen`. No Python change was needed: `media_console.py` proxies the payload wholesale.
+
+**Media Console** — the status pill now reads `AUDIO LIVE · <device>`, `NO SIGNAL · <device>` (new
+amber state, `capture_active` true but nothing ever received), or `CORE OFFLINE`, each with a
+`title` explaining the specific next step, including that the device binds at startup and needs a
+restart.
+
+### Verification
+- `dotnet build` — 0 warnings, 0 errors.
+- Restarted core log: enumerates `Clarett 4Pre USB`, auto-picks it, opens it, then
+  `First signal detected on "Clarett 4Pre USB" (L=0.1044, R=0.0000)` — real guitar signal.
+- `:8080/audio/reactivity` → `capture_device: "Clarett 4Pre USB"`, `signal_seen: true`,
+  `guitar_a.input_level ≈ 0.098`, `silent: false`.
+- Same fields intact through the proxy at `:8140/api/audio/reactivity`.
+- All three UI states rendered and checked: live / no-signal / core-offline, with correct classes and
+  tooltips.
+
+### Notes and open items
+- **Guitar B reads 0.** Only Input 1 carried signal during this test (`R=0.0000`). Expected if only one
+  guitar was plugged in; worth confirming before a two-guitar session.
+- **OpenAL enumerated only one device after the restart** — Hue Sync Audio was no longer present at
+  all. So the device list is snapshotted per process, which is consistent with fault (2) and means the
+  auto-pick is doing real work only when a virtual device is present at launch.
+- **Scope exception:** this touches `CosmicEngineApp/`, which Entry 63 placed on hold. The hold covers
+  procedural-world/show content. The engine is also, unavoidably, the audio capture daemon the Media
+  Console depends on (`--audio-core-url` defaults to `http://localhost:8080`), so the audio path
+  remains in scope. That dependency is itself a live-show fragility worth revisiting.
+- **Not addressed:** nothing starts the audio core automatically. If it is not running, the console now
+  says `CORE OFFLINE` and explains why, but the operator must still launch it.
+
+### Commit
+`CosmicEngineApp/Audio/{AudioEngine,GuitarIntentSnapshot,GuitarIntentResponse}.cs`,
+`MediaConsole/.../static/exploration.{js,css}`, plus docs.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

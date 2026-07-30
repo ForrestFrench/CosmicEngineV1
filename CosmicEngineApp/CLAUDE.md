@@ -73,6 +73,27 @@ They apply to every pass, not just visual/shader work:
 
 Note: shader files are loaded from disk at runtime via relative paths (e.g. `Worlds/World01_StellarNursery/Shaders/...`), not copied/embedded by the build. Always run `dotnet run` with this directory as the working directory, otherwise shader loading will fail with `FileNotFoundException`.
 
+## Audio capture device selection (AUDIT Entry 65)
+
+`Audio/AudioEngine.cs` no longer opens OpenAL's default capture device. On macOS that default is
+resolved by the deprecated OpenAL.framework and does **not** track the input you select in System
+Settings, and it is bound once at process start - which is how this project twice ended up silently
+capturing a Philips Hue "Hue Sync Audio" virtual device while the user watched real signal arrive at a
+correctly-configured Focusrite (Entries 38 and 65).
+
+Selection order is now: `COSMICENGINE_AUDIO_DEVICE` (exact, then case-insensitive substring) -> the
+first enumerated device that does not look virtual/loopback/aggregate -> the OpenAL default as a last
+resort, with a loud warning. The full device list is logged at startup. To force a specific interface:
+
+```bash
+COSMICENGINE_AUDIO_DEVICE="Clarett" dotnet bin/Debug/net8.0/CosmicEngine.App.dll --dashboard-only
+```
+
+**Debugging "no reaction to guitar" starts with one line.** Read the core's stdout for
+`[AudioEngine] Capture opened: device="..."`. Then `curl -s localhost:8080/audio/reactivity` and check
+`signal_seen` - false with `capture_active` true means a dead or misbound stream, not a quiet player.
+Remember the binding is per-process: changing the OS input requires restarting the audio core.
+
 ## Runtime dependencies
 
 - **Audio input**: `Audio/AudioEngine.cs` opens an OpenAL capture device (stereo, 44.1kHz) and expects a real two-channel guitar interface (originally tuned for a Focusrite Clarett — see `Tuning.cs` comment). Running without a capture device attached will throw at startup (`AudioEngine: could not open capture device`).

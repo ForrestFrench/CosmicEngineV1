@@ -2321,3 +2321,16 @@ and the `audio-silent` band-logo dimming drops the stage to 12% opacity through 
 transition, which invalidated the first round of composited screenshots. Flagged a resulting design
 interaction - rest states and silence dimming stack, so the 12% figure likely needs raising. Residue's
 trail behaviour remains unverified in motion. See `AUDIT.md` Entry 64.
+
+## 2026-07-30 — Audio: capture device misbinding fixed at the root
+
+Guitar levels read 0.000 while macOS showed the Clarett correctly selected. The core log showed it had
+opened "Hue Sync Audio": OpenAL's default capture device is not the CoreAudio default, and it binds
+once at process start so fixing the OS setting afterwards does nothing. Same failure as Entry 38, which
+had only prescribed a user action rather than removing the dependency on the default. AudioEngine now
+enumerates devices, skips known virtual/loopback/aggregate ones, honours COSMICENGINE_AUDIO_DEVICE, and
+warns loudly if it still lands on a virtual device. Added HasSeenSignal, published with the device name
+as `signal_seen`/`capture_device`, so "dead input" is finally distinguishable from "nobody playing" -
+previously both looked identical from outside. Media Console shows AUDIO LIVE / NO SIGNAL / CORE
+OFFLINE with the device name and a specific next step. Verified with real guitar: first signal detected
+at L=0.1044. See `AUDIT.md` Entry 65.

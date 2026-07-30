@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using OpenTK.Audio.OpenAL;
 using MathNet.Numerics;
@@ -30,17 +31,128 @@ namespace CosmicEngine.App.Audio
         private const int SampleRate = 44100;
         private const int BufferSize = 2048; // in sample FRAMES, not raw samples
 
+        /// <summary>
+        /// Name of the capture device actually opened, for diagnostics and for the
+        /// dashboard/Media Console to display. Empty until <see cref="Start"/> succeeds.
+        /// </summary>
+        public static string OpenedDeviceName { get; private set; } = "";
+
+        /// <summary>
+        /// True once any sample above the noise floor has arrived since capture opened.
+        /// This is what distinguishes "the guitarist isn't playing" from "we opened the
+        /// wrong device and this stream is dead" - the two are otherwise identical from
+        /// outside (capture_active true, all values 0), which is exactly how the
+        /// "Hue Sync Audio" misbinding stayed invisible through several sessions.
+        /// </summary>
+        public static bool HasSeenSignal { get; internal set; }
+
+        /// <summary>
+        /// Virtual/loopback/aggregate devices that are never a guitar interface. macOS
+        /// happily makes one of these the OpenAL default, and OpenAL's default does NOT
+        /// track the CoreAudio default you set in System Settings - so "my input is set
+        /// correctly" and "the app is reading silence" are entirely compatible.
+        /// </summary>
+        private static readonly string[] VirtualDeviceMarkers =
+        {
+            "hue sync", "soundflower", "blackhole", "loopback", "vb-cable", "vb cable",
+            "zoomaudio", "krisp", "teams", "obs virtual", "ndi", "aggregate", "multi-output"
+        };
+
+        private static bool LooksVirtual(string name)
+        {
+            string n = name.ToLowerInvariant();
+            foreach (var marker in VirtualDeviceMarkers)
+                if (n.Contains(marker)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Picks the capture device by name rather than trusting OpenAL's default.
+        /// Order: COSMICENGINE_AUDIO_DEVICE (exact, then substring, case-insensitive)
+        /// -> first enumerated device that does not look virtual -> OpenAL default.
+        /// </summary>
+        private static string? SelectDeviceName()
+        {
+            List<string> devices;
+            try
+            {
+                devices = new List<string>(ALC.GetStringList(GetEnumerationStringList.CaptureDeviceSpecifier));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AudioEngine] Could not enumerate capture devices ({ex.Message}); falling back to the OpenAL default.");
+                return null;
+            }
+
+            if (devices.Count == 0)
+            {
+                Console.WriteLine("[AudioEngine] No capture devices enumerated; falling back to the OpenAL default.");
+                return null;
+            }
+
+            Console.WriteLine($"[AudioEngine] Capture devices visible to OpenAL ({devices.Count}):");
+            foreach (var d in devices)
+                Console.WriteLine($"[AudioEngine]   - \"{d}\"{(LooksVirtual(d) ? "   (looks virtual - skipped by auto-pick)" : "")}");
+
+            string? requested = Environment.GetEnvironmentVariable("COSMICENGINE_AUDIO_DEVICE");
+            if (!string.IsNullOrWhiteSpace(requested))
+            {
+                foreach (var d in devices)
+                    if (string.Equals(d, requested, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"[AudioEngine] COSMICENGINE_AUDIO_DEVICE matched exactly: \"{d}\".");
+                        return d;
+                    }
+                foreach (var d in devices)
+                    if (d.IndexOf(requested, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        Console.WriteLine($"[AudioEngine] COSMICENGINE_AUDIO_DEVICE=\"{requested}\" matched \"{d}\".");
+                        return d;
+                    }
+                Console.WriteLine($"[AudioEngine] WARNING: COSMICENGINE_AUDIO_DEVICE=\"{requested}\" matched no capture device. Falling through to auto-pick.");
+            }
+
+            foreach (var d in devices)
+                if (!LooksVirtual(d))
+                {
+                    Console.WriteLine($"[AudioEngine] Auto-picked first non-virtual capture device: \"{d}\".");
+                    return d;
+                }
+
+            Console.WriteLine("[AudioEngine] WARNING: every enumerated capture device looks virtual. Using the OpenAL default; expect silence.");
+            return null;
+        }
+
         public static void Start()
         {
-            _device = ALC.CaptureOpenDevice(null, SampleRate, ALFormat.Stereo16, BufferSize);
+            string? chosen = SelectDeviceName();
+
+            _device = ALC.CaptureOpenDevice(chosen, SampleRate, ALFormat.Stereo16, BufferSize);
+
+            if (_device == ALCaptureDevice.Null && chosen != null)
+            {
+                Console.WriteLine($"[AudioEngine] WARNING: could not open \"{chosen}\"; retrying with the OpenAL default device.");
+                _device = ALC.CaptureOpenDevice(null, SampleRate, ALFormat.Stereo16, BufferSize);
+            }
 
             if (_device == ALCaptureDevice.Null)
                 throw new Exception("AudioEngine: could not open capture device. Check interface permissions.");
 
+            HasSeenSignal = false;
+
             try
             {
                 string opened = ALC.GetString(new ALDevice(_device.Handle), AlcGetString.CaptureDeviceSpecifier);
+                OpenedDeviceName = opened ?? "";
                 Console.WriteLine($"[AudioEngine] Capture opened: device=\"{opened}\", format=Stereo16, sampleRate={SampleRate}, bufferSize={BufferSize} frames.");
+                if (!string.IsNullOrEmpty(opened) && LooksVirtual(opened))
+                {
+                    Console.WriteLine("[AudioEngine] ***********************************************************");
+                    Console.WriteLine($"[AudioEngine] WARNING: \"{opened}\" is a virtual/loopback device, not a guitar");
+                    Console.WriteLine("[AudioEngine] interface. Levels will read 0.000 no matter how loud you play.");
+                    Console.WriteLine("[AudioEngine] Set COSMICENGINE_AUDIO_DEVICE to your interface name and restart.");
+                    Console.WriteLine("[AudioEngine] ***********************************************************");
+                }
             }
             catch (Exception ex)
             {
@@ -98,6 +210,15 @@ namespace CosmicEngine.App.Audio
 
                     Guitar1.Level = (float)Math.Sqrt(sumL / BufferSize);
                     Guitar2.Level = (float)Math.Sqrt(sumR / BufferSize);
+
+                    // Latch the first time real signal arrives. Deliberately below any
+                    // musically useful gate (this answers "is this stream alive at all",
+                    // not "is someone playing"), and never reset while capture is open.
+                    if (!HasSeenSignal && (Guitar1.Level > 0.0015f || Guitar2.Level > 0.0015f))
+                    {
+                        HasSeenSignal = true;
+                        Console.WriteLine($"[AudioEngine] First signal detected on \"{OpenedDeviceName}\" (L={Guitar1.Level:F4}, R={Guitar2.Level:F4}).");
+                    }
 
                     Fourier.Forward(fftL, FourierOptions.Matlab);
                     Fourier.Forward(fftR, FourierOptions.Matlab);

@@ -20,6 +20,18 @@ namespace CosmicEngine.App.Audio
         [JsonPropertyName("capture_active")]
         public bool CaptureActive { get; init; }
 
+        /// <summary>Capture device actually opened - not the one the OS reports as default.</summary>
+        [JsonPropertyName("capture_device")]
+        public string CaptureDevice { get; init; } = "";
+
+        /// <summary>
+        /// False means no sample above the noise floor has arrived since capture opened.
+        /// Combined with capture_active==true this is the unambiguous signature of a dead
+        /// or misbound input, which is otherwise indistinguishable from nobody playing.
+        /// </summary>
+        [JsonPropertyName("signal_seen")]
+        public bool SignalSeen { get; init; }
+
         [JsonPropertyName("guitar_a")]
         public GuitarIntentChannel GuitarA { get; init; } = new GuitarIntentChannel();
 

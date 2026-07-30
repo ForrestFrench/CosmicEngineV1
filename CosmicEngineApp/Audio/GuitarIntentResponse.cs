@@ -59,6 +59,8 @@ namespace CosmicEngine.App.Audio
                     Sequence = ++_sequence,
                     CapturedAtMonotonicMs = now * 1000.0 / Stopwatch.Frequency,
                     CaptureActive = captureActive,
+                    CaptureDevice = AudioEngine.OpenedDeviceName,
+                    SignalSeen = AudioEngine.HasSeenSignal,
                     GuitarA = guitarA,
                     GuitarB = guitarB,
                     Interaction = Clamp01(_interaction)
