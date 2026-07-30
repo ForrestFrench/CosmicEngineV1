@@ -161,7 +161,9 @@
           <label>Morph min (s)<input id="morphDurationMin" type="number" min="1" max="60" value="5"></label>
           <label>Morph max (s)<input id="morphDurationMax" type="number" min="1" max="60" value="15"></label>
           <label>Deterministic seed<input id="deterministicSeed" type="number" step="1" value="1337"></label>
+          <label class="seed-pin"><input id="pinSeed" type="checkbox"> Pin this seed (same running order every load)</label>
           <button id="resetSeed">Restart seeded timelines</button>
+          <button id="newSeed">Shuffle now (new seed)</button>
         </div>
       </section>
 

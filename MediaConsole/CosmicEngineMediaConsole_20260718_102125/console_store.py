@@ -419,7 +419,7 @@ class ConsoleStore:
                 "effects": {key: payload.get("effects", {}).get(key, default) for key, default in DEFAULT_EFFECTS.items()},
                 "effect_timeline_paused": bool(payload.get("effect_timeline_paused", False)), "effect_locked": bool(payload.get("effect_locked", False)),
                 "effect_duration_min": duration_min, "effect_duration_max": duration_max, "morph_duration_min": morph_min, "morph_duration_max": morph_max,
-                "deterministic_seed": int(payload.get("deterministic_seed", 1337)), "playback_quality": "original" if payload.get("playback_quality") == "original" else "proxy",
+                "deterministic_seed": int(payload.get("deterministic_seed", 1337)), "pin_seed": bool(payload.get("pin_seed", False)), "playback_quality": "original" if payload.get("playback_quality") == "original" else "proxy",
             }
             atomic_json_write(self.exploration_path, self.exploration)
             return dict(self.exploration)

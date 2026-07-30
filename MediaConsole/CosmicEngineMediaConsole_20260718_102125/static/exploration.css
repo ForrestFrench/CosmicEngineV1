@@ -33,3 +33,4 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:18px;padding:18p
 @keyframes bandLogoBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
 @keyframes bandLogoShimmer{0%{background-position:0% 50%}100%{background-position:240% 50%}}
 @media(prefers-reduced-motion:reduce){.band-logo-halo,.band-logo-stars i,.band-logo-wordmark,.band-logo-text{animation:none}}
+.seed-pin{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);grid-column:1/-1}.seed-pin input{accent-color:var(--cyan)}

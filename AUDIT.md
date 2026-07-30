@@ -7278,3 +7278,67 @@ restart.
 `MediaConsole/.../static/exploration.{js,css}`, plus docs.
 
 **Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**
+
+---
+
+## Entry 66 — Atom selection: confirmed not random *across sessions* (fixed seed), shuffle itself is sound
+
+**Date:** 2026-07-30
+**Executor:** Claude Code / Opus
+**Reviewer sign-off:** _____________________ (blank — pending user review, not self-signed)
+
+### Claim under test
+User: "I don't feel like the atoms are random... They still seem to favor newly added atoms."
+
+### Verdict — the observation is real, the diagnosis needed correcting
+The selection *algorithm* is not biased. The *session* is not random at all. Three things compound.
+
+**1. The shuffle is correct.** `refillClipBag()` is a textbook Fisher-Yates over all approved atoms, and
+`chooseWeighted()` pops from that bag — a shuffle-bag, so every atom plays exactly once before any
+repeat (verified: 278 picks, 278 unique). Replicating the exact mulberry32 PRNG and shuffle in Python
+across **400 independent seeds**, first 30 picks each:
+
+| metric | measured | expected under uniform |
+|---|---|---|
+| share of picks from the newest batch | 32.37% | 32.37% |
+| mean array index | 137.9 | 138.5 |
+
+No bias. Newly-added atoms are not favoured by the algorithm.
+
+**2. But the seed is fixed, and re-seeded on every page load.** `deterministic_seed` was `1337` in
+`EXPLORATION_STATE.json`, and `init()` calls `resetRandomStreams()` — so **every session replayed the
+identical clip order**. Nothing was random between loads; it was one fixed sequence, over and over.
+
+**3. And seed 1337's particular sequence does front-load newer atoms.** For that one seed, the first 30
+picks are **43.3%** from the newest batch versus 32.4% expected — the **94th percentile** across 1500
+seeds. Not a bug, just an unlucky draw, but a fixed one.
+
+The array is ordered by approval date (07-17 batch at indices 0-187, 07-18 batch at 188-277), so "newer"
+is a real, contiguous region an unlucky opening can over-sample. Add that testing sessions are short and
+restarted often — only ever watching the front of the same fixed sequence — and the perception is exactly
+what the data predicts.
+
+### Fix
+A fixed seed is a legitimate feature (reproducible shows), so it was preserved rather than removed:
+- **Default is now a fresh random seed per load.** Running order genuinely differs between sessions.
+- **"Pin this seed" checkbox** restores the old reproducible behaviour deliberately; persisted as
+  `pin_seed` in the session state (`console_store.py` schema updated).
+- **"Shuffle now (new seed)"** button draws a new seed and jumps to a new clip mid-session.
+
+### Verification
+- Two consecutive real page loads: seeds `1380368542` and a different fresh one; first 10 picks
+  completely different (`eea99f,56cf24,f15540,…` vs `5f675d,cada30,7e7d91,…`).
+- Pinning to 1337 and re-running twice produced byte-identical pick sequences — reproducibility intact.
+- Bag coverage unchanged: every atom exactly once per bag.
+
+### Known limitations
+- Selection is still **uniform** over approved atoms. It ignores `energy_level`, `motif_category`, and
+  the rest of the metadata — the state-aware selection from the advisory review is not built.
+- The anti-repeat guard only protects the first pick after a refill against the last 5 played.
+- `refreshAtomLibrary()` falls back to `atoms[0]` (not a random atom) if the current atom was removed
+  from the library — a small, rare first-pick bias, left alone this pass.
+
+### Commit
+`static/exploration.{js,html,css}`, `console_store.py`, plus docs.
+
+**Not pushed. Ready for review: [BLANK — reviewer sign-off pending, not self-signed].**

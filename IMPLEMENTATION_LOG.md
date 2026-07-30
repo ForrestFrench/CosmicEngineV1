@@ -2334,3 +2334,14 @@ as `signal_seen`/`capture_device`, so "dead input" is finally distinguishable fr
 previously both looked identical from outside. Media Console shows AUDIO LIVE / NO SIGNAL / CORE
 OFFLINE with the device name and a specific next step. Verified with real guitar: first signal detected
 at L=0.1044. See `AUDIT.md` Entry 65.
+
+## 2026-07-30 — Atom selection: fixed seed was making every session identical
+
+User reported atom selection favouring newly-added atoms. Confirmed the observation but corrected the
+cause: the Fisher-Yates shuffle-bag is unbiased (400-seed simulation puts the newest-batch share at
+32.37% against 32.37% expected, and every atom plays exactly once per bag). The real problem was that
+`deterministic_seed` was fixed at 1337 and re-applied on every page load, so every session replayed one
+identical order - and that particular seed's opening happens to be 43.3% newest-batch against 32.4%
+expected, the 94th percentile across 1500 seeds. Short, frequently-restarted test sessions only ever saw
+the front of that one fixed sequence. Fixed by drawing a fresh seed per load by default, with a "Pin this
+seed" checkbox preserving reproducible-show behaviour and a "Shuffle now" button. See `AUDIT.md` Entry 66.
